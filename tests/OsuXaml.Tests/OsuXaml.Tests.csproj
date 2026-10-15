@@ -13,5 +13,6 @@
     <ProjectReference Include="..\..\src\OsuXaml\OsuXaml.csproj" />
     <ProjectReference Include="..\..\src\OsuXaml.Generator\OsuXaml.Generator.csproj" />
     <ProjectReference Include="..\..\samples\TodoApp\TodoApp.csproj" />
+    <ProjectReference Include="..\..\samples\Gallery\Gallery.csproj" />
   </ItemGroup>
 </Project>

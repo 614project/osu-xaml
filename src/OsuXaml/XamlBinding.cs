@@ -38,10 +38,20 @@ namespace OsuXaml
         public static void TwoWay<T>(Bindable<T> target, Bindable<T> source) => target.BindTo(source);
 
         /// <summary>
+        /// Keeps the children of a WPF-style panel in sync with <paramref name="source"/>, inserting rows at their list index.
+        /// </summary>
+        public static void Items<T>(BindingScope scope, Controls.IItemsHost host, IBindableList<T> source, Func<T, BindingScope, Drawable> template)
+            => sync(scope, source, template, (i, d) => host.Insert(i, d), d => host.Remove(d, true), null);
+
+        /// <summary>
         /// Keeps the children of <paramref name="container"/> in sync with <paramref name="source"/>,
         /// creating one drawable per item from the compiled item template.
         /// </summary>
         public static void Items<T>(BindingScope scope, Container<Drawable> container, IBindableList<T> source, Func<T, BindingScope, Drawable> template)
+            => sync(scope, source, template, (_, d) => container.Add(d), d => container.Remove(d, true), container as FlowContainer<Drawable>);
+
+        private static void sync<T>(BindingScope scope, IBindableList<T> source, Func<T, BindingScope, Drawable> template,
+                                    Action<int, Drawable> insertDrawable, Action<Drawable> removeDrawable, FlowContainer<Drawable> flow)
         {
             var copy = source.GetBoundCopy();
             scope.Add(copy);
@@ -83,7 +93,7 @@ namespace OsuXaml
                 }
 
                 // Flow containers lay children out by layout position, so keep it equal to the list index.
-                if (container is FlowContainer<Drawable> flow)
+                if (flow != null)
                 {
                     for (int i = 0; i < drawables.Count; i++)
                         flow.SetLayoutPosition(drawables[i], i);
@@ -100,14 +110,14 @@ namespace OsuXaml
                 items.Insert(index, item);
                 drawables.Insert(index, drawable);
                 scopes.Insert(index, itemScope);
-                container.Add(drawable);
+                insertDrawable(index, drawable);
             }
 
             void removeAt(int index)
             {
                 scopes[index].UnbindAll();
                 scope.Remove(scopes[index]);
-                container.Remove(drawables[index], true);
+                removeDrawable(drawables[index]);
 
                 items.RemoveAt(index);
                 drawables.RemoveAt(index);

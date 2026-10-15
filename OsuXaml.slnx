@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Gallery/Gallery.csproj" />
     <Project Path="samples/TodoApp/TodoApp.csproj" />
   </Folder>
   <Folder Name="/src/">

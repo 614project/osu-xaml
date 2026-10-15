@@ -135,10 +135,61 @@ namespace Demo
         public void UnknownElementIsReported()
         {
             var diagnostic = single(header + @"
-  <StackPanel />
+  <ListView />
 </CompositeDrawable>");
 
             Assert.That(diagnostic.Id, Is.EqualTo("OX0003"));
+        }
+
+        [Test]
+        public void WpfStyleControlsAndAttachedPropertiesCompile()
+        {
+            var (diagnostics, compileErrors, source) = run(header + @"
+  <DockPanel RelativeSizeAxes=""Both"">
+    <Border DockPanel.Dock=""Top"" Background=""#181825"" Padding=""8,4"">
+      <TextBlock Text=""{Bind Title}"" FontSize=""20"" FontWeight=""Bold"" />
+    </Border>
+    <Grid RowDefinitions=""Auto,*"" ColumnDefinitions=""120,*"" RowSpacing=""8"">
+      <TextBlock Grid.Row=""0"" Text=""Enabled"" VerticalAlignment=""Center"" />
+      <CheckBox Grid.Column=""1"" IsChecked=""{Bind Enabled}"" Content=""On"" />
+      <TextBox Grid.Row=""1"" Grid.ColumnSpan=""2"" Text=""{Bind Title}"" HorizontalAlignment=""Stretch"" />
+      <Button Grid.Row=""1"" Content=""Save"" Click=""{Bind Save}"" HorizontalAlignment=""Right"" />
+    </Grid>
+    <StackPanel ItemsSource=""{Bind Rows}"" Spacing=""4"">
+      <StackPanel.ItemTemplate>
+        <TextBlock Text=""{Bind Name}"" />
+      </StackPanel.ItemTemplate>
+    </StackPanel>
+  </DockPanel>
+</CompositeDrawable>");
+
+            Assert.That(diagnostics, Is.Empty);
+            Assert.That(compileErrors, Is.Empty, source);
+            Assert.That(source, Does.Contain("global::OsuXaml.Controls.Grid.SetColumnSpan(e"));
+            Assert.That(source, Does.Contain("global::OsuXaml.Controls.Layout.SetHorizontalAlignment(e"));
+            Assert.That(source, Does.Contain("GridLengthCollection.Parse(\"Auto,*\")"));
+            Assert.That(source, Does.Contain(".Child = e"));
+        }
+
+        [Test]
+        public void InvalidRowDefinitionsAreABuildError()
+        {
+            var diagnostic = single(header + @"
+  <Grid RowDefinitions=""Auto,big,*"" />
+</CompositeDrawable>");
+
+            Assert.That(diagnostic.Id, Is.EqualTo("OX0005"));
+        }
+
+        [Test]
+        public void UnknownAttachedPropertyIsReported()
+        {
+            var diagnostic = single(header + @"
+  <Grid><Box Grid.Rowz=""1"" /></Grid>
+</CompositeDrawable>");
+
+            Assert.That(diagnostic.Id, Is.EqualTo("OX0004"));
+            Assert.That(diagnostic.GetMessage(), Does.Contain("Rowz"));
         }
 
         private static Diagnostic single(string xaml)

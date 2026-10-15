@@ -1,0 +1,113 @@
+<CompositeDrawable
+    xmlns="osu-xaml"
+    xmlns:x="osu-xaml:x"
+    xmlns:local="clr-namespace:Gallery"
+    x:Class="Gallery.MainWindow"
+    x:DataType="local:GalleryViewModel"
+    RelativeSizeAxes="Both">
+
+  <DockPanel RelativeSizeAxes="Both" Background="#1e1e2e">
+
+    <!-- Header -->
+    <Border DockPanel.Dock="Top" Background="#181825" Padding="20,14">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="osu!xaml controls" FontSize="26" FontWeight="Bold" />
+        <TextBlock Text="{Bind Greeting}" FontSize="18" Foreground="#a6adc8" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+    <!-- Status bar -->
+    <Border DockPanel.Dock="Bottom" Background="#181825" Padding="20,6">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Right" Text="{Bind Clicks, StringFormat='{0} clicks'}" Foreground="#a6adc8" />
+        <TextBlock Text="{Bind Status}" Foreground="#a6adc8" />
+      </DockPanel>
+    </Border>
+
+    <!-- Navigation -->
+    <Border DockPanel.Dock="Left" Width="190" Background="#11111b" Padding="12">
+      <StackPanel Spacing="8">
+        <TextBlock Text="PANELS" FontSize="13" Foreground="#6c7086" />
+        <Button Content="Grid" Background="#313244" Foreground="#cdd6f4" Action="{Bind Click}" />
+        <Button Content="StackPanel" Background="#313244" Foreground="#cdd6f4" Action="{Bind Click}" />
+        <Button Content="DockPanel" Background="#313244" Foreground="#cdd6f4" Action="{Bind Click}" />
+        <Button Content="WrapPanel" Background="#313244" Foreground="#cdd6f4" Action="{Bind Click}" />
+        <Separator />
+        <Button Content="Disabled" IsEnabled="false" />
+      </StackPanel>
+    </Border>
+
+    <!-- Content: a Grid with a form on the left and samples on the right -->
+    <Grid Padding="24" ColumnDefinitions="*,*" RowDefinitions="Auto,*" ColumnSpacing="24" RowSpacing="20">
+
+      <TextBlock Grid.ColumnSpan="2" Text="Settings" FontSize="22" FontWeight="Bold" />
+
+      <Border Grid.Row="1" Background="#181825" CornerRadius="10" Padding="20" BorderThickness="1" BorderBrush="#313244">
+        <Grid ColumnDefinitions="110,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="12" RowSpacing="16">
+
+          <TextBlock Text="Name" VerticalAlignment="Center" />
+          <TextBox Grid.Column="1" Grid.ColumnSpan="2" Text="{Bind Name}" />
+
+          <TextBlock Grid.Row="1" Text="Volume" VerticalAlignment="Center" />
+          <Slider Grid.Row="1" Grid.Column="1" Value="{Bind Volume}" VerticalAlignment="Center" />
+          <TextBlock Grid.Row="1" Grid.Column="2" Text="{Bind Volume, StringFormat='{0:0}%'}" VerticalAlignment="Center" />
+
+          <TextBlock Grid.Row="2" Text="Level" VerticalAlignment="Center" />
+          <ProgressBar Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Value="{Bind Volume}" VerticalAlignment="Center" />
+
+          <TextBlock Grid.Row="3" Text="Alerts" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="3" Grid.Column="1" Content="Enable notifications" IsChecked="{Bind Notifications}" />
+
+          <StackPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <Button Content="Cancel" Background="#45475a" Foreground="#cdd6f4" />
+            <Button Content="Save" Action="{Bind Click}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <StackPanel Grid.Row="1" Grid.Column="1" Spacing="16">
+
+        <Border Background="#181825" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="10">
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Content="+ Add tag" Action="{Bind AddTag}" />
+              <TextBlock Text="WrapPanel with ItemsSource" FontWeight="Bold" VerticalAlignment="Center" />
+            </DockPanel>
+            <WrapPanel Spacing="8" ItemsSource="{Bind Tags}">
+              <WrapPanel.ItemTemplate>
+                <Button Content="{Bind}" Background="#313244" Foreground="#cdd6f4" Padding="12,6"
+                        Action="{Bind RemoveTag, Source=Root}" />
+              </WrapPanel.ItemTemplate>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Background="#181825" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="10">
+            <TextBlock Text="UniformGrid" FontWeight="Bold" />
+            <UniformGrid Columns="5" Height="56">
+              <Border Background="#f38ba8" Margin="3" CornerRadius="6" />
+              <Border Background="#fab387" Margin="3" CornerRadius="6" />
+              <Border Background="#f9e2af" Margin="3" CornerRadius="6" />
+              <Border Background="#a6e3a1" Margin="3" CornerRadius="6" />
+              <Border Background="#89b4fa" Margin="3" CornerRadius="6" />
+            </UniformGrid>
+          </StackPanel>
+        </Border>
+
+        <Border Background="#181825" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="10">
+            <TextBlock Text="Canvas and alignment" FontWeight="Bold" />
+            <Canvas Height="70" Background="#11111b">
+              <Border Canvas.Left="12" Canvas.Top="12" Width="46" Height="46" Background="#cba6f7" CornerRadius="23" />
+              <Border Canvas.Right="12" Canvas.Bottom="10" Background="#94e2d5" CornerRadius="6" Padding="10,6">
+                <TextBlock Text="Right / Bottom" Foreground="#1e1e2e" />
+              </Border>
+              <TextBlock Canvas.Left="80" Canvas.Top="24" Text="Canvas.Left = 80" />
+            </Canvas>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </Grid>
+  </DockPanel>
+</CompositeDrawable>

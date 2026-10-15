@@ -36,6 +36,8 @@ namespace OsuXaml.Generator
         /// <summary>Namespaces searched for elements in the default (non clr-namespace) XML namespace.</summary>
         private static readonly string[] default_namespaces =
         {
+            // WPF-style controls come first so Button and TextBox mean the ready-to-use ones.
+            "OsuXaml.Controls",
             "osu.Framework.Graphics",
             "osu.Framework.Graphics.Containers",
             "osu.Framework.Graphics.Sprites",
@@ -43,7 +45,6 @@ namespace OsuXaml.Generator
             "osu.Framework.Graphics.UserInterface",
             "osu.Framework.Graphics.Cursor",
             "osu.Framework.Screens",
-            "OsuXaml.Controls",
         };
 
         private const string items_source = "ItemsSource";
@@ -302,6 +303,22 @@ namespace OsuXaml.Generator
                 return;
             }
 
+            // Panels such as Grid and StackPanel expose Add(Drawable) without being osu!framework containers.
+            var add = findMethods(parent, "Add").FirstOrDefault(m => !m.IsStatic && m.Parameters.Length == 1 && implicitly(child, m.Parameters[0].Type));
+
+            if (add != null)
+            {
+                line($"{v}.Add({c});");
+                return;
+            }
+
+            // Single-child controls (Border, Button, ScrollViewer) take their content through Child.
+            if (findMember(parent, "Child") is IPropertySymbol childProperty && implicitly(child, childProperty.Type))
+            {
+                line($"{v}.Child = {c};");
+                return;
+            }
+
             if (isRoot && inherits(parent, compilation.GetTypeByMetadataName("osu.Framework.Graphics.Containers.CompositeDrawable")))
             {
                 line($"AddInternal({c});");
@@ -314,9 +331,11 @@ namespace OsuXaml.Generator
         /// <summary>Text inside an element, e.g. <c>&lt;SpriteText&gt;Hello&lt;/SpriteText&gt;</c>, sets its Text property.</summary>
         private void emitContent(string v, INamedTypeSymbol type, string content, XElement element, Scope scope)
         {
-            if (!(findMember(type, "Text") is ISymbol textMember) || memberType(textMember) == null)
+            var textMember = findMember(type, "Text") ?? findMember(type, "Content");
+
+            if (textMember == null || memberType(textMember) == null)
             {
-                report(Diagnostics.NoChildren, element, type.Name + " (text content needs a Text property)");
+                report(Diagnostics.NoChildren, element, type.Name + " (text content needs a Text or Content property)");
                 return;
             }
 
@@ -330,10 +349,37 @@ namespace OsuXaml.Generator
         private void emitAttribute(string v, INamedTypeSymbol type, XAttribute attribute, Scope scope)
         {
             string name = attribute.Name.LocalName;
+
+            // Attached properties: Grid.Row="1" calls Grid.SetRow(element, 1).
+            int dot = name.IndexOf('.');
+
+            if (dot > 0)
+            {
+                var owner = resolveType(attribute.Name.NamespaceName.Length > 0 ? attribute.Name.NamespaceName : attribute.Parent.GetDefaultNamespace().NamespaceName, name.Substring(0, dot));
+
+                if (owner == null)
+                {
+                    report(Diagnostics.UnknownType, attribute, name.Substring(0, dot), "");
+                    return;
+                }
+
+                emitAttached(v, type, owner, name.Substring(dot + 1), attribute, scope);
+                return;
+            }
+
             var member = findMember(type, name);
 
             if (member == null)
             {
+                // Layout properties every element accepts, such as HorizontalAlignment, live on OsuXaml.Controls.Layout.
+                var layout = compilation.GetTypeByMetadataName("OsuXaml.Controls.Layout");
+
+                if (layout != null && attachedSetter(layout, name, type) != null)
+                {
+                    emitAttached(v, type, layout, name, attribute, scope);
+                    return;
+                }
+
                 report(Diagnostics.UnknownMember, attribute, type.Name, name);
                 return;
             }
@@ -375,15 +421,17 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            string literal = convertLiteral(value, target, out string hint);
+            // A literal on a bindable member (TextBox.Text, CheckBox.IsChecked) sets its value.
+            var bindableValue = bindableClassValueType(target);
+            string literal = convertLiteral(value, bindableValue ?? target, out string hint);
 
             if (literal == null)
             {
-                report(Diagnostics.BadLiteral, source, value, target.ToDisplayString(), hint ?? "");
+                report(Diagnostics.BadLiteral, source, value, (bindableValue ?? target).ToDisplayString(), hint ?? "");
                 return;
             }
 
-            line($"{v}.{member.Name} = {literal};");
+            line(bindableValue != null ? $"{v}.{member.Name}.Value = {literal};" : $"{v}.{member.Name} = {literal};");
         }
 
         /// <summary>A plain attribute value on a delegate or event names a method on the x:Class (code-behind).</summary>
@@ -561,9 +609,11 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            if (containerChildType(type)?.ToDisplayString() != "osu.Framework.Graphics.Drawable")
+            var itemsHost = compilation.GetTypeByMetadataName("OsuXaml.Controls.IItemsHost");
+
+            if (containerChildType(type)?.ToDisplayString() != "osu.Framework.Graphics.Drawable" && !inherits(type, itemsHost))
             {
-                report(Diagnostics.BadTemplate, element, $"ItemsSource needs a Container<Drawable> such as FillFlowContainer, but '{type.Name}' is not one");
+                report(Diagnostics.BadTemplate, element, $"ItemsSource needs a panel or a Container<Drawable> such as FillFlowContainer, but '{type.Name}' is neither");
                 return;
             }
 
@@ -641,6 +691,10 @@ namespace OsuXaml.Generator
             expr = dc;
             last = null;
             type = dcType;
+
+            // {Bind} with no path binds the data context itself, e.g. each string of an ItemsSource.
+            if (string.IsNullOrEmpty(bindingPath))
+                return true;
 
             foreach (string segment in bindingPath.Split('.'))
             {
@@ -747,6 +801,81 @@ namespace OsuXaml.Generator
             return (call, method);
         }
 
+        /// <summary>Emits <c>Owner.SetName(element, value)</c> for a literal or a binding.</summary>
+        private void emitAttached(string v, INamedTypeSymbol elementType, INamedTypeSymbol owner, string name, XAttribute attribute, Scope scope)
+        {
+            var setter = attachedSetter(owner, name, elementType);
+
+            if (setter == null)
+            {
+                report(Diagnostics.UnknownMember, attribute, owner.Name, name + " (attached properties need a static Set" + name + "(Drawable, value) method)");
+                return;
+            }
+
+            var valueType = setter.Parameters[1].Type;
+            string call = typeName(owner) + "." + setter.Name;
+
+            if (!BindMarkup.IsMarkup(attribute.Value))
+            {
+                string literal = convertLiteral(BindMarkup.Unescape(attribute.Value), valueType, out string hint);
+
+                if (literal == null)
+                    report(Diagnostics.BadLiteral, attribute, attribute.Value, valueType.ToDisplayString(), hint ?? "");
+                else
+                    line($"{call}({v}, {literal});");
+
+                return;
+            }
+
+            var bind = BindMarkup.Parse(attribute.Value, out string error);
+
+            if (bind == null)
+            {
+                report(Diagnostics.BadMarkup, attribute, error);
+                return;
+            }
+
+            bool fromRoot = string.Equals(bind.Get("Source"), "Root", StringComparison.OrdinalIgnoreCase);
+            string dc = fromRoot ? scope.RootDataContext : scope.DataContext;
+
+            if (dc == null)
+            {
+                report(Diagnostics.BadMarkup, attribute, "{Bind} needs a data context. Add x:DataType to the root element");
+                return;
+            }
+
+            if (!resolvePath(dc, fromRoot ? scope.RootDataContextType : scope.DataContextType, bind.Path, attribute, out string expr, out _, out ITypeSymbol sourceType))
+                return;
+
+            var bound = bindableValueType(sourceType);
+            string converted = convertValue(bound != null ? "x" : expr, bound ?? sourceType, valueType, bind, attribute);
+
+            if (converted == null)
+                return;
+
+            line(bound != null
+                ? $"global::OsuXaml.XamlBinding.OneWay({scope.Bindings}, {expr}, (x, _) => {call}({v}, {converted}));"
+                : $"{call}({v}, {converted});");
+        }
+
+        private IMethodSymbol attachedSetter(INamedTypeSymbol owner, string name, ITypeSymbol elementType)
+            => owner.GetMembers("Set" + name).OfType<IMethodSymbol>()
+                    .FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 2 && implicitly(elementType, m.Parameters[0].Type) && canAccess(m));
+
+        private bool implicitly(ITypeSymbol from, ITypeSymbol to) => ((CSharpCompilation)compilation).ClassifyConversion(from, to).IsImplicit;
+
+        private IEnumerable<IMethodSymbol> findMethods(ITypeSymbol type, string name)
+        {
+            for (var t = type; t != null; t = t.BaseType)
+            {
+                foreach (var m in t.GetMembers(name).OfType<IMethodSymbol>())
+                {
+                    if (canAccess(m))
+                        yield return m;
+                }
+            }
+        }
+
         #endregion
 
         #region Literals
@@ -828,8 +957,41 @@ namespace OsuXaml.Generator
                     return font(s);
             }
 
+            if (full == "OsuXaml.Controls.GridLengthCollection" && !validGridLengths(s))
+            {
+                hint = " (use a comma-separated list of Auto, pixels, * or 2*)";
+                return null;
+            }
+
+            // Any type with a static Parse(string) accepts a string, e.g. RowDefinitions="Auto,*,40".
+            if (type is INamedTypeSymbol named && named.GetMembers("Parse").OfType<IMethodSymbol>()
+                                                    .Any(m => m.IsStatic && m.Parameters.Length == 1 && m.Parameters[0].Type.SpecialType == SpecialType.System_String
+                                                              && SymbolEqualityComparer.Default.Equals(m.ReturnType, type)))
+                return $"{typeName(type)}.Parse({SymbolDisplay.FormatLiteral(value, true)})";
+
             hint = " (no XAML conversion exists for this type yet)";
             return null;
+        }
+
+        private static bool validGridLengths(string s)
+        {
+            foreach (string raw in s.Split(','))
+            {
+                string p = raw.Trim();
+
+                if (p.Equals("Auto", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string number = p.EndsWith("*", StringComparison.Ordinal) ? p.Substring(0, p.Length - 1) : p;
+
+                if (number.Length == 0 && p == "*")
+                    continue;
+
+                if (!float.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out float f) || f < 0)
+                    return false;
+            }
+
+            return true;
         }
 
         private string colour(string s, out string hint)

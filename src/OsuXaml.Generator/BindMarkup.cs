@@ -77,11 +77,7 @@ namespace OsuXaml.Generator
                     result.Options[key] = val;
             }
 
-            if (string.IsNullOrEmpty(result.Path))
-            {
-                error = "Binding needs a path, e.g. {Bind Title}";
-                return null;
-            }
+            result.Path ??= string.Empty;
 
             return result;
         }
