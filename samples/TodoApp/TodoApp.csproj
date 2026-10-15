@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>TodoApp</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OsuXaml\OsuXaml.csproj" />
+    <ProjectReference Include="..\..\src\OsuXaml.Generator\OsuXaml.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Every .xaml file is compiled by the OsuXaml source generator. -->
+    <AdditionalFiles Include="**\*.xaml" />
+  </ItemGroup>
+</Project>

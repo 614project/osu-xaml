@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <OsuFrameworkVersion>2026.1008.0</OsuFrameworkVersion>
+  </PropertyGroup>
+</Project>

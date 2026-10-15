@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/TodoApp/TodoApp.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/OsuXaml.Generator/OsuXaml.Generator.csproj" />
+    <Project Path="src/OsuXaml/OsuXaml.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OsuXaml.Tests/OsuXaml.Tests.csproj" />
+  </Folder>
+</Solution>
