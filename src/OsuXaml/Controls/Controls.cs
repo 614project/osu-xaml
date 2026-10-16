@@ -122,24 +122,6 @@ namespace OsuXaml.Controls
         }
     }
 
-    /// <summary>A checkbox with a label. <c>IsChecked</c> binds two-way.</summary>
-    public partial class CheckBox : BasicCheckbox
-    {
-        public CheckBox()
-        {
-            CheckedColor = Theme.Accent;
-            UncheckedColor = Theme.Surface;
-        }
-
-        public Bindable<bool> IsChecked => Current;
-
-        public LocalisableString Content
-        {
-            get => LabelText;
-            set => LabelText = value;
-        }
-    }
-
     /// <summary>A single-line text box. <c>Text</c> is a bindable so it binds two-way like WPF.</summary>
     public partial class TextBox : BasicTextBox
     {

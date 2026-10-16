@@ -141,12 +141,15 @@ namespace OsuXaml.Controls
         {
             var checkBox = new DataGridCheckBox(cell);
 
+            // Only the box takes clicks; the rest of the cell selects the row.
+            Layout.SetHorizontalAlignment(checkBox, HorizontalAlignment.Left);
+
             if (Binding?.GetSource(item) is Bindable<bool> bindable)
-                checkBox.Current.BindTo(bindable);
+                checkBox.IsChecked.BindTo(bindable);
             else
             {
                 checkBox.AlwaysReadOnly = true;
-                Binding?.Observe(item, scope, value => checkBox.Current.Value = value is bool b && b);
+                Binding?.Observe(item, scope, value => checkBox.IsChecked.Value = value is bool b && b);
             }
 
             return checkBox;
