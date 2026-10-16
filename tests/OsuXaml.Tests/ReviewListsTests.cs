@@ -152,6 +152,51 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void ExpandSubtreeExpandsEveryLevel()
+        {
+            Node a = null, b = null, c = null, d = null;
+            TreeView tree = null;
+
+            AddStep("create", () =>
+            {
+                d = new Node("d");
+                c = new Node("c", d);
+                b = new Node("b", c);
+                a = new Node("a", b);
+                var scope = new BindingScope();
+
+                tree = new TreeView
+                {
+                    Size = new Vector2(260, 300),
+                    ItemTemplate = new HierarchicalDataTemplate<Node>((n, _) => new TextBlock { Text = n.Label }, (n, s) => XamlBinding.ListCopy(s, n.Children)),
+                    IsExpandedBinding = new ItemBinding<Node, bool>("IsExpanded", n => n.IsExpanded, n => n.IsExpanded.Value),
+                    ItemsSource = XamlBinding.ListCopy(scope, new BindableList<Node>(new[] { a })),
+                };
+                Child = tree;
+            });
+            AddUntilStep("loaded", () => tree.ContainerFromDataItem(a)?.IsLoaded == true);
+
+            AddStep("expand the subtree", () => tree.ContainerFromDataItem(a).ExpandSubtree());
+            AddUntilStep("every level shows", () => string.Join(",", tree.VisibleItems.Select(n => ((Node)n.DataItem).Label)) == "a,b,c,d");
+            AddAssert("every node expanded", () => a.IsExpanded.Value && b.IsExpanded.Value && c.IsExpanded.Value);
+
+            TreeViewItem music = null, rock = null, live = null;
+            AddStep("declared items, expanded before they load", () =>
+            {
+                music = new TreeViewItem { Header = "Music" };
+                music.Add(rock = new TreeViewItem { Header = "Rock" });
+                rock.Add(live = new TreeViewItem { Header = "Live" });
+                live.Add(new TreeViewItem { Header = "song.mp3" });
+                music.ExpandSubtree();
+
+                var declared = new TreeView { Size = new Vector2(200, 200) };
+                declared.Add(music);
+                Child = declared;
+            });
+            AddUntilStep("every declared level expanded", () => music.IsExpanded.Value && rock.IsExpanded.Value && live.IsExpanded.Value);
+        }
+
+        [Test]
         public void DeclaredItemsCanBeRemovedAndAddedAgain()
         {
             ListBox list = null;
