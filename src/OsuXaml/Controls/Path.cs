@@ -50,6 +50,9 @@ namespace OsuXaml.Controls
         /// <exception cref="FormatException">The markup has an unknown command or a missing number.</exception>
         public static Geometry Parse(string data) => new Geometry(data, new PathMarkupParser(data).Parse());
 
+        /// <summary>Path markup converts on assignment, so a view model's string can bind to <c>Data</c>.</summary>
+        public static implicit operator Geometry(string data) => data == null ? null : Parse(data);
+
         public override string ToString() => text;
 
         /// <summary>Reads path markup one command at a time, keeping the pen position and the last control point.</summary>

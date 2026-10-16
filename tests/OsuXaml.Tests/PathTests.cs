@@ -31,6 +31,21 @@ namespace OsuXaml.Tests
             Assert.That(source, Does.Contain("Geometry.Parse(\"M 10,10 L 50,10 50,40 Z\")"));
             Assert.That(source, Does.Contain("Geometry.Parse(\"M 0,5 L 4,9 L 12,0\")"), "the resource becomes a literal at its use");
         }
+
+        [Test]
+        public void StringsFromTheViewModelBindToDataAndPoints()
+        {
+            ShapesTestData.Compiles(@"
+  <StackPanel>
+    <Path Data=""{Bind Outline}"" Stroke=""White"" />
+    <Polygon Points=""{Binding Corners}"" Fill=""Pink"" />
+  </StackPanel>");
+
+            Path path = new Path { Data = "M 0,0 L 10,0" };
+            Polyline line = new Polyline { Points = "0,0 5,5" };
+            Assert.That(path.Data.Figures[0].Points, Has.Count.EqualTo(2));
+            Assert.That(line.Points, Has.Count.EqualTo(2));
+        }
     }
 
     /// <summary>The path markup parser on its own.</summary>

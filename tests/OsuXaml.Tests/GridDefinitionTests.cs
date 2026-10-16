@@ -26,6 +26,8 @@ namespace Demo
         public Bindable<float> Thickness { get; } = new Bindable<float>(2);
         public Bindable<float> Progress { get; } = new Bindable<float>(40);
         public Bindable<string> IconName { get; } = new Bindable<string>(""Solid.Check"");
+        public Bindable<string> Outline { get; } = new Bindable<string>(""M 0,0 L 10,10"");
+        public Bindable<string> Corners { get; } = new Bindable<string>(""0,0 10,10 20,0"");
         public OsuXaml.Controls.PointCollection Trend { get; } = OsuXaml.Controls.PointCollection.Parse(""0,10 10,0 20,5"");
     }
 

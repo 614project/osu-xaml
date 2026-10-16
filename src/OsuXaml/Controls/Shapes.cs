@@ -329,6 +329,9 @@ namespace OsuXaml.Controls
             return result;
         }
 
+        /// <summary>Point text converts on assignment, so a view model's string can bind to <c>Points</c>.</summary>
+        public static implicit operator PointCollection(string text) => text == null ? null : Parse(text);
+
         public override string ToString()
             => string.Join(" ", this.Select(p => p.X.ToString(CultureInfo.InvariantCulture) + "," + p.Y.ToString(CultureInfo.InvariantCulture)));
     }
