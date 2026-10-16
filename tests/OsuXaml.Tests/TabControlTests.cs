@@ -226,6 +226,40 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void FocusLeavesAPageWhenItIsHidden()
+        {
+            TabControl tabs = null;
+            TextBox box = null;
+
+            AddStep("create", () =>
+            {
+                var form = new StackPanel();
+                form.Add(box = new TextBox());
+
+                tabs = new TabControl { Size = new Vector2(400, 200) };
+                tabs.Add(new TabItem { Header = "Form", Content = form });
+                tabs.Add(new TabItem { Header = "Other" });
+                Child = tabs;
+            });
+
+            AddStep("click into the text box", () =>
+            {
+                InputManager.MoveMouseTo(box);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("text box focused", () => box.HasFocus);
+
+            AddStep("Ctrl+Tab from inside the page", () =>
+            {
+                InputManager.PressKey(Key.ControlLeft);
+                InputManager.Key(Key.Tab);
+                InputManager.ReleaseKey(Key.ControlLeft);
+            });
+            AddAssert("switched tab", () => tabs.SelectedIndex.Value == 1);
+            AddAssert("focus moved to the tab control", () => !box.HasFocus && tabs.HasFocus);
+        }
+
+        [Test]
         public void SizesToTheSelectedPageWhenUnsized()
         {
             TabControl tabs = null;
