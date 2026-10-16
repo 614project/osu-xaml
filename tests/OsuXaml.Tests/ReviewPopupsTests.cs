@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Testing;
 using OsuXaml.Controls;
@@ -352,6 +353,75 @@ namespace OsuXaml.Tests
             AddUntilStep("loaded again", () => combo.Parent != null && second.IsLoaded && combo.DrawWidth > 0);
             AddStep("open", () => combo.IsDropDownOpen.Value = true);
             AddUntilStep("opens in the new window's layer", () => second.PopupLayer.OpenPopups.Count == 1 && combo.ContainerFromIndex(0).IsPresent);
+        }
+
+        private partial class TrackedCombo : ComboBox
+        {
+            public bool Disposed;
+
+            protected override void Dispose(bool isDisposing)
+            {
+                Disposed = true;
+                base.Dispose(isDisposing);
+            }
+        }
+
+        /// <summary>An item bound to a view model value, the way generated item templates are.</summary>
+        private partial class TrackedItem : ComboBoxItem
+        {
+            public bool Disposed;
+            public int Updates;
+
+            // A field, so disposal unbinds it.
+            private readonly Bindable<string> label = new Bindable<string>();
+
+            public TrackedItem(Bindable<string> source)
+            {
+                label.BindTo(source);
+                label.BindValueChanged(e =>
+                {
+                    Content = e.NewValue;
+                    Updates++;
+                }, true);
+            }
+
+            protected override void Dispose(bool isDisposing)
+            {
+                Disposed = true;
+                base.Dispose(isDisposing);
+            }
+        }
+
+        [Test]
+        public void ClosedDropDownIsDisposedWithItsWindow()
+        {
+            var name = new Bindable<string>("Tracked");
+            TrackedCombo combo = null;
+            TrackedItem item = null;
+            int updates = 0;
+
+            AddStep("combo", () =>
+            {
+                combo = new TrackedCombo { Width = 200 };
+                combo.Add(item = new TrackedItem(name));
+                combo.Add("Other");
+                var panel = new StackPanel { Padding = new MarginPadding(20) };
+                panel.Add(combo);
+                window.Child = panel;
+            });
+            AddUntilStep("loaded", () => combo.IsLoaded && combo.DrawWidth > 0);
+            AddStep("open", () => combo.IsDropDownOpen.Value = true);
+            AddUntilStep("showing", () => item.IsLoaded && item.IsPresent);
+            AddStep("close", () => combo.IsDropDownOpen.Value = false);
+            AddStep("replace the window", () => Child = new Container());
+            AddUntilStep("combo disposed", () => combo.Disposed);
+            AddUntilStep("its drop-down content disposed too", () => item.Disposed);
+            AddStep("view model changes", () =>
+            {
+                updates = item.Updates;
+                name.Value = "Changed";
+            });
+            AddAssert("the binding was cut", () => item.Updates == updates);
         }
 
         [Test]

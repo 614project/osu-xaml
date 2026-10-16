@@ -407,11 +407,12 @@ namespace OsuXaml.Controls
 
         protected override void Dispose(bool isDisposing)
         {
-            // The content lives in another part of the tree; hand it back to the layer's update thread to remove.
-            if (layer != null && layer.IsLoaded)
-                layer.ScheduleRelease(Root);
-            else if (Root.Parent == null)
+            // Closed content is in no tree and goes now (the layer may be disposed along with this popup, so its
+            // scheduler would never run). Open content lives in the layer; hand it to the layer's update thread to remove.
+            if (Root.Parent == null)
                 Root.Dispose();
+            else if (layer != null && layer.IsLoaded)
+                layer.ScheduleRelease(Root);
 
             base.Dispose(isDisposing);
         }
