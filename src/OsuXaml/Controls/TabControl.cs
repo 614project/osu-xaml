@@ -113,23 +113,6 @@ namespace OsuXaml.Controls
                 selectFrom(SelectedIndex.Value + step, Math.Sign(step));
         }
 
-        /// <summary>Selects the first enabled tab at or after <paramref name="start"/> going in <paramref name="direction"/>, wrapping around.</summary>
-        private void selectFrom(int start, int direction)
-        {
-            int count = Items.Count;
-
-            for (int i = 0; i < count; i++)
-            {
-                int index = ((start + i * direction) % count + count) % count;
-
-                if (ContainerFromIndex(index) is TabItem { IsEnabled: true })
-                {
-                    SelectedIndex.Value = index;
-                    return;
-                }
-            }
-        }
-
         protected override Panel CreateDefaultItemsPanel() => defaultPanel = new StackPanel();
 
         protected override Drawable CreateItemsHost(Panel panel)
@@ -205,7 +188,7 @@ namespace OsuXaml.Controls
             }
 
             // Like WPF, a tab control with tabs always shows one.
-            if (SelectedIndex.Value < 0 && Items.Count > 0 && !SelectedIndex.Disabled)
+            if (SelectedIndex.Value < 0)
                 selectFrom(0, 1);
         }
 
@@ -271,6 +254,26 @@ namespace OsuXaml.Controls
         {
             if (pages.TryGetValue(tab, out var page))
                 applyPage(tab, page);
+        }
+
+        /// <summary>Selects the first enabled tab at or after <paramref name="start"/> going in <paramref name="direction"/>, wrapping around.</summary>
+        private void selectFrom(int start, int direction)
+        {
+            int count = Items.Count;
+
+            if (SelectedIndex.Disabled)
+                return;
+
+            for (int i = 0; i < count; i++)
+            {
+                int index = ((start + i * direction) % count + count) % count;
+
+                if (ContainerFromIndex(index) is TabItem { IsEnabled: true })
+                {
+                    SelectedIndex.Value = index;
+                    return;
+                }
+            }
         }
 
         private void applyPage(TabItem tab, ContentPresenter page)
