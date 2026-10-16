@@ -1,0 +1,71 @@
+<UserControl
+    xmlns="osu-xaml"
+    xmlns:x="osu-xaml:x"
+    xmlns:local="clr-namespace:Gallery"
+    x:Class="Gallery.ListsPage"
+    x:DataType="local:GalleryViewModel">
+
+  <!-- One selection shared by the DataGrid, the ListView and the second ComboBox. -->
+  <Grid Padding="20" ColumnDefinitions="3*,2*" RowDefinitions="*,*" ColumnSpacing="20" RowSpacing="20">
+
+    <DockPanel>
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+        <Button DockPanel.Dock="Right" Content="+ Add person" Padding="12,4" Click="{Bind AddPerson}" ToolTip="Adds a row; right-click the grid for more" />
+        <TextBlock Text="DataGrid (double-click a name or age to edit)" FontWeight="Bold" VerticalAlignment="Center" />
+      </DockPanel>
+      <DataGrid ItemsSource="{Bind People}" SelectedItem="{Bind SelectedPerson}" AlternatingRowBackground="#232334">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Name" Binding="{Bind Name}" Width="*" />
+          <DataGridTextColumn Header="Age" Binding="{Bind Age}" Width="70" />
+          <DataGridTextColumn Header="Role" Binding="{Bind Role}" Width="*" />
+          <DataGridCheckBoxColumn Header="Active" Binding="{Bind Active}" Width="70" />
+          <DataGridTemplateColumn Header="" Width="96" CanUserSort="False">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <Button Content="Remove" Padding="10,2" Background="#45475a" Foreground="#cdd6f4" Click="{Bind RemovePerson, Source=Root}" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+        </DataGrid.Columns>
+        <DataGrid.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="_Add person" Click="{Bind AddPerson}" />
+            <MenuItem Header="_Remove selected" Click="{Bind RemoveSelected}" />
+          </ContextMenu>
+        </DataGrid.ContextMenu>
+      </DataGrid>
+    </DockPanel>
+
+    <DockPanel Grid.Column="1">
+      <TextBlock DockPanel.Dock="Top" Text="TreeView with HierarchicalDataTemplate" FontWeight="Bold" Margin="0,0,0,8" />
+      <TreeView ItemsSource="{Bind Files}" SelectedItem="{Bind SelectedFile}" IsExpandedBinding="{Bind IsExpanded}">
+        <TreeView.ItemTemplate>
+          <HierarchicalDataTemplate ItemsSource="{Bind Children}">
+            <TextBlock Text="{Bind Name}" />
+          </HierarchicalDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+    </DockPanel>
+
+    <DockPanel Grid.Row="1">
+      <TextBlock DockPanel.Dock="Top" Text="ListView with GridView (click a header to sort)" FontWeight="Bold" Margin="0,0,0,8" />
+      <ListView ItemsSource="{Bind People}" SelectedItem="{Bind SelectedPerson}">
+        <ListView.View>
+          <GridView>
+            <GridViewColumn Header="Name" DisplayMemberBinding="{Bind Name}" Width="*" SortMemberPath="Name" />
+            <GridViewColumn Header="Age" DisplayMemberBinding="{Bind Age, StringFormat='{0} yrs'}" Width="90" SortMemberPath="Age" />
+            <GridViewColumn Header="Role" DisplayMemberBinding="{Bind Role}" Width="*" SortMemberPath="Role" />
+          </GridView>
+        </ListView.View>
+      </ListView>
+    </DockPanel>
+
+    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="10">
+      <TextBlock Text="ComboBox" FontWeight="Bold" />
+      <ComboBox ItemsSource="{Bind Themes}" SelectedItem="{Bind SelectedTheme}" />
+      <ComboBox ItemsSource="{Bind People}" SelectedItem="{Bind SelectedPerson}" DisplayMemberPath="Name" PlaceholderText="Pick a person" />
+      <TextBlock Text="ListBox" FontWeight="Bold" Margin="0,6,0,0" />
+      <ListBox ItemsSource="{Bind Themes}" SelectedItem="{Bind SelectedTheme}" Height="132" />
+    </StackPanel>
+  </Grid>
+</UserControl>

@@ -72,6 +72,53 @@ public partial class MainView : CompositeDrawable
 | 리스트 | `ItemsSource="{Bind Items}"` + `<X.ItemTemplate>` | `BindableList` 변경을 행 단위로 추가/삭제 |
 | 템플릿에서 루트 접근 | `{Bind RemoveItem, Source=Root}` | 한 개짜리 인자에는 현재 아이템을 넘김 |
 | 이름 | `x:Name="input"` | `private BasicTextBox input;` |
+| 다른 요소에 바인딩 | `Text="{Bind Value, ElementName=volume}"` | 모든 요소가 만들어진 뒤 연결 |
+| 정적 값 / null | `Foreground="{x:Static local:Palette.Pink}"`, `Content="{x:Null}"` | 필드·프로퍼티 참조 / `null` |
+| WPF 표기 | `{Binding Title}`은 `{Bind Title}`과 같습니다 | |
+
+## 템플릿, 리소스, 스타일
+
+전부 빌드 시점에 풀립니다. 리소스 키나 스타일 대상이 틀리면 XAML 줄 번호가 붙은 빌드 오류(OX0012 등)가 나고, 런타임에는 사전 조회가 없습니다.
+
+```xml
+<Window x:Class="Demo.MainWindow" x:DataType="local:PeopleViewModel" Title="People">
+  <Window.Resources>
+    <Colour4 x:Key="Warm">#fab387</Colour4>
+    <Style TargetType="Button">                       <!-- 키 없는 스타일: 범위 안의 모든 Button -->
+      <Setter Property="CornerRadius" Value="12" />
+    </Style>
+    <Style x:Key="Danger" TargetType="Button">
+      <Setter Property="Background" Value="{StaticResource Warm}" />
+    </Style>
+    <DataTemplate x:Key="PersonCard" x:DataType="local:Person">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="{Bind Name}" />
+        <TextBlock Text="{Bind Age, StringFormat='({0})'}" Foreground="{StaticResource Warm}" />
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+
+  <ListBox ItemsSource="{Bind People}" SelectedItem="{Bind Selected}" ItemTemplate="{StaticResource PersonCard}" />
+</Window>
+```
+
+| 기능 | 표기 | 동작 |
+| --- | --- | --- |
+| 데이터 템플릿 | `<ListBox.ItemTemplate><DataTemplate>...` | 아이템 타입은 `ItemsSource`에서 추론합니다 (`BindableList<Person>`이면 `Person`). `x:DataType`으로 지정할 수도 있습니다 |
+| 텍스트 템플릿 | `DisplayMemberPath="Name"`, `DisplayMemberBinding="{Bind Name}"` | 그 멤버를 보여주는 `TextBlock` 템플릿으로 컴파일 |
+| 콘텐츠 템플릿 | `Content="{Bind Selected}"` + `<ContentControl.ContentTemplate>` | `XTemplate`의 아이템 타입은 같은 요소의 `X` 바인딩 타입에서 추론 |
+| 계층 템플릿 | `<HierarchicalDataTemplate ItemsSource="{Bind Children}">` | 각 아이템의 자식 목록을 바운드 카피로 넘김 (TreeView용) |
+| 컨트롤 템플릿 | `<Button.Template><ControlTemplate TargetType="Button">` + `{TemplateBinding Background}` + `<ContentPresenter />` | 컨트롤의 기본 모양을 통째로 교체 |
+| 아이템 바인딩 | `Binding="{Bind Done}"` (DataGrid 열 등) | `ItemBinding<Todo, bool>` 접근자로 컴파일. 리플렉션 없음 |
+| 리소스 | `<X.Resources>`의 `x:Key` 항목, `{StaticResource Key}` | 텍스트 리소스는 대상 타입의 리터럴로, 템플릿은 그 자리에서 컴파일, 다른 요소는 쓸 때마다 새로 생성 |
+| 공용 리소스 | 루트가 `<ResourceDictionary>`인 `.xaml` 파일 | 모든 페이지에서 보입니다 (WPF의 App.xaml 리소스 역할) |
+| 스타일 | `<Style TargetType="Button">`, `Style="{StaticResource Key}"`, `BasedOn`, `EventSetter` | 세터를 요소 생성 코드에 인라인. 요소에 직접 쓴 값이 이깁니다 |
+| 암시적 템플릿 | `<DataTemplate DataType="{x:Type local:Person}">` (키 없음) | 같은 아이템 타입의 ItemsControl에 자동 적용 |
+| 컬렉션 | `<local:Bag.Tags><x:String>a</x:String></local:Bag.Tags>`, `<ItemsPanelTemplate>` | 기존 컬렉션에 `Add`, 래퍼는 생략 가능 |
+| 기본 변환기 | `Converter=Not`, `BoolToVisibility`, `InverseBoolToVisibility`, `IsNull`, `IsNotNull`, `NullToVisibility` 등 | x:Class에 같은 이름이 없으면 `OsuXaml.Converters`에서 찾음 |
+| 전역 속성 | `Visibility="Collapsed"`, `HorizontalAlignment`, `ToolTip`, `ContextMenu` | `[assembly: XamlGlobalProperties(typeof(T))]`로 등록한 정적 `SetX(Drawable, 값)` |
+
+선택 상태(`SelectedItem`, `IsChecked`, `IsExpanded`, `IsOpen` 등)는 `Bindable<T>` 프로퍼티라서 뷰모델의 `Bindable<T>`와 양방향으로 연결됩니다. `SelectedItem`은 `Bindable<object>`지만 뷰모델의 `Bindable<Person>`과도 바로 묶입니다.
 
 ## WPF식 컨트롤
 
