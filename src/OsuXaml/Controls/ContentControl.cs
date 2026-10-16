@@ -61,6 +61,10 @@ namespace OsuXaml.Controls
         private ContentPresenter presenter;
         private bool presentedOnce;
 
+        // The content alignments this control gave the presented content, so later changes replace them and a detach undoes them.
+        private HorizontalAlignment? givenHorizontal;
+        private VerticalAlignment? givenVertical;
+
         private Colour4 foreground = Theme.Text;
         private HorizontalAlignment horizontalContentAlignment;
         private VerticalAlignment verticalContentAlignment;
@@ -310,7 +314,13 @@ namespace OsuXaml.Controls
             // Drawables handed in as Content belong to the caller, so they are detached rather than disposed,
             // getting back the margin and size the slot took over.
             if (!ownsPresented)
+            {
                 slot.Detach();
+                unalignContent(presented);
+            }
+
+            givenHorizontal = null;
+            givenVertical = null;
 
             contentArea.Remove(slot, true);
             slot = null;
@@ -321,10 +331,21 @@ namespace OsuXaml.Controls
         {
             var props = Layout.Get(drawable);
 
-            if (props.HorizontalAlignment == HorizontalAlignment.Stretch)
-                props.HorizontalAlignment = horizontalContentAlignment;
-            if (props.VerticalAlignment == VerticalAlignment.Stretch)
-                props.VerticalAlignment = verticalContentAlignment;
+            // Content that set its own alignment keeps it; an alignment this control gave is replaced on change.
+            if (props.HorizontalAlignment == HorizontalAlignment.Stretch || props.HorizontalAlignment == givenHorizontal)
+                props.HorizontalAlignment = (givenHorizontal = horizontalContentAlignment).Value;
+            if (props.VerticalAlignment == VerticalAlignment.Stretch || props.VerticalAlignment == givenVertical)
+                props.VerticalAlignment = (givenVertical = verticalContentAlignment).Value;
+        }
+
+        private void unalignContent(Drawable drawable)
+        {
+            var props = Layout.Get(drawable);
+
+            if (givenHorizontal != null && props.HorizontalAlignment == givenHorizontal)
+                props.HorizontalAlignment = HorizontalAlignment.Stretch;
+            if (givenVertical != null && props.VerticalAlignment == givenVertical)
+                props.VerticalAlignment = VerticalAlignment.Stretch;
         }
 
         private void applyTemplate()

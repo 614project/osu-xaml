@@ -92,5 +92,38 @@ namespace OsuXaml.Tests
             AddStep("take it out", () => border.Content = null);
             AddAssert("its own margin and size are back", () => content.Parent == null && content.Margin.Equals(new MarginPadding(10)) && content.RelativeSizeAxes == Axes.None);
         }
+
+        [Test]
+        public void ContentAlignmentCanChangeAfterLoad()
+        {
+            Border border = null;
+            TextBlock text = null, own = null;
+
+            AddStep("create", () =>
+            {
+                Child = border = new Border
+                {
+                    Size = new Vector2(300, 60),
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    Content = text = new TextBlock { Text = "content" },
+                };
+            });
+            AddUntilStep("centred", () => text.DrawWidth > 0 && near(text.ScreenSpaceDrawQuad.Centre.X, border.ScreenSpaceDrawQuad.Centre.X));
+
+            AddStep("align right", () => border.HorizontalContentAlignment = HorizontalAlignment.Right);
+            AddUntilStep("text at the right edge", () => near(text.ScreenSpaceDrawQuad.TopRight.X, border.ScreenSpaceDrawQuad.TopRight.X));
+
+            AddStep("replace the content", () => border.Content = own = new TextBlock { Text = "own alignment" });
+            AddAssert("the old content doesn't keep the control's alignment", () => Layout.GetHorizontalAlignment(text) == HorizontalAlignment.Stretch);
+
+            AddStep("content with its own alignment", () =>
+            {
+                own = new TextBlock { Text = "own alignment" };
+                Layout.SetHorizontalAlignment(own, HorizontalAlignment.Center);
+                border.Content = own;
+                border.HorizontalContentAlignment = HorizontalAlignment.Left;
+            });
+            AddUntilStep("keeps its own", () => own.DrawWidth > 0 && near(own.ScreenSpaceDrawQuad.Centre.X, border.ScreenSpaceDrawQuad.Centre.X));
+        }
     }
 }
