@@ -104,6 +104,10 @@ namespace OsuXaml.Controls
 
         protected override Drawable CreateItemsHost(Panel panel)
         {
+            // A panel filling the viewport would give the scroll content no height, so it grows with its rows instead.
+            panel.RelativeSizeAxes = Axes.X;
+            panel.Height = 0;
+
             chrome.Child = scroll = new ScrollViewer { Child = panel };
             return chrome;
         }

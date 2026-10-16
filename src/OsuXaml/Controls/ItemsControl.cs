@@ -25,6 +25,7 @@ namespace OsuXaml.Controls
         private readonly List<Drawable> containers = new List<Drawable>();
 
         private IEnumerable itemsSource;
+        private IEnumerable itemsView;
         private INotifyCollectionChanged observed;
         private DataTemplate itemTemplate;
         private Panel itemsPanel;
@@ -47,7 +48,8 @@ namespace OsuXaml.Controls
                     observed.CollectionChanged -= onCollectionChanged;
 
                 itemsSource = value;
-                observed = value as INotifyCollectionChanged;
+                itemsView = value == null ? null : CreateItemsView(value);
+                observed = itemsView as INotifyCollectionChanged;
 
                 if (observed != null)
                     observed.CollectionChanged += onCollectionChanged;
@@ -164,6 +166,12 @@ namespace OsuXaml.Controls
         /// <summary>The panel the containers are in, once loaded.</summary>
         protected Panel Panel => itemsPanel;
 
+        /// <summary>
+        /// The sequence shown for <paramref name="source"/>, called whenever <see cref="ItemsSource"/> is set.
+        /// Controls that sort return a view over the source; an observable view keeps the control in sync.
+        /// </summary>
+        protected virtual IEnumerable CreateItemsView(IEnumerable source) => source;
+
         /// <summary>The panel used when <see cref="ItemsPanel"/> isn't set.</summary>
         protected virtual Panel CreateDefaultItemsPanel() => new StackPanel();
 
@@ -224,7 +232,7 @@ namespace OsuXaml.Controls
             while (items.Count > 0)
                 removeAt(items.Count - 1);
 
-            IEnumerable source = itemsSource ?? localItems;
+            IEnumerable source = itemsView ?? localItems;
 
             foreach (object item in source)
                 insertItem(items.Count, item);

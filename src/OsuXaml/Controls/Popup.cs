@@ -33,12 +33,15 @@ namespace OsuXaml.Controls
     /// A full-size layer above the app content where popups open, so drop-downs and menus are never clipped
     /// by a ScrollViewer or masked parent. <see cref="Window"/> has one; without a Window one is added to the Game.
     /// Clicking outside a popup that doesn't <see cref="Popup.StaysOpen"/> closes it, and so does Escape.
+    /// The layer also shows tooltips (<see cref="ToolTipService"/>) and opens context menus on right-click (<see cref="ContextMenuService"/>).
     /// </summary>
     public partial class PopupLayer : CompositeDrawable
     {
         private static readonly ConditionalWeakTable<Game, PopupLayer> game_layers = new ConditionalWeakTable<Game, PopupLayer>();
 
         private readonly Container<PopupRoot> roots;
+        private readonly Container contextMenus;
+        private readonly ToolTipHost toolTips;
         private readonly List<Popup> open = new List<Popup>();
 
         public PopupLayer()
@@ -48,7 +51,10 @@ namespace OsuXaml.Controls
             InternalChildren = new Drawable[]
             {
                 new DismissArea(this),
+                // Context menus attached with ContextMenuService aren't part of the app's tree, so they join it here while open.
+                contextMenus = new Container { RelativeSizeAxes = Axes.Both },
                 roots = new Container<PopupRoot> { RelativeSizeAxes = Axes.Both },
+                toolTips = new ToolTipHost(this),
             };
         }
 
@@ -84,6 +90,18 @@ namespace OsuXaml.Controls
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Makes sure a layer exists for <paramref name="element"/> once it is in the tree, so tooltips and context menus
+        /// attached to it work in apps without a <see cref="Window"/>.
+        /// </summary>
+        internal static void EnsureFor(Drawable element)
+        {
+            if (element.IsLoaded)
+                Find(element);
+            else
+                element.OnLoadComplete += d => Find(d);
         }
 
         internal void Open(Popup popup)
@@ -135,6 +153,115 @@ namespace OsuXaml.Controls
 
         internal bool HasDismissable => open.Any(p => !p.StaysOpen);
 
+        /// <summary>
+        /// The deepest of <paramref name="candidates"/> that is visible under <paramref name="screenSpacePos"/> and belongs to this layer.
+        /// Over an open popup only that popup's content counts, so elements underneath don't react through it.
+        /// </summary>
+        internal Drawable FindTarget(IEnumerable<Drawable> candidates, Vector2 screenSpacePos)
+        {
+            PopupRoot over = null;
+
+            for (int i = open.Count - 1; i >= 0; i--)
+            {
+                var root = open[i].Root;
+
+                if (root.Parent == roots && root.IsPresent && root.ScreenSpaceDrawQuad.Contains(screenSpacePos))
+                {
+                    over = root;
+                    break;
+                }
+            }
+
+            Drawable best = null;
+            int bestDepth = -1;
+
+            foreach (var candidate in candidates)
+            {
+                if (candidate == null || !candidate.IsLoaded || !candidate.IsPresent || !candidate.ScreenSpaceDrawQuad.Contains(screenSpacePos))
+                    continue;
+
+                if (reachable(candidate, screenSpacePos, over, out int depth) && depth > bestDepth)
+                {
+                    best = candidate;
+                    bestDepth = depth;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>Whether nothing hides <paramref name="drawable"/> at the position (presence, masking) and its nearest layer is this one.</summary>
+        private bool reachable(Drawable drawable, Vector2 screenSpacePos, PopupRoot over, out int depth)
+        {
+            depth = 0;
+            bool insideOver = over == null;
+
+            for (var p = drawable.Parent; p != null; p = p.Parent)
+            {
+                depth++;
+
+                if (!p.IsPresent || (p.Masking && !p.ScreenSpaceDrawQuad.Contains(screenSpacePos)))
+                    return false;
+
+                if (p == over)
+                    insideOver = true;
+
+                switch (p)
+                {
+                    case PopupLayer layer:
+                        return layer == this && insideOver;
+
+                    case IPopupLayerProvider provider:
+                        return provider.PopupLayer == this && insideOver;
+
+                    case Game game:
+                        return game_layers.TryGetValue(game, out var gameLayer) && gameLayer == this && insideOver;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Opens the context menu of the deepest element under the position that has one.</summary>
+        internal bool TryOpenContextMenu(Vector2 screenSpacePos)
+        {
+            var target = FindTarget(ContextMenuService.Targets, screenSpacePos);
+            var menu = target == null ? null : ContextMenuService.GetContextMenu(target);
+
+            if (menu == null)
+                return false;
+
+            menu.OpenFor(this, target);
+            return true;
+        }
+
+        /// <summary>Puts a context menu that isn't in the drawable tree into this layer so its popup can open.</summary>
+        internal void HostContextMenu(ContextMenu menu)
+        {
+            if (menu.Parent == null)
+                contextMenus.Add(menu);
+        }
+
+        /// <summary>Takes a closed context menu back out of the layer, without disposing it, so menus of removed elements don't pile up.</summary>
+        internal void ReleaseContextMenu(ContextMenu menu)
+        {
+            if (IsDisposed)
+                return;
+
+            Schedule(() =>
+            {
+                if (menu.Parent == contextMenus && !menu.IsOpen.Value)
+                    contextMenus.Remove(menu, false);
+            });
+        }
+
+        protected override bool OnMouseDown(MouseDownEvent e)
+        {
+            // The layer sits above the app, so it sees presses first; a press and release can fall within one frame.
+            toolTips.SuppressHovered();
+            return e.Button == MouseButton.Right && TryOpenContextMenu(e.ScreenSpaceMousePosition);
+        }
+
         protected override bool OnKeyDown(KeyDownEvent e)
         {
             if (e.Key != Key.Escape)
@@ -166,6 +293,11 @@ namespace OsuXaml.Controls
             protected override bool OnMouseDown(MouseDownEvent e)
             {
                 layer.DismissAll();
+
+                // Right-clicking elsewhere while a menu is open opens the context menu there, as desktop apps do.
+                if (e.Button == MouseButton.Right)
+                    layer.TryOpenContextMenu(e.ScreenSpaceMousePosition);
+
                 return true;
             }
         }
@@ -406,7 +538,13 @@ namespace OsuXaml.Controls
         }
 
         // Clicks, hover and scrolling inside a popup stay inside it.
-        protected override bool OnMouseDown(MouseDownEvent e) => true;
+        protected override bool OnMouseDown(MouseDownEvent e)
+        {
+            if (e.Button == MouseButton.Right)
+                Owner.Layer?.TryOpenContextMenu(e.ScreenSpaceMousePosition);
+
+            return true;
+        }
 
         protected override bool OnHover(HoverEvent e) => true;
 
