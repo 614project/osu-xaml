@@ -632,6 +632,9 @@ namespace OsuXaml.Controls
 
         private bool isTopLevel => parentMenu != null && !parentMenu.HostsSubmenuRows;
 
+        // Like WPF menus, clicking an item leaves keyboard focus where it was, so commands act on the focused control.
+        public override bool ChangeFocusOnClick => false;
+
         /// <summary>Clicks the item as the mouse would: opens its submenu, or runs it and closes the menu.</summary>
         public void PerformClick()
         {
