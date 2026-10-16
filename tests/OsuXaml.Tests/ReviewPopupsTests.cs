@@ -205,6 +205,34 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void ContextMenuAtTheBottomRightCornerDoesNotCoverThePointer()
+        {
+            Border full = null;
+
+            AddStep("full-window element with the menu", () =>
+            {
+                full = new Border { RelativeSizeAxes = Axes.Both, Background = Theme.Surface };
+                ContextMenuService.SetContextMenu(full, areaMenu);
+                window.Child = full;
+            });
+            AddUntilStep("loaded", () => full.IsLoaded && full.DrawWidth > 0);
+            AddStep("right-click near the bottom right corner", () =>
+            {
+                InputManager.MoveMouseTo(window.ScreenSpaceDrawQuad.BottomRight - new Vector2(10));
+                InputManager.Click(MouseButton.Right);
+            });
+            AddUntilStep("menu showing", () => areaMenu.IsOpen.Value && copy.IsLoaded && copy.IsPresent && copy.DrawWidth > 0);
+            AddWaitStep("settle", 3);
+            AddAssert("opens above and to the left of the pointer", () =>
+            {
+                var mouse = InputManager.CurrentState.Mouse.Position;
+                var quad = window.PopupLayer.OpenPopups[0].Child.ScreenSpaceDrawQuad;
+                return quad.BottomRight.X <= mouse.X + 1 && quad.BottomRight.Y <= mouse.Y + 1
+                       && quad.BottomRight.X >= mouse.X - 2 && quad.BottomRight.Y >= mouse.Y - 2;
+            });
+        }
+
+        [Test]
         public void ClickingASeparatorKeepsTheMenuOnTheKeyboard()
         {
             Separator separator = null;

@@ -510,6 +510,9 @@ namespace OsuXaml.Controls
 
                 case PlacementMode.Mouse:
                     position = container.ToLocalSpace(Owner.MousePosition);
+                    // Open up or to the left of the pointer when there is no room, instead of sliding under it.
+                    if (position.X + size.X > bounds.X && position.X - size.X >= 0) position.X -= size.X;
+                    if (position.Y + size.Y > bounds.Y && position.Y - size.Y >= 0) position.Y -= size.Y;
                     break;
 
                 case PlacementMode.Center:
