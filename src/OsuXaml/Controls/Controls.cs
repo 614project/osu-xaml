@@ -277,7 +277,9 @@ namespace OsuXaml.Controls
             set => LengthLimit = value > 0 ? value : null;
         }
 
-        public bool IsReadOnly
+        /// <summary>When true the text can be selected and copied but not changed.</summary>
+        /// <remarks>Hides the container's collection flag of the same name, which XAML never needs.</remarks>
+        public new bool IsReadOnly
         {
             get => ReadOnly;
             set => ReadOnly = value;

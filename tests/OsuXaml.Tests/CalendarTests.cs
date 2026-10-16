@@ -227,6 +227,54 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void DatePickerOpensFromTheKeyboard()
+        {
+            DatePicker picker = null;
+            OsuXaml.Controls.TextBox box = null;
+
+            AddStep("create", () =>
+            {
+                picker = new DatePicker { Width = 250, SelectedDate = { Value = october16 } };
+                Child = new Window { Child = picker };
+                box = picker.ChildrenOfType<OsuXaml.Controls.TextBox>().Single();
+            });
+
+            AddStep("focus the box", () => click(box));
+            AddAssert("box focused", () => box.HasFocus);
+            AddStep("F4", () => InputManager.Key(Key.F4));
+            AddAssert("open", () => picker.IsDropDownOpen.Value);
+            AddUntilStep("calendar has focus", () => picker.Calendar.HasFocus);
+            AddStep("F4 again", () => InputManager.Key(Key.F4));
+            AddAssert("closed", () => !picker.IsDropDownOpen.Value);
+
+            AddStep("focus the box", () => click(box));
+            AddStep("alt+down", () =>
+            {
+                InputManager.PressKey(Key.AltLeft);
+                InputManager.Key(Key.Down);
+                InputManager.ReleaseKey(Key.AltLeft);
+            });
+            AddAssert("open", () => picker.IsDropDownOpen.Value);
+            AddUntilStep("calendar has focus", () => picker.Calendar.HasFocus);
+            AddStep("alt+up", () =>
+            {
+                InputManager.PressKey(Key.AltLeft);
+                InputManager.Key(Key.Up);
+                InputManager.ReleaseKey(Key.AltLeft);
+            });
+            AddAssert("closed, date kept", () => !picker.IsDropDownOpen.Value && picker.SelectedDate.Value == october16);
+
+            AddStep("F4", () =>
+            {
+                click(box);
+                InputManager.Key(Key.F4);
+            });
+            AddAssert("open", () => picker.IsDropDownOpen.Value);
+            AddStep("escape", () => InputManager.Key(Key.Escape));
+            AddAssert("closed by escape", () => !picker.IsDropDownOpen.Value);
+        }
+
+        [Test]
         public void DatePickerWithoutAPanelGetsAWidth()
         {
             DatePicker picker = null;

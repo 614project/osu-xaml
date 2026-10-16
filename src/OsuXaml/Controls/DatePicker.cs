@@ -7,6 +7,7 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Events;
 using osuTK;
+using osuTK.Input;
 
 namespace OsuXaml.Controls
 {
@@ -22,6 +23,7 @@ namespace OsuXaml.Controls
     /// <see cref="SelectedDate"/> binds two-way. Picking a day (or pressing Enter in the calendar) closes the calendar;
     /// a date typed into the box is read when Enter is pressed or the box loses focus, and text that isn't a date is
     /// put back and reported through <see cref="DateValidationError"/>. <see cref="PlaceholderText"/> shows while no date is selected.
+    /// F4 or Alt+Down opens and closes the calendar from the keyboard, and Escape closes it.
     /// </summary>
     public partial class DatePicker : CompositeDrawable, ILayoutElement
     {
@@ -220,6 +222,21 @@ namespace OsuXaml.Controls
                 else if (Calendar.IsLoaded && GetContainingFocusManager()?.ChangeFocus(Calendar) == true)
                     focusCalendar = false;
             }
+        }
+
+        protected override bool OnKeyDown(KeyDownEvent e)
+        {
+            // WPF toggles the drop-down with F4 or Alt+Down/Up from the box or the open calendar. Neither handles these keys,
+            // so they reach the picker here.
+            bool toggle = e.Key == Key.F4 || (e.AltPressed && (e.Key == Key.Down || e.Key == Key.Up));
+
+            if (!e.Repeat && toggle && (textBox.HasFocus || Calendar.HasFocus))
+            {
+                IsDropDownOpen.Value = !IsDropDownOpen.Value;
+                return true;
+            }
+
+            return base.OnKeyDown(e);
         }
 
         public Vector2 Measure(Vector2 availableSize) => new Vector2(default_width, Height);

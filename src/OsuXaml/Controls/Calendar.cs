@@ -458,7 +458,8 @@ namespace OsuXaml.Controls
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {
-            if (!HasFocus)
+            // Alt+arrows belong to a DatePicker hosting this calendar, which closes on them.
+            if (!HasFocus || e.AltPressed)
                 return false;
 
             if (displayMode == CalendarMode.Month)
