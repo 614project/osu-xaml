@@ -176,5 +176,18 @@ namespace OsuXaml.Tests
             AddStep("click it", () => first.TriggerClick());
             AddAssert("selected", () => list.SelectedItem.Value == first && first.IsSelected);
         }
+
+        [Test]
+        public void UpArrowWithAnIndexPastTheEndStaysInTheList()
+        {
+            ListBox list = null;
+
+            AddStep("create", () => Child = list = letters(SelectionMode.Single));
+            AddUntilStep("loaded", () => list.IsLoaded);
+            AddStep("focus", () => GetContainingFocusManager()?.ChangeFocus(list));
+            AddStep("select an index past the end", () => list.SelectedIndex.Value = 10);
+            AddStep("press Up", () => list.TriggerEvent(new osu.Framework.Input.Events.KeyDownEvent(new osu.Framework.Input.States.InputState(), Key.Up)));
+            AddAssert("an item in the list is selected", () => list.SelectedIndex.Value >= 0 && list.SelectedIndex.Value < 3 && list.SelectedItem.Value != null);
+        }
     }
 }

@@ -232,6 +232,9 @@ namespace OsuXaml.Controls
                     return base.OnKeyDown(e);
             }
 
+            // SelectedIndex may still be past the end (set before the items it names exist).
+            index = System.Math.Clamp(index, 0, Items.Count - 1);
+
             anchor = index;
             SelectedIndex.Value = index;
             ScrollIntoView(Items[index]);
