@@ -42,6 +42,8 @@ namespace OsuXaml.Controls
 
             SelectedItems.BindCollectionChanged((_, _) =>
             {
+                SelectionStateChanged();
+
                 if (!updatingSelectedItems)
                     selectedItemsChanged();
             });
@@ -83,6 +85,8 @@ namespace OsuXaml.Controls
         }
 
         public override bool AcceptsFocus => true;
+
+        protected override bool IsUpdatingSelection => updatingSelectedItems;
 
         /// <summary>Scrolls until the item's container is visible.</summary>
         public void ScrollIntoView(object item)

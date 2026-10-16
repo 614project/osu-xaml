@@ -258,5 +258,54 @@ namespace OsuXaml.Tests
             AddStep("press Up", () => list.TriggerEvent(new osu.Framework.Input.Events.KeyDownEvent(new osu.Framework.Input.States.InputState(), Key.Up)));
             AddAssert("an item in the list is selected", () => list.SelectedIndex.Value >= 0 && list.SelectedIndex.Value < 3 && list.SelectedItem.Value != null);
         }
+
+        [Test]
+        public void SelectionChangedIsRaisedOncePerChange()
+        {
+            var items = new BindableList<string>(new[] { "a", "b", "c" });
+            var scope = new BindingScope();
+            ListBox list = null;
+            int raised = 0;
+
+            AddStep("create", () =>
+            {
+                list = new ListBox { Size = new Vector2(200, 200), ItemsSource = XamlBinding.ListCopy(scope, items) };
+                Child = list;
+            });
+            AddUntilStep("loaded", () => list.IsLoaded);
+            AddStep("count", () => list.SelectionChanged += () => raised++);
+
+            AddStep("click b", () => list.ContainerFromIndex(1).TriggerClick());
+            AddAssert("raised once", () => raised == 1);
+
+            AddStep("add an item", () =>
+            {
+                raised = 0;
+                items.Add("d");
+            });
+            AddAssert("selection didn't change, not raised", () => raised == 0 && (string)list.SelectedItem.Value == "b");
+
+            AddStep("insert before the selection", () =>
+            {
+                raised = 0;
+                items.Insert(0, "z");
+            });
+            AddAssert("same item selected, not raised", () => raised == 0 && (string)list.SelectedItem.Value == "b" && list.SelectedIndex.Value == 2);
+
+            AddStep("code selects by index", () =>
+            {
+                raised = 0;
+                list.SelectedIndex.Value = 3;
+            });
+            AddAssert("raised once", () => raised == 1 && (string)list.SelectedItem.Value == "c");
+
+            AddStep("multiple mode toggles b", () =>
+            {
+                raised = 0;
+                list.SelectionMode = SelectionMode.Multiple;
+                list.SelectContainer(list.ContainerFromIndex(2));
+            });
+            AddAssert("raised once", () => raised == 1 && list.SelectedItems.Count == 2);
+        }
     }
 }

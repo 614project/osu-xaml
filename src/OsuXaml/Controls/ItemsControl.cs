@@ -394,6 +394,10 @@ namespace OsuXaml.Controls
     public partial class Selector : ItemsControl
     {
         private bool syncing;
+        private int selectionDepth;
+        private object raisedItem;
+        private int selectionVersion;
+        private int raisedVersion;
 
         public Selector()
         {
@@ -440,15 +444,41 @@ namespace OsuXaml.Controls
         /// <summary>Re-applies <see cref="ISelectableItem.IsSelected"/> to every container and raises the events.</summary>
         protected void SelectionHasChanged()
         {
-            for (int i = 0; i < Containers.Count; i++)
+            selectionDepth++;
+
+            try
             {
-                if (Containers[i] is ISelectableItem selectable)
-                    selectable.IsSelected = IsSelected(Items[i]);
+                for (int i = 0; i < Containers.Count; i++)
+                {
+                    if (Containers[i] is ISelectableItem selectable)
+                        selectable.IsSelected = IsSelected(Items[i]);
+                }
+
+                OnSelectionChanged();
+            }
+            finally
+            {
+                selectionDepth--;
             }
 
-            OnSelectionChanged();
+            // Keeping SelectedItem, SelectedIndex (and SelectedItems) in step re-enters here, and item changes that leave the
+            // selection alone end here too; the event reports the settled selection once, and only when it really changed.
+            if (selectionDepth > 0 || IsUpdatingSelection)
+                return;
+
+            if (Equals(raisedItem, SelectedItem.Value) && raisedVersion == selectionVersion)
+                return;
+
+            raisedItem = SelectedItem.Value;
+            raisedVersion = selectionVersion;
             SelectionChanged?.Invoke();
         }
+
+        /// <summary>Multi-select controls call this when selection state other than <see cref="SelectedItem"/> changes.</summary>
+        protected void SelectionStateChanged() => selectionVersion++;
+
+        /// <summary>Whether a multi-step selection update is under way; <see cref="SelectionChanged"/> waits for it to finish.</summary>
+        protected virtual bool IsUpdatingSelection => false;
 
         protected override void OnItemsChanged()
         {
