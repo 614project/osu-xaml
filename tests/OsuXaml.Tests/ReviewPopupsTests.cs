@@ -456,6 +456,31 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void TopPlacementFlipsBelowAtTheTopEdge()
+        {
+            Border target = null;
+            Popup popup = null;
+            Border content = null;
+
+            AddStep("popup above an element at the top", () =>
+            {
+                target = new Border { Size = new Vector2(120, 30), Background = Theme.Surface };
+                content = new Border { Size = new Vector2(100, 60), Background = Theme.Accent };
+                popup = new Popup { PlacementTarget = target, Placement = PlacementMode.Top, Child = content };
+
+                var panel = new StackPanel();
+                panel.Add(target);
+                panel.Add(popup);
+                window.Child = panel;
+            });
+            AddUntilStep("loaded", () => popup.IsLoaded && target.DrawWidth > 0);
+            AddStep("open", () => popup.IsOpen.Value = true);
+            AddUntilStep("showing", () => content.IsLoaded && content.DrawHeight > 0);
+            AddWaitStep("settle", 3);
+            AddAssert("below the element instead of over it", () => content.ScreenSpaceDrawQuad.TopLeft.Y >= target.ScreenSpaceDrawQuad.BottomLeft.Y - 1);
+        }
+
+        [Test]
         public void ClickingASeparatorKeepsTheMenuOnTheKeyboard()
         {
             Separator separator = null;

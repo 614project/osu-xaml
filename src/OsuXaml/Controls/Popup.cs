@@ -498,6 +498,8 @@ namespace OsuXaml.Controls
             {
                 case PlacementMode.Top:
                     position = new Vector2(topLeft.X, topLeft.Y - size.Y);
+                    // Flip below the target when there is no room above.
+                    if (position.Y < 0 && bottomRight.Y + size.Y <= bounds.Y) position.Y = bottomRight.Y;
                     break;
 
                 case PlacementMode.Right:
