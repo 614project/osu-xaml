@@ -29,7 +29,7 @@ namespace OsuXaml.Tests
       <RowDefinition Height=""100"" />
     </Grid.RowDefinitions>
     <Border Background=""#313244"" />
-    <GridSplitter Grid.Column=""1"" Grid.RowSpan=""3"" Width=""5"" HorizontalAlignment=""Stretch"" Background=""#45475a"" DragCompleted=""OnSplitterDone"" />
+    <GridSplitter Grid.Column=""1"" Grid.RowSpan=""3"" Width=""5"" HorizontalAlignment=""Stretch"" Background=""#45475a"" ShowsPreview=""False"" DragCompleted=""OnSplitterDone"" />
     <GridSplitter Grid.Row=""1"" Grid.Column=""2"" Height=""5"" HorizontalAlignment=""Stretch"" ResizeDirection=""Rows"" ResizeBehavior=""PreviousAndNext"" DragIncrement=""10"" KeyboardIncrement=""20"" />
   </Grid>");
 
@@ -163,6 +163,31 @@ namespace OsuXaml.Tests
                 splitter.EndResize();
             });
             AddUntilStep("rounded to one step", () => width(0) == 175);
+        }
+
+        [Test]
+        public void PreviewAppliesOnlyWhenTheDragEnds()
+        {
+            createColumns("150,Auto,*", s => s.ShowsPreview = true);
+
+            AddStep("drag 50", () =>
+            {
+                splitter.BeginResize();
+                splitter.ResizeTo(50);
+            });
+            AddWaitStep("let layout run", 2);
+            AddAssert("columns unchanged while dragging", () => width(0) == 150);
+            AddStep("release", () => splitter.EndResize());
+            AddUntilStep("applied on release", () => width(0) == 200);
+
+            AddStep("drag and cancel", () =>
+            {
+                splitter.BeginResize();
+                splitter.ResizeTo(-60);
+                splitter.CancelResize();
+            });
+            AddWaitStep("let layout run", 2);
+            AddAssert("cancelled preview changes nothing", () => width(0) == 200);
         }
 
         [Test]

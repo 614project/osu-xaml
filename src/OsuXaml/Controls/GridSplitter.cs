@@ -52,6 +52,7 @@ namespace OsuXaml.Controls
         private const float default_thickness = 5;
 
         private readonly Box background;
+        private readonly Box preview;
         private Colour4 backgroundColour = Theme.Border;
         private GridResizeDirection resizeDirection;
         private bool sizeIsDefault = true;
@@ -65,11 +66,17 @@ namespace OsuXaml.Controls
         private float firstStart;
         private float secondStart;
         private GridLength[] originalLengths;
+        private float pendingOffset;
 
         public GridSplitter()
         {
             base.Width = default_thickness;
-            InternalChild = background = new Box { RelativeSizeAxes = Axes.Both, Colour = backgroundColour };
+
+            InternalChildren = new Drawable[]
+            {
+                background = new Box { RelativeSizeAxes = Axes.Both, Colour = backgroundColour },
+                preview = new Box { RelativeSizeAxes = Axes.Both, Colour = Theme.Accent, Alpha = 0 },
+            };
         }
 
         /// <summary>Raised when a drag (or keyboard resize) starts.</summary>
@@ -117,6 +124,12 @@ namespace OsuXaml.Controls
 
         /// <summary>Drags move in steps of this many pixels (1 by default).</summary>
         public float DragIncrement { get; set; } = 1;
+
+        /// <summary>
+        /// When true, dragging moves a preview of the splitter and the tracks resize only when the drag ends
+        /// (Escape cancels it). Useful when the content is expensive to lay out.
+        /// </summary>
+        public bool ShowsPreview { get; set; }
 
         /// <summary>How far one arrow key press moves the splitter (10 pixels by default).</summary>
         public float KeyboardIncrement { get; set; } = 10;
@@ -266,7 +279,16 @@ namespace OsuXaml.Controls
                 return;
 
             offset = Math.Clamp(offset, lowest, highest);
-            apply(firstStart + offset, secondStart - offset);
+
+            if (ShowsPreview)
+            {
+                pendingOffset = offset;
+                preview.Position = resizingColumns ? new Vector2(offset, 0) : new Vector2(0, offset);
+                preview.Alpha = 0.6f;
+            }
+            else
+                apply(firstStart + offset, secondStart - offset);
+
             DragDelta?.Invoke(offset);
         }
 
@@ -275,6 +297,9 @@ namespace OsuXaml.Controls
         {
             if (!IsDragging)
                 return;
+
+            if (ShowsPreview && pendingOffset != 0)
+                apply(firstStart + pendingOffset, secondStart - pendingOffset);
 
             clearResize();
             DragCompleted?.Invoke();
@@ -298,6 +323,8 @@ namespace OsuXaml.Controls
             definitions = null;
             first = second = null;
             originalLengths = null;
+            pendingOffset = 0;
+            preview.FadeOut(100, Easing.OutQuint);
             updateColour(true);
         }
 
