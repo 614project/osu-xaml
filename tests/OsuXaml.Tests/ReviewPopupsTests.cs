@@ -330,6 +330,31 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void PopupMovedToAnotherWindowOpensThere()
+        {
+            Window second = null;
+            ComboBox combo = null;
+
+            AddStep("combo in the first window", () => combo = createCombo(false));
+            AddUntilStep("loaded", () => combo.IsLoaded && combo.DrawWidth > 0);
+            AddStep("open and close", () =>
+            {
+                combo.IsDropDownOpen.Value = true;
+                combo.IsDropDownOpen.Value = false;
+            });
+            AddStep("move the combo to a new window", () =>
+            {
+                ((StackPanel)window.Child).Remove(combo, false);
+                var panel = new StackPanel { Padding = new MarginPadding(20) };
+                panel.Add(combo);
+                Child = second = new Window { Child = panel };
+            });
+            AddUntilStep("loaded again", () => combo.Parent != null && second.IsLoaded && combo.DrawWidth > 0);
+            AddStep("open", () => combo.IsDropDownOpen.Value = true);
+            AddUntilStep("opens in the new window's layer", () => second.PopupLayer.OpenPopups.Count == 1 && combo.ContainerFromIndex(0).IsPresent);
+        }
+
+        [Test]
         public void ClickingASeparatorKeepsTheMenuOnTheKeyboard()
         {
             Separator separator = null;

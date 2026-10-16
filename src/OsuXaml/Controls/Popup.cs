@@ -384,7 +384,8 @@ namespace OsuXaml.Controls
         {
             if (isOpen)
             {
-                layer ??= PopupLayer.Find(this);
+                // Looked up on every open: the popup (or its owner) may have moved to another window since.
+                layer = PopupLayer.Find(this);
 
                 if (layer == null)
                 {
