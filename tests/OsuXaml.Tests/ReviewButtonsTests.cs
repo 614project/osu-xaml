@@ -254,5 +254,36 @@ namespace OsuXaml.Tests
             AddWaitStep("wait", 10);
             AddAssert("no clicks without a press", () => clicks == afterReAdd && !button.IsPressed);
         }
+
+        [Test]
+        public void ButtonMovedOutOfAPanelSizesToItsContent()
+        {
+            Button button = null;
+            Container holder = null;
+            StackPanel panel = null;
+            float width = 0;
+
+            AddStep("create", () =>
+            {
+                panel = new StackPanel { Width = 300 };
+                panel.Add(button = new Button { Content = "Move me" });
+                holder = new Container { RelativeSizeAxes = Axes.Both };
+                Child = new Container { RelativeSizeAxes = Axes.Both, Children = new Drawable[] { holder, panel } };
+            });
+            AddUntilStep("stretched in the panel", () => near(button.DrawWidth, 300));
+
+            AddStep("move it out", () =>
+            {
+                panel.Remove(button, false);
+                holder.Add(button);
+            });
+            AddUntilStep("sized to its content", () => button.DrawWidth > 30 && button.DrawWidth < 200 && button.DrawHeight > 20);
+            AddStep("longer text", () =>
+            {
+                width = button.DrawWidth;
+                button.Content = "Moved out of the panel";
+            });
+            AddUntilStep("follows its content", () => button.DrawWidth > width + 20);
+        }
     }
 }

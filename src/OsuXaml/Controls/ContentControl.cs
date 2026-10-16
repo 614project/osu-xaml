@@ -76,6 +76,10 @@ namespace OsuXaml.Controls
         private bool sizeToContentX;
         private bool sizeToContentY;
 
+        // No size of its own when loaded; such a control also sizes to its content once it is moved out of a panel.
+        private bool autoWidth;
+        private bool autoHeight;
+
         protected ContentControl()
         {
             InternalChild = Chrome = new Container
@@ -391,19 +395,26 @@ namespace OsuXaml.Controls
         {
             base.LoadComplete();
 
-            sizeToContentX = !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.X) && !AutoSizeAxes.HasFlag(Axes.X) && Width == 0;
-            sizeToContentY = !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.Y) && !AutoSizeAxes.HasFlag(Axes.Y) && Height == 0;
+            autoWidth = !RelativeSizeAxes.HasFlag(Axes.X) && !AutoSizeAxes.HasFlag(Axes.X) && Width == 0;
+            autoHeight = !RelativeSizeAxes.HasFlag(Axes.Y) && !AutoSizeAxes.HasFlag(Axes.Y) && Height == 0;
+            sizeToContentX = !(Parent is Slot) && autoWidth;
+            sizeToContentY = !(Parent is Slot) && autoHeight;
         }
 
         protected override void UpdateAfterChildren()
         {
             base.UpdateAfterChildren();
 
-            if (sizeToContentX || sizeToContentY)
+            // Out of a panel, nothing else sizes a control that was loaded in one (the slot's stretch is undone on removal).
+            bool inPanel = Parent is Slot;
+            bool sizeX = sizeToContentX || (autoWidth && !inPanel);
+            bool sizeY = sizeToContentY || (autoHeight && !inPanel);
+
+            if (sizeX || sizeY)
             {
                 var desired = Measure(new Vector2(float.PositiveInfinity));
-                if (sizeToContentX) Width = desired.X;
-                if (sizeToContentY) Height = desired.Y;
+                if (sizeX) Width = desired.X;
+                if (sizeY) Height = desired.Y;
             }
 
             if (templateSlot != null)
