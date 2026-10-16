@@ -24,7 +24,7 @@ namespace OsuXaml.Controls
         private readonly StackPanel strip;
         private readonly Grip grip;
         private readonly ContentPresenter header;
-        private Orientation orientation;
+        private Orientation orientation = Orientation.Horizontal;
 
         public ToolBar()
         {
@@ -183,7 +183,7 @@ namespace OsuXaml.Controls
         /// <summary>The dotted handle at the start of a toolbar.</summary>
         private partial class Grip : CompositeDrawable
         {
-            private Orientation orientation;
+            private Orientation orientation = Orientation.Horizontal;
 
             public Grip()
             {
