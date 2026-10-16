@@ -393,5 +393,45 @@ namespace OsuXaml.Tests
             });
             AddAssert("range runs from a to e", () => string.Join(",", list.SelectedItems.Cast<string>().OrderBy(s => s)) == "a,d,e");
         }
+
+        [Test]
+        public void ClickingJustRightOfAHeaderEdgeDoesNotSortTheNextColumn()
+        {
+            var people = ListsTestData.People();
+            var scope = new BindingScope();
+            DataGrid grid = null;
+            DataGridTextColumn name = null, age = null;
+
+            AddStep("create", () =>
+            {
+                grid = new DataGrid { Size = new Vector2(400, 200), ItemsSource = XamlBinding.ListCopy(scope, people) };
+                grid.Columns.Add(name = new DataGridTextColumn { Header = "Name", Binding = ListsTestData.NameBinding, Width = GridLength.Parse("120") });
+                grid.Columns.Add(age = new DataGridTextColumn { Header = "Age", Binding = ListsTestData.AgeBinding, Width = GridLength.Parse("*") });
+                Child = grid;
+            });
+            AddUntilStep("laid out", () => name.ActualWidth > 0);
+
+            AddStep("double-click 2px right of the Name edge", () =>
+            {
+                var header = grid.ColumnHeaders.Headers.First();
+                InputManager.MoveMouseTo(header.ToScreenSpace(new Vector2(header.DrawWidth + 2, header.DrawHeight / 2)));
+                InputManager.Click(MouseButton.Left);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("Age not sorted", () => age.SortDirection == null);
+            AddUntilStep("Name sized to its content", () => name.Width.Type == GridUnitType.Auto);
+
+            AddStep("narrow Name below its header text", () => name.Width = GridLength.Parse("30"));
+            AddUntilStep("narrowed", () => ListsTestData.Near(grid.ColumnHeaders.Headers.First().DrawWidth, 30));
+            AddStep("double-click 2px right of the Name edge again", () =>
+            {
+                var header = grid.ColumnHeaders.Headers.First();
+                InputManager.MoveMouseTo(header.ToScreenSpace(new Vector2(header.DrawWidth + 2, header.DrawHeight / 2)));
+                InputManager.Click(MouseButton.Left);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("Age still not sorted", () => age.SortDirection == null);
+            AddUntilStep("Name sized to its content again", () => name.Width.Type == GridUnitType.Auto);
+        }
     }
 }
