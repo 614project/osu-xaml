@@ -331,5 +331,30 @@ namespace OsuXaml.Tests
             AddStep("remove the template", () => box.Template = null);
             AddUntilStep("default box back", () => box.ChildrenOfType<SpriteIcon>().Single().Parent.IsPresent);
         }
+
+        [Test]
+        public void HeaderTextFollowsForegroundChanges()
+        {
+            Expander expander = null;
+            GroupBox group = null;
+
+            AddStep("create", () =>
+            {
+                var panel = new StackPanel { Width = 300 };
+                panel.Add(expander = new Expander { Header = "Details", Content = "Body" });
+                panel.Add(group = new GroupBox { Header = "Account", Content = "Body" });
+                Child = panel;
+            });
+            AddUntilStep("loaded", () => expander.PresentedHeader != null && group.PresentedHeader != null);
+
+            AddStep("change Foreground", () =>
+            {
+                expander.Foreground = Colour4.Red;
+                group.Foreground = Colour4.Red;
+            });
+            AddAssert("expander header follows, like its content", () => ((TextBlock)expander.PresentedHeader).Colour == Colour4.Red && ((TextBlock)expander.PresentedContent).Colour == Colour4.Red);
+            AddAssert("header text unchanged", () => ((TextBlock)expander.PresentedHeader).Text == "Details");
+            AddAssert("group box header keeps its own style", () => ((TextBlock)group.PresentedHeader).Colour == Theme.SubtleText);
+        }
     }
 }
