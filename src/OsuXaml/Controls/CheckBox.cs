@@ -96,7 +96,10 @@ namespace OsuXaml.Controls
             if (!isEnabled)
                 return;
 
-            IsChecked.Value = !IsChecked.Value;
+            // A disabled bindable (e.g. a locked view model setting) can't be written; the click is still reported.
+            if (!IsChecked.Disabled)
+                IsChecked.Value = !IsChecked.Value;
+
             Click?.Invoke();
         }
 
