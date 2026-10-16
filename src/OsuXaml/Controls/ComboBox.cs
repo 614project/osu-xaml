@@ -70,6 +70,9 @@ namespace OsuXaml.Controls
                 },
             });
 
+            // The list lives in the popup layer and keeps updating while the box itself is hidden.
+            popup.Child.OnUpdate += _ => closeIfHidden();
+
             face = new Container
             {
                 RelativeSizeAxes = Axes.Both,
@@ -587,6 +590,23 @@ namespace OsuXaml.Controls
             }
 
             updateFace();
+        }
+
+        /// <summary>Closes the list once the box (or anything around it) is hidden, as WPF closes it when the box loses focus.</summary>
+        private void closeIfHidden()
+        {
+            if (!IsDropDownOpen.Value)
+                return;
+
+            for (Drawable d = this; d != null; d = d.Parent)
+            {
+                // A popup's content fades in from nothing, so a combo box inside another popup isn't hidden by that.
+                if (!d.IsPresent && !(d is PopupRoot))
+                {
+                    IsDropDownOpen.Value = false;
+                    return;
+                }
+            }
         }
 
         private void setHighlight(int index)

@@ -425,6 +425,37 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void HidingAnOpenComboBoxClosesItsList()
+        {
+            ComboBox combo = null;
+            StackPanel panel = null;
+
+            AddStep("combo", () =>
+            {
+                combo = createCombo(false);
+                panel = (StackPanel)window.Child;
+            });
+            AddUntilStep("loaded", () => combo.IsLoaded && combo.DrawWidth > 0);
+            AddStep("click the box", () =>
+            {
+                InputManager.MoveMouseTo(combo);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddUntilStep("showing", () => combo.ContainerFromIndex(0)?.IsLoaded == true && combo.IsDropDownOpen.Value);
+            AddStep("collapse the combo", () => Layout.SetVisibility(combo, OsuXaml.Controls.Visibility.Collapsed));
+            AddUntilStep("list closed", () => !combo.IsDropDownOpen.Value && window.PopupLayer.OpenPopups.Count == 0);
+
+            AddStep("show it and open again", () =>
+            {
+                Layout.SetVisibility(combo, OsuXaml.Controls.Visibility.Visible);
+                combo.IsDropDownOpen.Value = true;
+            });
+            AddUntilStep("showing", () => combo.ContainerFromIndex(0)?.IsPresent == true && window.PopupLayer.OpenPopups.Count == 1);
+            AddStep("hide the panel around it", () => panel.Alpha = 0);
+            AddUntilStep("list closed", () => !combo.IsDropDownOpen.Value && window.PopupLayer.OpenPopups.Count == 0);
+        }
+
+        [Test]
         public void ClickingASeparatorKeepsTheMenuOnTheKeyboard()
         {
             Separator separator = null;
