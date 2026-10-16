@@ -165,8 +165,7 @@ namespace OsuXaml.Controls
                 {
                     int anchorIndex = IndexOf(anchor);
                     int from = System.Math.Min(anchorIndex, index), to = System.Math.Max(anchorIndex, index);
-                    setSelectedItems(Items.Skip(from).Take(to - from + 1).ToArray());
-                    SelectedItem.Value = item;
+                    setSelectedItems(Items.Skip(from).Take(to - from + 1).ToArray(), item);
                     break;
                 }
 
@@ -285,13 +284,15 @@ namespace OsuXaml.Controls
             setSelectedItems(selected.ToArray());
         }
 
-        private void setSelectedItems(params object[] selected)
+        private void setSelectedItems(params object[] selected) => setSelectedItems(selected, SelectedItem.Value);
+
+        /// <summary>Selects <paramref name="selected"/> in one update; SelectedItem becomes <paramref name="current"/> when it is among them.</summary>
+        private void setSelectedItems(object[] selected, object current)
         {
             updatingSelectedItems = true;
             SelectedItems.Clear();
             SelectedItems.AddRange(selected);
 
-            object current = SelectedItem.Value;
             SelectedItem.Value = selected.Contains(current) ? current : selected.LastOrDefault();
             updatingSelectedItems = false;
 

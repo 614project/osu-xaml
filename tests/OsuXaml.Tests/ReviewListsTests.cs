@@ -440,6 +440,19 @@ namespace OsuXaml.Tests
                 InputManager.ReleaseKey(Key.LShift);
             });
             AddAssert("range runs from a to e", () => string.Join(",", list.SelectedItems.Cast<string>().OrderBy(s => s)) == "a,d,e");
+
+            int raised = 0;
+            AddStep("count SelectionChanged", () => list.SelectionChanged += () => raised++);
+            AddStep("shift-click b", () =>
+            {
+                raised = 0;
+                InputManager.MoveMouseTo(list.ContainerFromIndex(0));
+                InputManager.PressKey(Key.LShift);
+                InputManager.Click(MouseButton.Left);
+                InputManager.ReleaseKey(Key.LShift);
+            });
+            AddAssert("range from a to b", () => string.Join(",", list.SelectedItems.Cast<string>().OrderBy(s => s)) == "a,b,c" && (string)list.SelectedItem.Value == "b");
+            AddAssert("SelectionChanged raised once", () => raised == 1);
         }
 
         [Test]
