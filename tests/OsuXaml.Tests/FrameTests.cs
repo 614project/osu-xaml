@@ -123,7 +123,17 @@ namespace OsuXaml.Tests
 
             AddStep("back", () => frame.GoBack());
             settle();
+
+            var changes = new List<string>();
+            AddStep("watch the bindables", () =>
+            {
+                frame.CanGoBack.ValueChanged += e => changes.Add($"back {e.NewValue}");
+                frame.CanGoForward.ValueChanged += e => changes.Add($"forward {e.NewValue}");
+            });
             navigate(() => settings);
+            AddAssert("each changed once, no flicker", () => changes.SequenceEqual(new[] { "back True", "forward False" }));
+            AddWaitStep("a few frames", 3);
+            AddAssert("still no flicker", () => changes.Count == 2);
             AddAssert("forward stack dropped", () => frame.Content == settings && !frame.CanGoForward.Value && frame.ForwardStack.Count == 0
                                                      && frame.BackStack.SequenceEqual(new object[] { home }));
             AddAssert("details disposed", () => details.Disposed && details.NavigationService == null);

@@ -58,7 +58,7 @@ namespace OsuXaml.Controls
         private DataTemplate contentTemplate;
         private bool sizeToContentX;
         private bool sizeToContentY;
-        private bool pushing;
+        private bool updating;
 
         public Frame()
         {
@@ -355,8 +355,20 @@ namespace OsuXaml.Controls
 
         private void syncCanNavigate()
         {
-            CanGoBack.Value = backStack.Count > 0;
-            CanGoForward.Value = forwardStack.Count > 0;
+            // Between the two writes one value is already new and the other still old; that isn't a bad write to put right.
+            bool wasUpdating = updating;
+            updating = true;
+
+            try
+            {
+                CanGoBack.Value = backStack.Count > 0;
+                CanGoForward.Value = forwardStack.Count > 0;
+            }
+            finally
+            {
+                updating = wasUpdating;
+            }
+
             applyNavigationUI();
         }
 
@@ -366,7 +378,7 @@ namespace OsuXaml.Controls
         /// </summary>
         private void coerceCanNavigate()
         {
-            if (pushing || (CanGoBack.Value == backStack.Count > 0 && CanGoForward.Value == forwardStack.Count > 0))
+            if (updating || (CanGoBack.Value == backStack.Count > 0 && CanGoForward.Value == forwardStack.Count > 0))
                 return;
 
             syncCanNavigate();
@@ -376,7 +388,7 @@ namespace OsuXaml.Controls
         /// <summary>Writes the true values out again so every bindable bound to them agrees, including ones bound after the bad write.</summary>
         private void pushCanNavigate()
         {
-            pushing = true;
+            updating = true;
 
             try
             {
@@ -389,7 +401,7 @@ namespace OsuXaml.Controls
             }
             finally
             {
-                pushing = false;
+                updating = false;
             }
         }
 
