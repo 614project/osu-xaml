@@ -222,10 +222,7 @@ namespace OsuXaml.Controls
 
         protected override Vector2 MeasureOverride(Vector2 available)
         {
-            var desired = Slots.Select(s => s.Measure(available)).ToList();
-
-            var columnSizes = solve(EffectiveColumns, available.X, ColumnSpacing, desired, d => d.X, cellOf: s => (Layout.Get(s.Content).Column, Layout.Get(s.Content).ColumnSpan));
-            var rowSizes = solve(EffectiveRows, available.Y, RowSpacing, desired, d => d.Y, cellOf: s => (Layout.Get(s.Content).Row, Layout.Get(s.Content).RowSpan));
+            var (columnSizes, rowSizes) = solveTracks(available);
 
             return new Vector2(
                 columnSizes.Sum() + ColumnSpacing * (columnSizes.Length - 1),
@@ -234,12 +231,9 @@ namespace OsuXaml.Controls
 
         protected override void ArrangeOverride(Vector2 size)
         {
-            var desired = Slots.Select(s => s.Measure(size)).ToList();
             var columns = EffectiveColumns;
             var rows = EffectiveRows;
-
-            var columnSizes = solve(columns, size.X, ColumnSpacing, desired, d => d.X, s => (Layout.Get(s.Content).Column, Layout.Get(s.Content).ColumnSpan));
-            var rowSizes = solve(rows, size.Y, RowSpacing, desired, d => d.Y, s => (Layout.Get(s.Content).Row, Layout.Get(s.Content).RowSpan));
+            var (columnSizes, rowSizes) = solveTracks(size);
 
             for (int i = 0; i < columns.Count; i++)
                 columns[i].ActualLength = columnSizes[i];
@@ -264,6 +258,60 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>
+        /// Sizes the columns, then the rows. Like WPF, children are measured for the columns with the width their cells
+        /// already have (pixel columns), or unlimited width (Auto columns, and star columns while the grid sizes to its
+        /// content); they are then measured again at their final cell width for the rows, so text that wraps in a star
+        /// column gets the height it needs at that width.
+        /// </summary>
+        private (float[] columns, float[] rows) solveTracks(Vector2 available)
+        {
+            var columns = EffectiveColumns;
+            var rows = EffectiveRows;
+
+            var forColumns = Slots.Select(s =>
+            {
+                var p = Layout.Get(s.Content);
+                return s.Measure(new Vector2(cellExtent(columns, p.Column, p.ColumnSpan, ColumnSpacing, null) ?? float.PositiveInfinity, available.Y));
+            }).ToList();
+
+            var columnSizes = solve(columns, available.X, ColumnSpacing, forColumns, d => d.X, s => (Layout.Get(s.Content).Column, Layout.Get(s.Content).ColumnSpan));
+
+            var forRows = Slots.Select(s =>
+            {
+                var p = Layout.Get(s.Content);
+                float width = cellExtent(columns, p.Column, p.ColumnSpan, ColumnSpacing, columnSizes) ?? available.X;
+                float height = cellExtent(rows, p.Row, p.RowSpan, RowSpacing, null) ?? available.Y;
+                return s.Measure(new Vector2(width, height));
+            }).ToList();
+
+            var rowSizes = solve(rows, available.Y, RowSpacing, forRows, d => d.Y, s => (Layout.Get(s.Content).Row, Layout.Get(s.Content).RowSpan));
+
+            return (columnSizes, rowSizes);
+        }
+
+        /// <summary>
+        /// The extent of the cells a child spans, from <paramref name="sizes"/> once the tracks are solved. Before that,
+        /// only spans made of pixel tracks have a known extent; others return null.
+        /// </summary>
+        private static float? cellExtent(IReadOnlyList<DefinitionBase> defs, int index, int spanCount, float spacing, float[] sizes)
+        {
+            var (first, last) = span(index, spanCount, defs.Count);
+            float extent = spacing * (last - first);
+
+            for (int i = first; i <= last; i++)
+            {
+                if (sizes != null)
+                    extent += sizes[i];
+                else if (defs[i].Length.Type == GridUnitType.Pixel)
+                    extent += defs[i].Constrain(defs[i].Length.Value);
+                else
+                    return null;
+            }
+
+            return extent;
+        }
+
+        /// <summary>
         /// Sizes one axis: pixels first, then Auto from the largest single-span child, then stars share what is left.
         /// Every track is kept within its Min/Max limits. When the grid is sizing to its content (infinite space),
         /// a star track takes the size its content needs.
@@ -281,7 +329,10 @@ namespace OsuXaml.Controls
                     continue;
 
                 index = Math.Clamp(index, 0, defs.Count - 1);
-                content[index] = Math.Max(content[index], axis(desired[i]));
+
+                float size = axis(desired[i]);
+                if (float.IsFinite(size))
+                    content[index] = Math.Max(content[index], size);
             }
 
             float used = spacing * (defs.Count - 1);

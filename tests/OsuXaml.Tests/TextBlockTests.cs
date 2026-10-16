@@ -35,6 +35,34 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void WrapsAtTheWidthOfItsGridCell()
+        {
+            Grid grid = null;
+            TextBlock label = null, wrapped = null, below = null;
+
+            AddStep("create", () =>
+            {
+                grid = new Grid
+                {
+                    Width = 400,
+                    ColumnDefinitions = GridLengthCollection.Parse("100,*,*"),
+                    RowDefinitions = GridLengthCollection.Parse("Auto,Auto"),
+                };
+
+                grid.Add(label = new TextBlock { Text = "Label" });
+                grid.Add(wrapped = new TextBlock { Text = long_text, TextWrapping = TextWrapping.Wrap });
+                Grid.SetColumn(wrapped, 1);
+                grid.Add(below = new TextBlock { Text = "Below" });
+                Grid.SetRow(below, 1);
+                Child = grid;
+            });
+
+            // The star columns share 300 pixels, so the text wraps at 150 rather than at the grid's 400.
+            AddUntilStep("wraps at the star column width", () => wrapped.DrawWidth <= 150 && wrapped.DrawHeight > label.DrawHeight * 2);
+            AddAssert("the Auto row grows with the lines", () => below.ScreenSpaceDrawQuad.TopLeft.Y >= wrapped.ScreenSpaceDrawQuad.BottomLeft.Y - 1);
+        }
+
+        [Test]
         public void TrimsWithAnEllipsis()
         {
             TextBlock trimmed = null;
