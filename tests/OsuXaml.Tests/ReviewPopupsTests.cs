@@ -298,6 +298,38 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void ComboHighlightFollowsItsItemWhenTheListChanges()
+        {
+            ComboBox combo = null;
+            var source = new BindableList<string>(new[] { "Apple", "Banana", "Cherry" });
+
+            int highlightedCount() => Enumerable.Range(0, combo.Items.Count).Count(i => ((ComboBoxItem)combo.ContainerFromIndex(i)).IsHighlighted);
+
+            AddStep("combo", () => combo = createCombo(false, source));
+            AddUntilStep("loaded", () => combo.IsLoaded && combo.DrawWidth > 0);
+            AddStep("focus and open", () =>
+            {
+                InputManager.MoveMouseTo(combo);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddUntilStep("list showing", () => combo.ContainerFromIndex(0)?.IsLoaded == true);
+            AddStep("highlight Banana", () => combo.HighlightContainer(combo.ContainerFromIndex(1)));
+            AddStep("insert at the top", () => source.Insert(0, "Avocado"));
+            AddAssert("Banana still highlighted, and only it", () => combo.HighlightedIndex == 2 && ((ComboBoxItem)combo.ContainerFromIndex(2)).IsHighlighted
+                                                                  && highlightedCount() == 1);
+            AddStep("Enter", () => InputManager.Key(Key.Enter));
+            AddAssert("picks the highlighted Banana", () => (string)combo.SelectedItem.Value == "Banana");
+
+            AddStep("open and highlight Cherry", () =>
+            {
+                combo.IsDropDownOpen.Value = true;
+                combo.HighlightContainer(combo.ContainerFromIndex(3));
+            });
+            AddStep("remove Cherry", () => source.Remove("Cherry"));
+            AddAssert("one item highlighted, the one the index names", () => highlightedCount() == 1 && ((ComboBoxItem)combo.ContainerFromIndex(combo.HighlightedIndex)).IsHighlighted);
+        }
+
+        [Test]
         public void ClickingASeparatorKeepsTheMenuOnTheKeyboard()
         {
             Separator separator = null;

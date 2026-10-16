@@ -322,7 +322,25 @@ namespace OsuXaml.Controls
             }
 
             base.OnItemsChanged();
-            setHighlight(Math.Min(highlightedIndex, Items.Count - 1));
+
+            // The highlight stays on its item when items are inserted or removed before it.
+            int follow = -1;
+
+            for (int i = 0; i < Items.Count && follow < 0; i++)
+            {
+                if (ContainerFromIndex(i) is ComboBoxItem { IsHighlighted: true })
+                    follow = i;
+            }
+
+            if (follow >= 0)
+                highlightedIndex = follow;
+            else
+            {
+                // The highlighted item went away: highlight whatever now sits at its place.
+                int index = Math.Min(highlightedIndex, Items.Count - 1);
+                highlightedIndex = -1;
+                setHighlight(index);
+            }
         }
 
         protected override void OnSelectionChanged()
