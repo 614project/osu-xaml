@@ -135,6 +135,23 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void SelectedItemAndIndexStayInSync()
+        {
+            ListBox list = null;
+
+            AddStep("create", () => Child = list = letters(SelectionMode.Single));
+            AddUntilStep("loaded", () => list.IsLoaded);
+
+            AddStep("select b", () => list.SelectedIndex.Value = 1);
+            AddStep("select an item the list doesn't have", () => list.SelectedItem.Value = "z");
+            AddAssert("index doesn't claim b", () => list.SelectedIndex.Value == -1 && !shownSelected(list, 1));
+
+            AddStep("select b again", () => list.SelectedIndex.Value = 1);
+            AddStep("select an index past the end", () => list.SelectedIndex.Value = 10);
+            AddAssert("item doesn't claim b", () => list.SelectedItem.Value == null && !shownSelected(list, 1));
+        }
+
+        [Test]
         public void DeclaredItemsCanBeRemovedAndAddedAgain()
         {
             ListBox list = null;

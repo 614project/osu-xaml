@@ -465,7 +465,8 @@ namespace OsuXaml.Controls
             int index = IndexOf(SelectedItem.Value);
 
             // Before the items exist (e.g. SelectedItem bound before ItemsSource) the item is kept and resolved later.
-            if (index >= 0 || SelectedItem.Value == null)
+            // Once they do, an item the list doesn't have is still kept, but the index no longer claims another item.
+            if (index >= 0 || SelectedItem.Value == null || itemsKnown)
                 SelectedIndex.Value = index;
 
             syncing = false;
@@ -482,12 +483,15 @@ namespace OsuXaml.Controls
 
             if (index >= 0 && index < Items.Count)
                 SelectedItem.Value = Items[index];
-            else if (index < 0)
+            else if (index < 0 || itemsKnown)
                 SelectedItem.Value = null;
 
             syncing = false;
             SelectionHasChanged();
         }
+
+        /// <summary>Whether the items have been created, so an item or index they don't have really isn't there.</summary>
+        private bool itemsKnown => LoadState >= LoadState.Ready;
 
         /// <summary>Keeps the selection valid after the items change.</summary>
         private void reconcile()
