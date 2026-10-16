@@ -99,11 +99,17 @@ namespace OsuXaml.Tests
                 Child = panel;
             });
 
-            AddAssert("content below the header", () => content.ScreenSpaceDrawQuad.TopLeft.Y > box.PresentedHeader.ScreenSpaceDrawQuad.BottomLeft.Y);
-            AddAssert("height = border + header row + padding + content", () =>
+            AddAssert("height = header row + border + padding + content", () =>
             {
-                float headerRow = box.PresentedHeader.DrawHeight + 12; // header padding
-                return near(box.DrawHeight, 2 + headerRow + box.Padding.TotalVertical + 50);
+                float headerRow = box.PresentedHeader.DrawHeight + 6; // header padding
+                return near(box.DrawHeight, headerRow + 2 + box.Padding.TotalVertical + 50);
+            });
+            AddAssert("header above the bordered box", () =>
+            {
+                float headerRow = box.PresentedHeader.DrawHeight + 6;
+                float boxTop = box.ScreenSpaceDrawQuad.TopLeft.Y + headerRow;
+                return box.PresentedHeader.ScreenSpaceDrawQuad.BottomLeft.Y <= boxTop
+                       && near(content.ScreenSpaceDrawQuad.TopLeft.Y, boxTop + 1 + box.Padding.Top);
             });
             AddAssert("content inset by padding and border", () => near(content.DrawWidth, 300 - 2 - box.Padding.TotalHorizontal));
             AddAssert("header is subdued text", () => box.PresentedHeader is TextBlock t && t.Colour == Theme.SubtleText);

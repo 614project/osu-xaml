@@ -10,25 +10,44 @@ namespace OsuXaml.Controls
     /// A <see cref="ContentControl"/> with a <see cref="Header"/> row above its content, like WPF's HeaderedContentControl;
     /// the base of <see cref="Expander"/> and <see cref="GroupBox"/>. The header is presented like content: text becomes a
     /// TextBlock, a drawable is shown as is, and other objects go through <see cref="HeaderTemplate"/>.
-    /// Background and border surround both the header and the content.
+    /// Background and border surround both the header and the content, unless a subclass puts the header above the border.
     /// </summary>
     public partial class HeaderedContentControl : ContentControl
     {
         private readonly HeaderPresenter headerPresenter;
+        private readonly bool headerAboveBorder;
         private MarginPadding padding;
         private MarginPadding headerPadding;
         private float headerHeight;
 
         public HeaderedContentControl()
+            : this(false)
         {
-            Chrome.Add(HeaderArea = new Container
+        }
+
+        /// <param name="headerAboveBorder">Puts the header row above the border and background instead of inside them.</param>
+        protected HeaderedContentControl(bool headerAboveBorder)
+        {
+            this.headerAboveBorder = headerAboveBorder;
+
+            HeaderArea = new Container
             {
                 Child = headerPresenter = new HeaderPresenter(this)
                 {
                     Anchor = Anchor.CentreLeft,
                     Origin = Anchor.CentreLeft,
                 },
-            });
+            };
+
+            if (headerAboveBorder)
+            {
+                // The chrome starts below the header row; its height is set every frame.
+                Chrome.RelativeSizeAxes = Axes.X;
+                Chrome.Anchor = Chrome.Origin = Anchor.TopLeft;
+                AddInternal(HeaderArea);
+            }
+            else
+                Chrome.Add(HeaderArea);
         }
 
         /// <summary>What the header row shows. Text, a drawable (through a property element), or an object shown through <see cref="HeaderTemplate"/>.</summary>
@@ -59,7 +78,7 @@ namespace OsuXaml.Controls
             }
         }
 
-        /// <summary>The header row, inside the border. Subclasses add their own parts (a chevron, a click target) to it.</summary>
+        /// <summary>The header row. Subclasses add their own parts (a chevron, a click target) to it.</summary>
         protected Container HeaderArea { get; }
 
         /// <summary>Space around the header inside the header row.</summary>
@@ -98,14 +117,14 @@ namespace OsuXaml.Controls
             if (Template != null)
                 return full;
 
-            float border = BorderThickness * 2;
-            var header = MeasureHeader(availableSize.X - border) + new Vector2(border);
             float fraction = Math.Clamp(ContentFraction, 0, 1);
+            float border = headerAboveBorder ? 0 : BorderThickness * 2;
+            var header = MeasureHeader(availableSize.X - border) + new Vector2(border);
 
-            // The base size counts the header row through the padding it last reserved; take that out to get the part below it.
-            float below = Math.Max(0, full.Y - border - headerHeight);
+            // Inside the border, the base size counts the header row through the padding it reserved; take that out to get the part below it.
+            float below = headerAboveBorder ? full.Y : Math.Max(0, full.Y - border - headerHeight);
 
-            // Collapsing shrinks only the part below the header; the border keeps closing around what is left.
+            // Collapsing shrinks only the part below the header; a border inside keeps closing around what is left.
             float height = header.Y + below * fraction;
             float width = fraction > 0 ? Math.Max(full.X, header.X) : header.X;
 
@@ -121,25 +140,38 @@ namespace OsuXaml.Controls
             if (Template != null)
                 return;
 
+            // Sizing to content above may have changed this control's size.
             layoutHeader();
 
-            // Content keeps at least its desired height while the control is shorter (collapsing), so it is clipped rather than squashed.
             if (PresentedContent?.Parent is Slot slot && slot.Parent is Container area)
             {
-                var size = area.ChildSize;
-                float desired = slot.Measure(new Vector2(size.X, float.PositiveInfinity)).Y;
-                slot.Arrange(Vector2.Zero, new Vector2(size.X, Math.Max(size.Y, desired)));
-                slot.Alpha = ContentFraction > 0 ? 1 : 0;
+                float fraction = ContentFraction;
+                slot.Alpha = fraction > 0 ? 1 : 0;
+
+                // A chrome below the header was just resized; a partly collapsed one must clip its content rather than squash it.
+                if (fraction > 0 && (headerAboveBorder || fraction < 1))
+                {
+                    var size = area.ChildSize;
+                    float desired = fraction < 1 ? slot.Measure(new Vector2(size.X, float.PositiveInfinity)).Y : 0;
+                    slot.Arrange(Vector2.Zero, new Vector2(size.X, Math.Max(size.Y, desired)));
+                }
             }
         }
 
         private void layoutHeader()
         {
-            float border = BorderThickness;
+            float border = headerAboveBorder ? 0 : BorderThickness;
             float height = Template != null ? 0 : MeasureHeader(DrawWidth - border * 2).Y;
 
+            HeaderArea.Alpha = Template != null ? 0 : 1;
             HeaderArea.Position = new Vector2(border);
             HeaderArea.Size = new Vector2(Math.Max(0, DrawWidth - border * 2), height);
+
+            if (headerAboveBorder)
+            {
+                Chrome.Y = height;
+                Chrome.Height = Math.Max(0, DrawHeight - height);
+            }
 
             if (height != headerHeight)
             {
@@ -149,7 +181,10 @@ namespace OsuXaml.Controls
         }
 
         private void applyPadding()
-            => base.Padding = new MarginPadding { Left = padding.Left, Top = padding.Top + headerHeight, Right = padding.Right, Bottom = padding.Bottom };
+        {
+            float reserved = headerAboveBorder ? 0 : headerHeight;
+            base.Padding = new MarginPadding { Left = padding.Left, Top = padding.Top + reserved, Right = padding.Right, Bottom = padding.Bottom };
+        }
 
         /// <summary>Presents the header with the owner's text style.</summary>
         private partial class HeaderPresenter : ContentPresenter
