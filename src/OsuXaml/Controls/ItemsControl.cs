@@ -315,11 +315,14 @@ namespace OsuXaml.Controls
         private void removeAt(int index)
         {
             var container = containers[index];
-            ClearContainer(container, items[index]);
+            object item = items[index];
+            ClearContainer(container, item);
 
             items.RemoveAt(index);
             containers.RemoveAt(index);
-            itemsPanel.Remove(container, true);
+
+            // A drawable item belongs to whoever added it (it may be added again), so only generated containers are disposed.
+            itemsPanel.Remove(container, !ReferenceEquals(container, item));
         }
 
         private void move(int from, int to)

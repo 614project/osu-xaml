@@ -133,5 +133,31 @@ namespace OsuXaml.Tests
             AddStep("edit a new row", () => grid.CellFor(grid.Items[0], name).BeginEdit());
             AddAssert("new cell edits", () => grid.EditingCell == grid.CellFor(grid.Items[0], name));
         }
+
+        [Test]
+        public void DeclaredItemsCanBeRemovedAndAddedAgain()
+        {
+            ListBox list = null;
+            ListBoxItem first = null;
+
+            AddStep("create", () =>
+            {
+                list = new ListBox { Size = new Vector2(200, 200) };
+                list.Add(first = new ListBoxItem { Content = "first" });
+                list.Add(new ListBoxItem { Content = "second" });
+                Child = list;
+            });
+            AddUntilStep("loaded", () => first.IsLoaded);
+
+            AddStep("move first to the end", () =>
+            {
+                list.RemoveItem(first);
+                list.Add(first);
+            });
+            AddAssert("first is the last item", () => list.Items.Count == 2 && list.Items[1] == first && list.ContainerFromIndex(1) == first);
+            AddUntilStep("first is shown again", () => first.IsPresent && first.Parent != null && first.IsAlive);
+            AddStep("click it", () => first.TriggerClick());
+            AddAssert("selected", () => list.SelectedItem.Value == first && first.IsSelected);
+        }
     }
 }
