@@ -309,6 +309,54 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void NullItemsShowAsEmptyRows()
+        {
+            var people = ListsTestData.People();
+            var scope = new BindingScope();
+            ListView list = null;
+            DataGrid grid = null;
+            DataGridTemplateColumn badge = null;
+
+            AddStep("create with a null item", () =>
+            {
+                people.Insert(1, null);
+
+                var view = new GridView();
+                view.Add(new GridViewColumn { Header = "Name", DisplayMemberBinding = ListsTestData.Text(p => p.Name) });
+                list = new ListView { Size = new Vector2(300, 150), ItemsSource = XamlBinding.ListCopy(scope, people), View = view };
+
+                grid = new DataGrid { Size = new Vector2(300, 150), ItemsSource = XamlBinding.ListCopy(scope, people) };
+                grid.Columns.Add(new DataGridTextColumn { Header = "Name", Binding = ListsTestData.NameBinding });
+                grid.Columns.Add(badge = new DataGridTemplateColumn
+                {
+                    Header = "Badge",
+                    CellTemplate = new DataTemplate<Person>((p, s) =>
+                    {
+                        var text = new TextBlock();
+                        XamlBinding.OneWay(s, p.Name, (v, _) => text.Text = "[" + v + "]");
+                        return text;
+                    }),
+                    CellEditingTemplate = new DataTemplate<Person>((p, s) =>
+                    {
+                        var box = new TextBox();
+                        XamlBinding.TwoWay(box.Text, p.Name);
+                        return box;
+                    }),
+                });
+
+                var panel = new StackPanel();
+                panel.Add(list);
+                panel.Add(grid);
+                Child = panel;
+            });
+            AddUntilStep("loaded", () => list.IsLoaded && grid.IsLoaded);
+            AddAssert("a row for every item", () => list.Items.Count == 4 && grid.Items.Count == 4 && list.RowFromItem(people[2]) != null);
+            AddAssert("the null row's template cell can't be edited", () => !grid.CellFor(null, badge).BeginEdit());
+            AddStep("view model adds another null", () => people.Add(null));
+            AddAssert("five rows", () => list.Items.Count == 5 && grid.Items.Count == 5);
+        }
+
+        [Test]
         public void ScrollIntoViewRightAfterAddingAnItem()
         {
             var items = new BindableList<string>(Enumerable.Range(0, 30).Select(i => "item " + i));

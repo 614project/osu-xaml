@@ -253,7 +253,8 @@ namespace OsuXaml.Controls
             var gridColumn = (GridViewColumn)column;
             var template = gridColumn.CellTemplate ?? gridColumn.DisplayMemberBinding;
 
-            if (template != null && template.CanBuild(Item))
+            // A null item shows an empty cell, as null content does in a ContentControl, rather than running the template on null.
+            if (template != null && Item != null && template.CanBuild(Item))
                 return template.Build(Item, cellBindings);
 
             return new TextBlock { Text = Item?.ToString() ?? string.Empty };

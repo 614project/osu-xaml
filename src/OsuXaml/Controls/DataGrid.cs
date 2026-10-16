@@ -167,11 +167,12 @@ namespace OsuXaml.Controls
         /// <summary>Shown while the cell is edited (double-click or F2). Without it the cell isn't editable.</summary>
         public DataTemplate CellEditingTemplate { get; set; }
 
+        // A null item shows an empty cell that can't be edited, rather than running the templates on null.
         protected internal override Drawable GenerateElement(DataGridCell cell, object item, BindingScope scope)
-            => CellTemplate != null && CellTemplate.CanBuild(item) ? CellTemplate.Build(item, scope) : new TextBlock { Text = item?.ToString() ?? string.Empty };
+            => CellTemplate != null && item != null && CellTemplate.CanBuild(item) ? CellTemplate.Build(item, scope) : new TextBlock { Text = item?.ToString() ?? string.Empty };
 
         protected internal override Drawable GenerateEditingElement(DataGridCell cell, object item, BindingScope scope)
-            => CellEditingTemplate != null && CellEditingTemplate.CanBuild(item) ? CellEditingTemplate.Build(item, scope) : null;
+            => CellEditingTemplate != null && item != null && CellEditingTemplate.CanBuild(item) ? CellEditingTemplate.Build(item, scope) : null;
     }
 
     /// <summary>
