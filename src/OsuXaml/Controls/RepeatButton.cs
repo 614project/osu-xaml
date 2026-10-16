@@ -39,7 +39,7 @@ namespace OsuXaml.Controls
             {
                 repeat = Scheduler.AddDelayed(() =>
                 {
-                    if (IsHovered)
+                    if (pointerIsOver())
                         raiseClick();
                 }, System.Math.Max(1, Interval), true);
             }, System.Math.Max(0, Delay));
@@ -70,6 +70,13 @@ namespace OsuXaml.Controls
             }
 
             base.OnClick(new ClickEvent(pressState, MouseButton.Left));
+        }
+
+        // Hover doesn't change while a button is held (the press captures the pointer), so test the position itself.
+        private bool pointerIsOver()
+        {
+            var mouse = GetContainingInputManager()?.CurrentState.Mouse;
+            return mouse != null && ReceivePositionalInputAt(mouse.Position);
         }
 
         private void stop()
