@@ -787,7 +787,9 @@ namespace OsuXaml.Controls
                     other.SortDirection = null;
             }
 
-            column.SortDirection = direction;
+            if (column != null)
+                column.SortDirection = direction;
+
             Apply();
         }
 
