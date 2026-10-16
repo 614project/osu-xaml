@@ -435,7 +435,8 @@ namespace OsuXaml.Controls
             {
                 var points = figure.Points.Select(p => (p - bounds.TopLeft) * scale + offset).ToList();
 
-                if (figure.IsFilled && points.Count >= 3)
+                // A transparent fill isn't triangulated at all; making it visible invalidates the geometry.
+                if (figure.IsFilled && Fill.A > 0 && points.Count >= 3)
                 {
                     if (fillCount == fills.Count)
                         fills.Add(new PolygonFill { Colour = Fill });
@@ -773,7 +774,7 @@ namespace OsuXaml.Controls
             {
                 base.Draw(renderer);
 
-                if (screenSpace.Count < 3 || !renderer.BindTexture(texture))
+                if (screenSpace.Count < 3)
                     return;
 
                 BindTextureShader(renderer);

@@ -293,8 +293,12 @@ namespace OsuXaml.Tests
                 return fill.DrawSize == new Vector2(100) && fill.Colour.Equals((ColourInfo)Colour4.Pink);
             });
 
+            AddStep("change the fill colour", () => polygon.Fill = Colour4.Green);
+            AddAssert("fill follows", () => polygon.ChildrenOfType<Drawable>().Single(d => d.GetType().Name == "PolygonFill").Colour.Equals((ColourInfo)Colour4.Green));
             AddStep("clear the fill colour", () => polygon.Fill = Colour4.Transparent);
-            AddUntilStep("fill follows", () => polygon.ChildrenOfType<Drawable>().Single(d => d.GetType().Name == "PolygonFill").Colour.Equals((ColourInfo)Colour4.Transparent));
+            AddUntilStep("nothing left to fill", () => !polygon.ChildrenOfType<Drawable>().Any(d => d.GetType().Name == "PolygonFill"));
+            AddStep("fill again", () => polygon.Fill = Colour4.Pink);
+            AddUntilStep("fill comes back", () => polygon.ChildrenOfType<Drawable>().Count(d => d.GetType().Name == "PolygonFill") == 1);
         }
     }
 }

@@ -33,6 +33,23 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void IconAsAMenuItemIcon()
+        {
+            string source = ShapesTestData.Compiles(@"
+  <Menu>
+    <MenuItem Header=""_File"">
+      <MenuItem Header=""_Save"">
+        <MenuItem.Icon>
+          <Icon Kind=""Solid.Save"" />
+        </MenuItem.Icon>
+      </MenuItem>
+    </MenuItem>
+  </Menu>");
+
+            Assert.That(source, Does.Contain(".Icon = e"));
+        }
+
+        [Test]
         public void NamesFindFontAwesomeIcons()
         {
             Assert.That(Icon.Find("Solid.Check"), Is.EqualTo(FontAwesome.Solid.Check));
