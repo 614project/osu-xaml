@@ -34,15 +34,22 @@ namespace OsuXaml.Controls
     /// by a ScrollViewer or masked parent. <see cref="Window"/> has one; without a Window one is added to the Game.
     /// Clicking outside a popup that doesn't <see cref="Popup.StaysOpen"/> closes it, and so does Escape.
     /// The layer also shows tooltips (<see cref="ToolTipService"/>) and opens context menus on right-click (<see cref="ContextMenuService"/>).
+    /// Modal dialogs (<see cref="Dialog"/>, <see cref="MessageBox"/>) open above the popups in a <see cref="ModalHost"/> each; while one
+    /// is open nothing below it takes input, and the layer shows no tooltips or context menus for the app underneath.
     /// </summary>
     public partial class PopupLayer : CompositeDrawable
     {
         private static readonly ConditionalWeakTable<Game, PopupLayer> game_layers = new ConditionalWeakTable<Game, PopupLayer>();
 
+        // Loaded layers, newest last, for dialogs shown without an owner.
+        private static readonly List<WeakReference<PopupLayer>> loaded_layers = new List<WeakReference<PopupLayer>>();
+
         private readonly Container<PopupRoot> roots;
         private readonly Container contextMenus;
+        private readonly Container<ModalHost> modals;
         private readonly ToolTipHost toolTips;
         private readonly List<Popup> open = new List<Popup>();
+        private readonly List<ModalHost> openModals = new List<ModalHost>();
 
         public PopupLayer()
         {
@@ -54,12 +61,16 @@ namespace OsuXaml.Controls
                 // Context menus attached with ContextMenuService aren't part of the app's tree, so they join it here while open.
                 contextMenus = new Container { RelativeSizeAxes = Axes.Both },
                 roots = new Container<PopupRoot> { RelativeSizeAxes = Axes.Both },
+                modals = new Container<ModalHost> { RelativeSizeAxes = Axes.Both },
                 toolTips = new ToolTipHost(this),
             };
         }
 
         /// <summary>Open popups, oldest first.</summary>
         public IReadOnlyList<Popup> OpenPopups => open;
+
+        /// <summary>Open modal dialogs, bottom first; the last one takes the input. Closing dialogs leave the list at once.</summary>
+        public IReadOnlyList<ModalHost> OpenModals => openModals;
 
         /// <summary>
         /// The layer popups opened from <paramref name="from"/> go to: the nearest <see cref="IPopupLayerProvider"/>
@@ -90,6 +101,98 @@ namespace OsuXaml.Controls
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// The layer a dialog owned by <paramref name="owner"/> opens in: the owner's own layer when it has one (a <see cref="Window"/>),
+        /// the layer above it otherwise, and without an owner the most recently loaded layer of a running game. Call from the update thread.
+        /// </summary>
+        public static PopupLayer ForOwner(Drawable owner)
+        {
+            switch (owner)
+            {
+                case null:
+                    return latest();
+
+                case PopupLayer layer:
+                    return layer;
+
+                case IPopupLayerProvider provider:
+                    return provider.PopupLayer;
+
+                default:
+                    return Find(owner);
+            }
+        }
+
+        private static PopupLayer latest()
+        {
+            lock (loaded_layers)
+            {
+                for (int i = loaded_layers.Count - 1; i >= 0; i--)
+                {
+                    if (!loaded_layers[i].TryGetTarget(out var layer) || layer.IsDisposed)
+                    {
+                        loaded_layers.RemoveAt(i);
+                        continue;
+                    }
+
+                    // A dialog's own layer would close with the dialog; a layer outside the game (a removed window) shows nothing.
+                    if (layer.isTopLevelInGame())
+                        return layer;
+                }
+            }
+
+            return null;
+        }
+
+        private bool isTopLevelInGame()
+        {
+            for (var p = Parent; p != null; p = p.Parent)
+            {
+                if (p is ModalHost)
+                    return false;
+
+                if (p is Game)
+                    return true;
+            }
+
+            return false;
+        }
+
+        protected override void LoadComplete()
+        {
+            base.LoadComplete();
+
+            lock (loaded_layers)
+                loaded_layers.Add(new WeakReference<PopupLayer>(this));
+        }
+
+        /// <summary>Shows a modal dialog above everything in this layer, closing the popups that don't stay open.</summary>
+        internal void OpenModal(ModalHost host)
+        {
+            DismissAll();
+            toolTips.SuppressHovered();
+
+            openModals.Add(host);
+            modals.Add(host);
+        }
+
+        internal void ScheduleOpenModal(ModalHost host) => Schedule(() => OpenModal(host));
+
+        /// <summary>
+        /// Takes a closing dialog out of the input order at once, and out of the layer once its closing animation has played.
+        /// The removal runs on this layer's scheduler, not the host's: a drawable must not dispose itself while it updates.
+        /// </summary>
+        internal void CloseModal(ModalHost host, double removeAfter)
+        {
+            openModals.Remove(host);
+
+            Scheduler.AddDelayed(() =>
+            {
+                if (host.Parent == modals)
+                    modals.Remove(host, true);
+            }, removeAfter);
         }
 
         /// <summary>
@@ -159,6 +262,10 @@ namespace OsuXaml.Controls
         /// </summary>
         internal Drawable FindTarget(IEnumerable<Drawable> candidates, Vector2 screenSpacePos)
         {
+            // A modal dialog covers everything this layer serves; elements inside the dialog belong to the dialog's own layer.
+            if (openModals.Count > 0)
+                return null;
+
             PopupRoot over = null;
 
             for (int i = open.Count - 1; i >= 0; i--)
