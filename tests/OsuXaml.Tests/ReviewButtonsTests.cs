@@ -42,5 +42,31 @@ namespace OsuXaml.Tests
             AddStep("Toggle()", () => box.Toggle());
             AddAssert("value unchanged, clicks still reported", () => box.IsChecked.Value && locked.Value && clicks == 3);
         }
+
+        [Test]
+        public void RepeatButtonFirstRepeatComesAfterDelay()
+        {
+            RepeatButton button = null;
+            int clicks = 0;
+            double pressedAt = 0;
+
+            AddStep("create", () =>
+            {
+                clicks = 0;
+                Child = button = new RepeatButton { Content = "+", Delay = 100, Interval = 3000 };
+                button.Click += () => clicks++;
+            });
+            AddUntilStep("loaded", () => button.IsLoaded && button.DrawWidth > 0);
+
+            AddStep("press", () =>
+            {
+                InputManager.MoveMouseTo(button);
+                InputManager.PressButton(MouseButton.Left);
+                pressedAt = Time.Current;
+            });
+            AddUntilStep("first repeat", () => clicks >= 2);
+            AddAssert("it came after Delay, not Delay + Interval", () => Time.Current - pressedAt < 1500);
+            AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
+        }
     }
 }
