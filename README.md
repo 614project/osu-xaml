@@ -10,7 +10,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | --- | --- |
 | `src/OsuXaml.Generator` | Roslyn Incremental Source Generator. `*.xaml`을 읽어 `InitializeComponent()`를 생성 |
 | `src/OsuXaml` | 생성된 코드가 호출하는 런타임 (`XamlBinding`, `BindingScope`). 리플렉션 없음 |
-| `src/OsuXaml/Controls` | WPF식 컨트롤: Grid, StackPanel, DockPanel, WrapPanel, Canvas, UniformGrid, Border, ScrollViewer, TextBlock, Button, CheckBox, TextBox, Slider, ProgressBar, Separator |
+| `src/OsuXaml/Controls` | WPF식 컨트롤 (패널, 목록, 메뉴, 탭, 입력, 날짜 등. 아래 [목록](#wpf식-컨트롤)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 |
 | `tests/OsuXaml.Tests` | 생성기 테스트 10개, 레이아웃 기하 테스트 6개, 헤드리스 앱 테스트 4개 |
@@ -145,22 +145,53 @@ public partial class MainView : CompositeDrawable
 
 | 분류 | 컨트롤 | 주요 속성 |
 | --- | --- | --- |
-| 패널 | `Grid` | `RowDefinitions`/`ColumnDefinitions` (`Auto`, `120`, `*`, `2*`), `RowSpacing`, `ColumnSpacing`, 첨부 `Grid.Row/Column/RowSpan/ColumnSpan` |
-| | `StackPanel` | `Orientation`, `Spacing` |
+| 패널 | `Grid` | `RowDefinitions`/`ColumnDefinitions` (`"Auto,120,*,2*"` 또는 `<RowDefinition Height="Auto" MinHeight="40" />`), `RowSpacing`, `ColumnSpacing`, 첨부 `Grid.Row/Column/RowSpan/ColumnSpan` |
+| | `GridSplitter` | 자기 열(행)에 두고 끌어서 옆 열 크기 조절, `ResizeDirection`, `ResizeBehavior`, `ShowsPreview`, 키보드 |
+| | `StackPanel`, `WrapPanel` | `Orientation`, `Spacing` |
 | | `DockPanel` | `LastChildFill`, 첨부 `DockPanel.Dock` |
-| | `WrapPanel` | `Orientation`, `Spacing` |
 | | `Canvas` | 첨부 `Canvas.Left/Top/Right/Bottom` |
 | | `UniformGrid` | `Rows`, `Columns` |
-| 콘텐츠 | `Border` | `Background`, `BorderBrush`, `BorderThickness`, `CornerRadius`, `Padding` |
-| | `ScrollViewer` | 자식 하나를 세로 스크롤 |
-| 컨트롤 | `TextBlock` | `Text`, `FontSize`, `FontWeight`, `Foreground` |
-| | `Button` | `Content` 또는 자식 요소, `Click` 이벤트, `Action`, `IsEnabled`, 호버/누름 애니메이션 |
-| | `CheckBox` | `IsChecked` (양방향), `Content` |
-| | `TextBox` | `Text` (양방향) |
-| | `Slider` | `Value` (양방향), `Minimum`, `Maximum` |
-| | `ProgressBar` | `Value`, `Minimum`, `Maximum`, 값 변경 시 애니메이션 |
-| | `Separator` | 가로 구분선 |
-| 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height` |
+| 루트·콘텐츠 | `Window`, `UserControl` | XAML 파일의 루트. `Window`는 `Title`과 팝업 레이어를 가집니다 |
+| | `Border`, `ContentControl`, `ContentPresenter` | `Background`, `BorderBrush`, `BorderThickness`, `CornerRadius`, `Padding`, `Content` + `ContentTemplate`, `Template` |
+| | `ScrollViewer` | `VerticalScrollBarVisibility`/`HorizontalScrollBarVisibility` (`Auto`, `Visible`, `Hidden`, `Disabled`), `ScrollToEnd()`, `VerticalOffset` |
+| 텍스트 | `TextBlock` | `Text`, `FontSize`, `FontWeight`, `Foreground`, `TextWrapping`, `TextTrimming` |
+| | `Label` | `Content="_Name"` (Alt+N 접근 키), `Target="{Binding ElementName=box}"` |
+| | `Hyperlink` | `NavigateUri`, `Click`, `RequestNavigate` |
+| | `TextBox` | `Text` (양방향), `PlaceholderText`, `MaxLength`, `IsReadOnly`, `TextChanged` |
+| | `PasswordBox` | `Password` (양방향), `PasswordChar`, `PasswordChanged` |
+| 버튼 | `Button` | `Content` 또는 자식 요소, `Click`, `IsEnabled`, 호버/누름 애니메이션 |
+| | `RepeatButton` | 누르고 있으면 `Delay` 뒤 `Interval`마다 `Click` |
+| | `ToggleButton` | `IsChecked` (양방향), `Checked`/`Unchecked` |
+| | `CheckBox` | `IsChecked` (양방향), `Content`, Space로 전환 |
+| | `RadioButton` | `IsChecked` (양방향), `GroupName` (없으면 같은 부모끼리 한 그룹) |
+| 범위 | `Slider` | `Value` (양방향), `Minimum`, `Maximum`, `Orientation`, `TickFrequency`, `TickPlacement`, `IsSnapToTickEnabled`, 키보드 |
+| | `ProgressBar` | `Value`, `Minimum`, `Maximum`, `IsIndeterminate`, `Orientation` |
+| 목록 | `ItemsControl` | `ItemsSource`, `ItemTemplate`, `DisplayMemberPath`, `ItemsPanel` |
+| | `ListBox` | `SelectedItem`/`SelectedIndex` (양방향), `SelectionMode`, `SelectedItems`, 키보드, `ScrollIntoView` |
+| | `ListView` + `GridView` | `GridViewColumn` (`Header`, `DisplayMemberBinding`, `CellTemplate`, `Width`, `SortMemberPath`), 머리글 클릭 정렬, 경계 드래그로 열 너비 조절 |
+| | `DataGrid` | `DataGridTextColumn`/`DataGridCheckBoxColumn`/`DataGridTemplateColumn`, 더블클릭·F2 편집, `AlternatingRowBackground`, `IsReadOnly`, 정렬 |
+| | `TreeView` | `HierarchicalDataTemplate`, `TreeViewItem`, `SelectedItem` (양방향), `IsExpandedBinding`, 키보드 |
+| | `ComboBox` | `SelectedItem`/`SelectedIndex`/`SelectedValue` (양방향), `IsDropDownOpen`, `IsEditable` + `Text`, `PlaceholderText`, 키보드 |
+| 메뉴·팝업 | `Menu`, `MenuItem` | `Header="_File"`, `Click`, `InputGestureText`, `IsCheckable`/`IsChecked`, 하위 메뉴, Alt 접근 키 |
+| | `ContextMenu` | 모든 요소에 `<Border.ContextMenu>`로 붙이고 오른쪽 클릭으로 엽니다 |
+| | `ToolTip` | 모든 요소에 `ToolTip="..."` 또는 `<Button.ToolTip><ToolTip>...` |
+| | `Popup` | `IsOpen` (양방향), `PlacementTarget`, `Placement`, `StaysOpen` |
+| 구획 | `TabControl`, `TabItem` | `SelectedIndex`/`SelectedItem` (양방향), `TabStripPlacement`, `ItemsSource` + `ContentTemplate` |
+| | `Expander` | `Header`, `IsExpanded` (양방향), 높이 애니메이션 |
+| | `GroupBox`, `HeaderedContentControl` | `Header`, `HeaderTemplate` |
+| | `StatusBar`, `StatusBarItem` | `DockPanel.Dock="Right"`로 오른쪽 정렬, 세로 `Separator` |
+| | `ToolBar`, `ToolBarTray` | 평평한 버튼·토글·콤보, `Band`/`BandIndex` |
+| | `Separator` | 가로 구분선 (메뉴, 상태 표시줄, 도구 모음 안에서는 맞는 모양으로) |
+| 날짜·색 | `Calendar` | `SelectedDate` (양방향), `DisplayDate`, `FirstDayOfWeek`, 월·연·10년 보기, 키보드 |
+| | `DatePicker` | `SelectedDate` (양방향), `SelectedDateFormat`, 직접 입력, F4·Alt+↓로 열기 |
+| | `ColorPicker` | `SelectedColor` (양방향) |
+| 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke`, `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
+| | `Line`, `Polyline`, `Polygon` | `X1`/`Y1`/`X2`/`Y2`, `Points="0,0 10,20 20,0"`, `Fill` (Polygon) |
+| | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
+| | `Image` | `Source` (파일 경로 또는 osu! 텍스처 이름), `Stretch`, `StretchDirection`, `ImageFailed` |
+| | `Viewbox` | 자식 하나를 비율 유지하며 늘이거나 줄임, `Stretch`, `StretchDirection` |
+| | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome), `Size`, `Foreground` |
+| 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height`, `Visibility`, `ToolTip`, `ContextMenu` |
 
 패널과 `ItemsSource`도 함께 쓸 수 있습니다 (`<WrapPanel ItemsSource="{Bind Tags}">`). `{Bind}`처럼 경로를 비우면 아이템 자체에 바인딩됩니다.
 
