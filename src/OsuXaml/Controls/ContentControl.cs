@@ -156,6 +156,8 @@ namespace OsuXaml.Controls
                 foreground = value;
                 if (ownsPresented && presented is TextBlock text)
                     text.Colour = value;
+
+                OnForegroundChanged();
             }
         }
 
@@ -244,6 +246,11 @@ namespace OsuXaml.Controls
 
         /// <summary>Called after the presented content changes.</summary>
         protected virtual void OnContentPresented(Drawable drawable)
+        {
+        }
+
+        /// <summary>Called after <see cref="Foreground"/> changes, also from the constructors of derived controls.</summary>
+        protected virtual void OnForegroundChanged()
         {
         }
 

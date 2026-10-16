@@ -285,5 +285,20 @@ namespace OsuXaml.Tests
             });
             AddUntilStep("follows its content", () => button.DrawWidth > width + 20);
         }
+
+        [Test]
+        public void ToggleButtonKeepsTheCheckedTextColourWhenForegroundChanges()
+        {
+            ToggleButton toggle = null;
+
+            AddStep("create checked", () => Child = toggle = new ToggleButton { Content = "Bold", IsChecked = { Value = true } });
+            AddUntilStep("checked colour", () => (toggle.PresentedContent as TextBlock)?.Colour == Theme.AccentText);
+
+            AddStep("change Foreground", () => toggle.Foreground = Colour4.Red);
+            AddAssert("still the checked colour", () => ((TextBlock)toggle.PresentedContent).Colour == Theme.AccentText);
+
+            AddStep("uncheck", () => toggle.IsChecked.Value = false);
+            AddUntilStep("new Foreground", () => ((TextBlock)toggle.PresentedContent).Colour == Colour4.Red);
+        }
     }
 }

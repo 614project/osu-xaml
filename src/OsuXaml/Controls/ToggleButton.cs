@@ -95,6 +95,15 @@ namespace OsuXaml.Controls
             updateCheckedState(false);
         }
 
+        protected override void OnForegroundChanged()
+        {
+            base.OnForegroundChanged();
+
+            // Foreground is the unchecked text colour; checked text keeps CheckedForeground. Text exists only after load.
+            if (ownText != null)
+                updateCheckedState(false);
+        }
+
         protected override void LoadComplete()
         {
             base.LoadComplete();
