@@ -70,12 +70,26 @@ namespace OsuXaml.Controls
         {
             base.Update();
 
+            if (IsClosing || !Dialog.IsAlive)
+                return;
+
             // Focus moves into the dialog so keys stop reaching whatever had it below. A drawable can only take focus once it is
             // alive, which is a frame after it was added, so this retries until it works.
-            if (!focused && !IsClosing && Dialog.IsAlive)
+            if (!focused)
             {
                 var manager = GetContainingFocusManager();
                 focused = manager == null || !Dialog.AcceptsFocus || manager.ChangeFocus(Dialog);
+                return;
+            }
+
+            // A focused drawable gets keys before anything else, wherever it is, so focus mustn't stay below the top dialog
+            // (for example when a dialog above this one closes and gives focus back to what had it before both opened).
+            if (isTopModal && Dialog.AcceptsFocus)
+            {
+                var focus = GetContainingInputManager()?.FocusedDrawable;
+
+                if (focus != null && !isWithin(focus, this))
+                    GetContainingFocusManager()?.ChangeFocus(Dialog);
             }
         }
 
@@ -106,6 +120,9 @@ namespace OsuXaml.Controls
         }
 
         internal void ScheduleClose() => Schedule(Close);
+
+        /// <summary>Whether this is the dialog that takes input: the newest in its layer, with none open above it from inside.</summary>
+        private bool isTopModal => layer.OpenModals.Count > 0 && layer.OpenModals[^1] == this && PopupLayer.OpenModals.Count == 0;
 
         private bool isInTree(Drawable drawable)
         {

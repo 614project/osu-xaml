@@ -156,7 +156,10 @@ namespace OsuXaml.Controls
         /// <summary>Raised before the dialog closes; set <c>Cancel</c> to keep it open.</summary>
         public event Action<CancelEventArgs> Closing;
 
-        /// <summary>Raised once the dialog has closed, before the task from <see cref="ShowDialog(Drawable)"/> completes.</summary>
+        /// <summary>
+        /// Raised once the dialog has closed, before the task from <see cref="ShowDialog(Drawable)"/> completes. When the window
+        /// is removed while the dialog is open, it is raised as the dialog is disposed, which may be off the update thread.
+        /// </summary>
         public event Action Closed;
 
         /// <summary>The modal host showing this dialog, once shown.</summary>
@@ -305,6 +308,17 @@ namespace OsuXaml.Controls
                 textBox.OnCommit -= onTextBoxCommit;
 
             watchedTextBoxes.Clear();
+
+            // The window went away with the dialog still open (WPF closes owned windows with their owner). Whoever awaits
+            // ShowDialog still gets an answer: the result set so far, else false. This can run on osu!framework's disposal thread.
+            if (host != null && !closed)
+            {
+                closed = true;
+                dialogResult ??= false;
+                Closed?.Invoke();
+                completion.TrySetResult(dialogResult);
+            }
+
             base.Dispose(isDisposing);
         }
 

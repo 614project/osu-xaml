@@ -184,6 +184,38 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void EditingKeysReachTextBoxesInTheDialog()
+        {
+            SettingsDialog dialog = null;
+
+            show(() => new SettingsDialog(), (d, _) => dialog = d);
+            AddStep("put text in the box", () => dialog.NameBox.Text.Value = "abc");
+            click(() => dialog.NameBox);
+            AddUntilStep("text box focused", () => dialog.NameBox.HasFocus);
+            AddStep("End, Backspace", () =>
+            {
+                InputManager.Key(Key.End);
+                InputManager.Key(Key.BackSpace);
+            });
+            AddAssert("a character deleted", () => dialog.NameBox.Text.Value == "ab");
+            AddStep("Home, Delete", () =>
+            {
+                InputManager.Key(Key.Home);
+                InputManager.Key(Key.Delete);
+            });
+            AddAssert("the first character deleted", () => dialog.NameBox.Text.Value == "b");
+            AddStep("put more text", () => dialog.NameBox.Text.Value = "hello");
+            AddStep("Ctrl+A, Backspace", () =>
+            {
+                InputManager.PressKey(Key.ControlLeft);
+                InputManager.Key(Key.A);
+                InputManager.ReleaseKey(Key.ControlLeft);
+                InputManager.Key(Key.BackSpace);
+            });
+            AddAssert("select all and delete work", () => dialog.NameBox.Text.Value == string.Empty && dialog.IsOpen);
+        }
+
+        [Test]
         public void ClosingCanKeepTheDialogOpen()
         {
             SettingsDialog dialog = null;

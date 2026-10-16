@@ -165,6 +165,51 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void BoxesShownTogetherKeepFocusInTheTopOne()
+        {
+            Task<MessageBoxResult> first = null, second = null;
+
+            AddStep("focus the text box", () =>
+            {
+                InputManager.MoveMouseTo(textBox);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddUntilStep("text box focused", () => textBox.HasFocus);
+
+            AddStep("show two at once", () =>
+            {
+                first = MessageBox.Show(below, "First", "One", MessageBoxButton.OKCancel);
+                second = MessageBox.Show(below, "Second", "Two", MessageBoxButton.YesNo);
+            });
+            waitOpen(2);
+            AddUntilStep("the second has focus", () => top.Text == "Second" && top.HasFocus);
+
+            AddStep("Escape", () => InputManager.Key(Key.Escape));
+            AddAssert("the second answered No", () => second.Result == MessageBoxResult.No && !first.IsCompleted);
+            AddUntilStep("focus goes to the first box, not the text box under it", () => top.Text == "First" && top.HasFocus && !textBox.HasFocus);
+            AddStep("Enter", () => InputManager.Key(Key.Enter));
+            AddAssert("the first answered OK", () => first.Result == MessageBoxResult.OK);
+            AddUntilStep("focus back in the text box", () => textBox.HasFocus);
+        }
+
+        [Test]
+        public void RemovingTheWindowAnswersOpenDialogs()
+        {
+            Task<MessageBoxResult> box = null;
+            Task<bool?> dialog = null;
+
+            AddStep("show a box and a dialog", () =>
+            {
+                box = MessageBox.Show(below, "Unsaved", "Box", MessageBoxButton.YesNoCancel);
+                dialog = new Dialog { Title = "Dialog", Content = "Content" }.ShowDialog(below);
+            });
+            AddUntilStep("both open", () => window.PopupLayer.OpenModals.Count == 2 && window.PopupLayer.OpenModals.All(m => m.Dialog.IsLoaded));
+            AddStep("remove the window", () => Clear());
+            AddUntilStep("the box answers None", () => box.IsCompleted && box.Result == MessageBoxResult.None);
+            AddUntilStep("the dialog answers false", () => dialog.IsCompleted && dialog.Result == false);
+        }
+
+        [Test]
         public void LongTextWrapsAtAReadableWidthAndLinesBreak()
         {
             const string sentence = "This is a rather long message that keeps going so that it has to wrap onto several lines instead of stretching across the window.";
