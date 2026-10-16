@@ -363,5 +363,35 @@ namespace OsuXaml.Tests
     [HeadlessTest]
     public partial class ReviewListsInputTests : ManualInputManagerTestScene
     {
+        [Test]
+        public void ShiftClickRangeStartsAtTheAnchorItemAfterTheListChanges()
+        {
+            var items = new BindableList<string>(new[] { "a", "b", "c", "d", "e" });
+            var scope = new BindingScope();
+            ListBox list = null;
+
+            AddStep("create", () => Child = list = new ListBox
+            {
+                Size = new Vector2(200, 300),
+                SelectionMode = SelectionMode.Extended,
+                ItemsSource = XamlBinding.ListCopy(scope, items),
+            });
+            AddUntilStep("laid out", () => list.ContainerFromIndex(4)?.DrawHeight > 0);
+
+            AddStep("click a", () =>
+            {
+                InputManager.MoveMouseTo(list.ContainerFromIndex(0));
+                InputManager.Click(MouseButton.Left);
+            });
+            AddStep("a moves to the middle", () => items.Move(0, 2));
+            AddStep("shift-click the last item", () =>
+            {
+                InputManager.MoveMouseTo(list.ContainerFromIndex(4));
+                InputManager.PressKey(Key.LShift);
+                InputManager.Click(MouseButton.Left);
+                InputManager.ReleaseKey(Key.LShift);
+            });
+            AddAssert("range runs from a to e", () => string.Join(",", list.SelectedItems.Cast<string>().OrderBy(s => s)) == "a,d,e");
+        }
     }
 }

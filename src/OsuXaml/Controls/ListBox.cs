@@ -28,7 +28,9 @@ namespace OsuXaml.Controls
     {
         private readonly Border chrome;
         private ScrollViewer scroll;
-        private int anchor = -1;
+        // The item Shift+click ranges start from; an item rather than an index, so it survives inserts, removals and sorting.
+        private object anchor;
+        private bool hasAnchor;
         private bool updatingSelectedItems;
 
         public ListBox()
@@ -156,19 +158,20 @@ namespace OsuXaml.Controls
 
                 case SelectionMode.Extended when e?.ControlPressed == true:
                     toggle(item);
-                    anchor = index;
+                    setAnchor(item);
                     break;
 
-                case SelectionMode.Extended when e?.ShiftPressed == true && anchor >= 0 && anchor < Items.Count:
+                case SelectionMode.Extended when e?.ShiftPressed == true && hasAnchor && IndexOf(anchor) >= 0:
                 {
-                    int from = System.Math.Min(anchor, index), to = System.Math.Max(anchor, index);
+                    int anchorIndex = IndexOf(anchor);
+                    int from = System.Math.Min(anchorIndex, index), to = System.Math.Max(anchorIndex, index);
                     setSelectedItems(Items.Skip(from).Take(to - from + 1).ToArray());
                     SelectedItem.Value = item;
                     break;
                 }
 
                 default:
-                    anchor = index;
+                    setAnchor(item);
                     base.SelectContainer(container, e);
                     break;
             }
@@ -246,7 +249,7 @@ namespace OsuXaml.Controls
             // SelectedIndex may still be past the end (set before the items it names exist).
             index = System.Math.Clamp(index, 0, Items.Count - 1);
 
-            anchor = index;
+            setAnchor(Items[index]);
             SelectedIndex.Value = index;
             ScrollIntoView(Items[index]);
             return true;
@@ -264,6 +267,12 @@ namespace OsuXaml.Controls
             updatingSelectedItems = false;
 
             SelectionHasChanged();
+        }
+
+        private void setAnchor(object item)
+        {
+            anchor = item;
+            hasAnchor = true;
         }
 
         private void toggle(object item)
