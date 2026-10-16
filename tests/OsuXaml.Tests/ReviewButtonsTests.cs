@@ -6,6 +6,7 @@ using osu.Framework.Testing;
 using OsuXaml.Controls;
 using osuTK;
 using osuTK.Input;
+using TextBox = OsuXaml.Controls.TextBox;
 
 namespace OsuXaml.Tests
 {
@@ -124,6 +125,45 @@ namespace OsuXaml.Tests
                 border.HorizontalContentAlignment = HorizontalAlignment.Left;
             });
             AddUntilStep("keeps its own", () => own.DrawWidth > 0 && near(own.ScreenSpaceDrawQuad.Centre.X, border.ScreenSpaceDrawQuad.Centre.X));
+        }
+
+        [Test]
+        public void LabelAccessKeyGoesAwayWithItsText()
+        {
+            Label label = null;
+            TextBox box = null, other = null;
+
+            AddStep("create", () =>
+            {
+                var panel = new StackPanel { Width = 300, Spacing = 8 };
+                panel.Add(label = new Label { Content = "_Name:" });
+                panel.Add(box = new TextBox());
+                panel.Add(other = new TextBox());
+                label.Target = box;
+                Child = panel;
+            });
+            AddUntilStep("access key parsed", () => label.AccessKey == Key.N);
+
+            AddStep("replace the text with an element", () => label.Content = new TextBlock { Text = "Name:" });
+            AddAssert("no access key", () => label.AccessKey == null);
+
+            AddStep("focus the other box", () =>
+            {
+                InputManager.MoveMouseTo(other);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddStep("press Alt+N", () =>
+            {
+                InputManager.PressKey(Key.AltLeft);
+                InputManager.Key(Key.N);
+                InputManager.ReleaseKey(Key.AltLeft);
+            });
+            AddAssert("target not focused", () => !box.HasFocus && other.HasFocus);
+
+            AddStep("text again", () => label.Content = "_Address:");
+            AddAssert("new access key", () => label.AccessKey == Key.A);
+            AddStep("no content", () => label.Content = null);
+            AddAssert("no access key without content", () => label.AccessKey == null);
         }
     }
 }
