@@ -68,5 +68,29 @@ namespace OsuXaml.Tests
             AddAssert("it came after Delay, not Delay + Interval", () => Time.Current - pressedAt < 1500);
             AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
         }
+
+        [Test]
+        public void ContentKeepsItsMarginAndSizeWhenSwappedOut()
+        {
+            Border border = null;
+            Container content = null;
+
+            AddStep("create", () =>
+            {
+                content = new Container { Height = 50, Margin = new MarginPadding(10) };
+                Child = border = new Border { Size = new Vector2(200, 100), Content = content };
+            });
+            AddUntilStep("stretched inside the margin", () => content.IsLoaded && near(content.DrawWidth, 180));
+
+            AddStep("swap the content out and back", () =>
+            {
+                border.Content = null;
+                border.Content = content;
+            });
+            AddUntilStep("still inside the margin", () => near(content.DrawWidth, 180) && near(content.ScreenSpaceDrawQuad.TopLeft.X, border.ScreenSpaceDrawQuad.TopLeft.X + 10));
+
+            AddStep("take it out", () => border.Content = null);
+            AddAssert("its own margin and size are back", () => content.Parent == null && content.Margin.Equals(new MarginPadding(10)) && content.RelativeSizeAxes == Axes.None);
+        }
     }
 }

@@ -307,9 +307,10 @@ namespace OsuXaml.Controls
             if (slot == null)
                 return;
 
-            // Drawables handed in as Content belong to the caller, so they are detached rather than disposed.
+            // Drawables handed in as Content belong to the caller, so they are detached rather than disposed,
+            // getting back the margin and size the slot took over.
             if (!ownsPresented)
-                slot.Remove(presented, false);
+                slot.Detach();
 
             contentArea.Remove(slot, true);
             slot = null;
