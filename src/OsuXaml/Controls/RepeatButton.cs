@@ -49,6 +49,13 @@ namespace OsuXaml.Controls
 
         private void repeatOnce()
         {
+            // A release this button never saw (it was out of the tree at the time) still ends the press.
+            if (pressState?.Mouse.IsPressed(MouseButton.Left) != true)
+            {
+                stop();
+                return;
+            }
+
             if (pointerIsOver())
                 raiseClick();
         }

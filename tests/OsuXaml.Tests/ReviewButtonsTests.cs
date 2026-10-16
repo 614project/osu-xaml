@@ -221,5 +221,38 @@ namespace OsuXaml.Tests
             });
             AddAssert("still B", () => tabs.SelectedIndex.Value == 1 && tabs.SelectedItem.Value == items[1]);
         }
+
+        [Test]
+        public void RepeatButtonReleasedWhileOutOfTheTreeStopsRepeating()
+        {
+            RepeatButton button = null;
+            Container holder = null;
+            int clicks = 0, afterReAdd = 0;
+
+            AddStep("create", () =>
+            {
+                clicks = 0;
+                holder = new Container { RelativeSizeAxes = Axes.Both };
+                holder.Add(button = new RepeatButton { Content = "+", Delay = 0, Interval = 20 });
+                button.Click += () => clicks++;
+                Child = holder;
+            });
+            AddUntilStep("loaded", () => button.IsLoaded && button.DrawWidth > 0);
+
+            AddStep("press", () =>
+            {
+                InputManager.MoveMouseTo(button);
+                InputManager.PressButton(MouseButton.Left);
+            });
+            AddUntilStep("repeating", () => clicks >= 3);
+
+            AddStep("take it out of the tree", () => holder.Remove(button, false));
+            AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
+            AddStep("put it back under the pointer", () => holder.Add(button));
+            AddWaitStep("let a repeat come due", 3);
+            AddStep("count", () => afterReAdd = clicks);
+            AddWaitStep("wait", 10);
+            AddAssert("no clicks without a press", () => clicks == afterReAdd && !button.IsPressed);
+        }
     }
 }
