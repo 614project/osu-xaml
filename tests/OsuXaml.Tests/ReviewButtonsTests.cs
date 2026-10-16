@@ -188,5 +188,38 @@ namespace OsuXaml.Tests
                 near(box.PresentedContent.ScreenSpaceDrawQuad.TopLeft.X - box.ScreenSpaceDrawQuad.TopLeft.X,
                     plain.PresentedContent.ScreenSpaceDrawQuad.TopLeft.X - plain.ScreenSpaceDrawQuad.TopLeft.X + 6));
         }
+
+        [Test]
+        public void TabControlWithALockedSelectionIgnoresTabClicks()
+        {
+            TabControl tabs = null;
+            TabItem[] items = null;
+            var locked = new BindableInt(1);
+
+            AddStep("create", () =>
+            {
+                items = new[] { new TabItem { Header = "A" }, new TabItem { Header = "B" }, new TabItem { Header = "C" } };
+                tabs = new TabControl { Size = new Vector2(400, 300) };
+                foreach (var item in items)
+                    tabs.Add(item);
+                tabs.SelectedIndex.BindTo(locked);
+                locked.Disabled = true;
+                Child = tabs;
+            });
+            AddUntilStep("loaded", () => items[0].DrawWidth > 0);
+
+            AddStep("click A", () =>
+            {
+                InputManager.MoveMouseTo(items[0]);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddStep("IsSelected on C", () => items[2].IsSelected = true);
+            AddStep("keys", () =>
+            {
+                InputManager.Key(Key.Right);
+                InputManager.Key(Key.Home);
+            });
+            AddAssert("still B", () => tabs.SelectedIndex.Value == 1 && tabs.SelectedItem.Value == items[1]);
+        }
     }
 }
