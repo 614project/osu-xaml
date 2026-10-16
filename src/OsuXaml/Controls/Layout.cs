@@ -5,6 +5,8 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Sprites;
 using osuTK;
 
+[assembly: OsuXaml.XamlGlobalProperties(typeof(OsuXaml.Controls.Layout))]
+
 namespace OsuXaml.Controls
 {
     public enum HorizontalAlignment
@@ -27,6 +29,14 @@ namespace OsuXaml.Controls
     {
         Vertical,
         Horizontal,
+    }
+
+    /// <summary>Like WPF: Hidden keeps its space in panels, Collapsed takes none.</summary>
+    public enum Visibility
+    {
+        Visible,
+        Hidden,
+        Collapsed,
     }
 
     public enum Dock
@@ -72,6 +82,7 @@ namespace OsuXaml.Controls
         public float Top = float.NaN;
         public float Right = float.NaN;
         public float Bottom = float.NaN;
+        public Visibility Visibility;
     }
 
     /// <summary>
@@ -103,6 +114,17 @@ namespace OsuXaml.Controls
 
         public static VerticalAlignment GetVerticalAlignment(Drawable drawable) => Get(drawable).VerticalAlignment;
 
+        /// <summary><c>Visibility="Collapsed"</c> hides the element and gives it no space in panels.</summary>
+        public static void SetVisibility(Drawable drawable, Visibility value)
+        {
+            Get(drawable).Visibility = value;
+            drawable.Alpha = value == Visibility.Visible ? 1 : 0;
+        }
+
+        public static Visibility GetVisibility(Drawable drawable) => Get(drawable).Visibility;
+
+        public static bool IsCollapsed(Drawable drawable) => properties.TryGetValue(drawable, out var p) && p.Visibility == Visibility.Collapsed;
+
         /// <summary>
         /// The size <paramref name="content"/> would like, including its margin.
         /// Layout elements measure themselves; other drawables use their auto size or explicit size,
@@ -110,6 +132,9 @@ namespace OsuXaml.Controls
         /// </summary>
         public static Vector2 Measure(Drawable content, Vector2 available, MarginPadding margin, bool explicitX, bool explicitY)
         {
+            if (IsCollapsed(content))
+                return Vector2.Zero;
+
             var inner = new Vector2(
                 Math.Max(0, available.X - margin.TotalHorizontal),
                 Math.Max(0, available.Y - margin.TotalVertical));

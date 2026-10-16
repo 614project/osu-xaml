@@ -117,6 +117,21 @@ namespace OsuXaml.Generator
             return null;
         }
 
+        /// <summary>A get-only collection property that XAML fills with Add, e.g. <c>&lt;GridView.Columns&gt;</c>.</summary>
+        private IPropertySymbol findCollection(ITypeSymbol type, string name)
+        {
+            for (var t = type; t != null; t = t.BaseType)
+            {
+                foreach (var p in t.GetMembers(name).OfType<IPropertySymbol>())
+                {
+                    if (p.GetMethod != null && canAccess(p.GetMethod) && findMethods(p.Type, "Add").Any(m => !m.IsStatic && m.Parameters.Length == 1))
+                        return p;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>Generated code lives inside the x:Class, so it may use public, internal and protected members.</summary>
         private bool canAccess(ISymbol symbol) => compilation.IsSymbolAccessibleWithin(symbol, rootType);
 
@@ -200,13 +215,18 @@ namespace OsuXaml.Generator
         private void report(DiagnosticDescriptor descriptor, XObject at, params object[] args)
         {
             var info = (IXmlLineInfo)at;
-            var position = info.HasLineInfo() ? new LinePosition(info.LineNumber - 1, info.LinePosition - 1) : default;
-            report(descriptor, position, args);
+            var position = info != null && info.HasLineInfo() ? new LinePosition(info.LineNumber - 1, info.LinePosition - 1) : default;
+
+            // Mistakes inside a shared ResourceDictionary point at that file.
+            string file = at?.Document != null && documentPaths.TryGetValue(at.Document, out string p) ? p : path;
+            report(descriptor, file, position, args);
         }
 
-        private void report(DiagnosticDescriptor descriptor, LinePosition position, params object[] args)
+        private void report(DiagnosticDescriptor descriptor, LinePosition position, params object[] args) => report(descriptor, path, position, args);
+
+        private void report(DiagnosticDescriptor descriptor, string file, LinePosition position, object[] args)
         {
-            var location = Location.Create(path, default, new LinePositionSpan(position, position));
+            var location = Location.Create(file, default, new LinePositionSpan(position, position));
             diagnostics.Add(Diagnostic.Create(descriptor, location, args));
         }
 

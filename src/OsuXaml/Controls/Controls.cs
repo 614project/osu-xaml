@@ -46,14 +46,12 @@ namespace OsuXaml.Controls
     }
 
     /// <summary>
-    /// A button sized to its content. Text content becomes a TextBlock; any element can be the child instead.
+    /// A button sized to its content. Text content becomes a bold TextBlock; any element can be the content instead.
     /// Hover and press feedback run as osu!framework transforms.
     /// </summary>
     public partial class Button : ContentControl
     {
         private readonly Box hover;
-        private TextBlock label;
-        private Colour4 foreground = Theme.AccentText;
         private bool isEnabled = true;
 
         /// <summary>Raised when the button is clicked.</summary>
@@ -65,34 +63,16 @@ namespace OsuXaml.Controls
         public Button()
         {
             Background = Theme.Accent;
+            Foreground = Theme.AccentText;
             CornerRadius = 6;
             Padding = new MarginPadding { Horizontal = 16, Vertical = 8 };
+            HorizontalContentAlignment = HorizontalAlignment.Center;
+            VerticalContentAlignment = VerticalAlignment.Center;
 
             Chrome.Add(hover = new Box { RelativeSizeAxes = Axes.Both, Colour = Colour4.White, Alpha = 0 });
         }
 
-        public LocalisableString Content
-        {
-            get => label?.Text ?? default;
-            set
-            {
-                if (label == null)
-                    Child = label = new TextBlock { Colour = foreground, FontWeight = FontWeight.Bold };
-
-                label.Text = value;
-            }
-        }
-
-        public Colour4 Foreground
-        {
-            get => foreground;
-            set
-            {
-                foreground = value;
-                if (label != null)
-                    label.Colour = value;
-            }
-        }
+        protected override Drawable CreateTextContent(LocalisableString text) => new TextBlock { Text = text, Colour = Foreground, FontWeight = FontWeight.Bold };
 
         public bool IsEnabled
         {
@@ -306,6 +286,16 @@ namespace OsuXaml.Controls
 
         public Vector2 Measure(Vector2 availableSize)
             => child == null ? Vector2.Zero : Layout.Measure(child, new Vector2(availableSize.X, float.PositiveInfinity), default, false, false);
+
+        /// <summary>Scrolls until <paramref name="descendant"/> is visible.</summary>
+        public void ScrollIntoView(Drawable descendant, bool animated = true) => scroll.ScrollIntoView(descendant, animated);
+
+        public void ScrollToStart(bool animated = true) => scroll.ScrollToStart(animated);
+
+        public void ScrollToEnd(bool animated = true) => scroll.ScrollToEnd(animated);
+
+        /// <summary>The current scroll offset from the top.</summary>
+        public double VerticalOffset => scroll.Current;
     }
 
     /// <summary>A thin horizontal rule.</summary>

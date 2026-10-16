@@ -32,6 +32,15 @@ namespace OsuXaml.Controls
             Child = content;
         }
 
+        /// <summary>Takes the content out of the slot without disposing it, restoring what the slot changed.</summary>
+        public Drawable Detach()
+        {
+            unstretch(Axes.Both);
+            Remove(Content, false);
+            Content.Margin = margin;
+            return Content;
+        }
+
         public Vector2 Measure(Vector2 available) => Layout.Measure(Content, available, margin, explicitX, explicitY);
 
         /// <summary>Places the slot and applies alignment: Stretch fills the slot unless the child has its own size.</summary>
@@ -120,18 +129,17 @@ namespace OsuXaml.Controls
             }
         }
 
-        private bool stretchedByUs(Axes axis) => (stretchedAxes & axis) != 0;
-
         private Axes stretchedAxes;
 
         /// <summary>Undoes a stretch this slot applied, when the alignment changes away from Stretch.</summary>
         private void unstretch(Axes axis)
         {
-            if (!stretchedByUs(axis))
+            var ours = stretchedAxes & axis;
+            if (ours == Axes.None)
                 return;
 
-            stretchedAxes &= ~axis;
-            Content.RelativeSizeAxes &= ~axis;
+            stretchedAxes &= ~ours;
+            Content.RelativeSizeAxes &= ~ours;
         }
 
         private void stretch(Axes axis)

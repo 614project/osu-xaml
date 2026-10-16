@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
 namespace OsuXaml.Generator
@@ -38,6 +36,7 @@ namespace OsuXaml.Generator
         {
             // WPF-style controls come first so Button and TextBox mean the ready-to-use ones.
             "OsuXaml.Controls",
+            "OsuXaml",
             "osu.Framework.Graphics",
             "osu.Framework.Graphics.Containers",
             "osu.Framework.Graphics.Sprites",
@@ -52,18 +51,27 @@ namespace OsuXaml.Generator
 
         private readonly Compilation compilation;
         private readonly string path;
+        private readonly ImmutableArray<(string Path, string Text)> dictionarySources;
         private readonly List<Diagnostic> diagnostics = new List<Diagnostic>();
         private readonly List<string> fields = new List<string>();
-        private readonly StringBuilder body = new StringBuilder();
+        private readonly StringBuilder main = new StringBuilder();
+        private readonly StringBuilder deferred = new StringBuilder();
+        private readonly Dictionary<XDocument, string> documentPaths = new Dictionary<XDocument, string>();
+        private readonly Dictionary<string, XElement> names = new Dictionary<string, XElement>();
+        private readonly List<XElement> globalDictionaries = new List<XElement>();
 
+        private StringBuilder body;
         private INamedTypeSymbol rootType;
+        private XElement rootElement;
         private int indent;
         private int counter;
 
-        public XamlCompiler(Compilation compilation, string path)
+        public XamlCompiler(Compilation compilation, string path, ImmutableArray<(string Path, string Text)> dictionaries = default)
         {
             this.compilation = compilation;
             this.path = path;
+            dictionarySources = dictionaries.IsDefault ? ImmutableArray<(string, string)>.Empty : dictionaries;
+            body = main;
         }
 
         /// <summary>What <c>{Bind}</c> paths resolve against at a point in the tree.</summary>
@@ -84,10 +92,51 @@ namespace OsuXaml.Generator
 
             public ITypeSymbol ItemType;
 
+            /// <summary>The control a ControlTemplate is building, for <c>{TemplateBinding}</c>.</summary>
+            public string TemplatedParent;
+
+            public ITypeSymbol TemplatedParentType;
+
             /// <summary>Expression for the <c>BindingScope</c> that owns bound copies created here.</summary>
             public string Bindings;
 
-            public bool InTemplate => Item != null;
+            /// <summary>Item type of the nearest ItemsSource, used by templates that don't name x:DataType.</summary>
+            public ITypeSymbol ItemsType;
+
+            /// <summary>Inside a template body, which runs once per item rather than once per page.</summary>
+            public bool InTemplate;
+
+            public Scope With(Action<Scope> change)
+            {
+                var copy = (Scope)MemberwiseClone();
+                change(copy);
+                return copy;
+            }
+        }
+
+        /// <summary>A property value from an attribute, a property element or a style setter.</summary>
+        private sealed class PropertyValue
+        {
+            /// <summary>Member name, possibly qualified: <c>Background</c>, <c>Grid.Row</c>.</summary>
+            public string Name;
+
+            /// <summary>XML namespace of a qualified name's owner prefix, or empty for the default namespace.</summary>
+            public string Namespace = string.Empty;
+
+            /// <summary>Attribute-style text value; null when <see cref="Element"/> holds the value.</summary>
+            public string Text;
+
+            /// <summary>A property element (or Setter.Value) whose content is the value.</summary>
+            public XElement Element;
+
+            /// <summary>Where diagnostics point.</summary>
+            public XObject Source;
+
+            /// <summary>Where type prefixes and resources are looked up from.</summary>
+            public XElement Context;
+
+            /// <summary>The element the property is applied to.</summary>
+            public XElement Owner;
         }
 
         public CompileResult Compile(string text)
@@ -104,8 +153,14 @@ namespace OsuXaml.Generator
                 return result(null);
             }
 
-            var root = doc.Root;
+            documentPaths[doc] = path;
+
+            var root = rootElement = doc.Root;
             string className = directive(root, "Class");
+
+            // Shared resource dictionaries (a ResourceDictionary root without x:Class) generate no code of their own.
+            if (className == null && root.Name.LocalName == "ResourceDictionary")
+                return result(null);
 
             if (className == null)
             {
@@ -120,6 +175,9 @@ namespace OsuXaml.Generator
                 report(Diagnostics.MissingClass, root, $"x:Class '{className}' was not found. Declare it as a partial class in C#");
                 return result(className);
             }
+
+            loadDictionaries();
+            collectNames(root);
 
             var elementType = resolveType(root);
 
@@ -148,10 +206,53 @@ namespace OsuXaml.Generator
             indent = 3;
             emitElement(root, rootType, scope, isRoot: true);
 
-            return result(className, generate(className, dataType));
+            return result(className, generate(dataType));
         }
 
-        private string generate(string className, ITypeSymbol dataType)
+        private void loadDictionaries()
+        {
+            foreach (var (dictionaryPath, dictionaryText) in dictionarySources)
+            {
+                if (string.Equals(dictionaryPath, path, StringComparison.OrdinalIgnoreCase) || dictionaryText == null)
+                    continue;
+
+                try
+                {
+                    var doc = XDocument.Parse(dictionaryText, LoadOptions.SetLineInfo);
+
+                    if (doc.Root.Name.LocalName != "ResourceDictionary" || directive(doc.Root, "Class") != null)
+                        continue;
+
+                    documentPaths[doc] = dictionaryPath;
+                    globalDictionaries.Add(doc.Root);
+                }
+                catch (XmlException)
+                {
+                    // Reported when that file itself is compiled.
+                }
+            }
+        }
+
+        /// <summary>Indexes x:Name elements outside templates and resources, for <c>{Bind ..., ElementName=x}</c>.</summary>
+        private void collectNames(XElement element)
+        {
+            string name = directive(element, "Name");
+            if (name != null && !names.ContainsKey(name))
+                names[name] = element;
+
+            foreach (var child in element.Elements())
+            {
+                string local = child.Name.LocalName;
+
+                if (local.EndsWith(".Resources", StringComparison.Ordinal) || local.EndsWith("Template", StringComparison.Ordinal)
+                    || local.EndsWith(".DisplayMemberBinding", StringComparison.Ordinal) || local == "Style")
+                    continue;
+
+                collectNames(child);
+            }
+        }
+
+        private string generate(ITypeSymbol dataType)
         {
             var sb = new StringBuilder();
             string ns = rootType.ContainingNamespace.IsGlobalNamespace ? null : rootType.ContainingNamespace.ToDisplayString();
@@ -179,7 +280,15 @@ namespace OsuXaml.Generator
             sb.AppendLine("        /// <summary>Builds the drawable tree declared in " + System.IO.Path.GetFileName(path) + ".</summary>");
             sb.AppendLine("        private void InitializeComponent(" + parameter + ")");
             sb.AppendLine("        {");
-            sb.Append(body);
+            sb.Append(main);
+
+            if (deferred.Length > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("            // Bindings to named elements run once every element exists.");
+                sb.Append(deferred);
+            }
+
             sb.AppendLine("        }");
             sb.AppendLine("    }");
 
@@ -224,7 +333,7 @@ namespace OsuXaml.Generator
             if (name != null)
             {
                 if (scope.InTemplate)
-                    report(Diagnostics.BadTemplate, element, "x:Name cannot be used inside an ItemTemplate, because the template creates one drawable per item");
+                    report(Diagnostics.BadTemplate, element, "x:Name cannot be used inside a template, because the template creates one drawable per item");
                 else if (!isRoot)
                 {
                     fields.Add($"private {typeName(type)} {name};");
@@ -232,7 +341,26 @@ namespace OsuXaml.Generator
                 }
             }
 
-            XAttribute itemsSource = null;
+            // Templates below this element that don't name x:DataType take the type of its ItemsSource items.
+            var itemsType = itemsTypeOf(element, scope);
+            if (itemsType != null)
+                scope = scope.With(s => s.ItemsType = itemsType);
+
+            var local = localPropertyNames(element);
+
+            // Style setters first, so the element's own attributes win.
+            if (!isRoot)
+            {
+                foreach (var setter in styleSetters(element, type))
+                {
+                    if (!local.Contains(setter.Name))
+                        emitProperty(v, type, setter, scope);
+                }
+            }
+
+            XAttribute legacyItemsSource = null;
+            XElement legacyTemplate = null;
+            bool hasContent = false;
 
             foreach (var attribute in element.Attributes())
             {
@@ -241,37 +369,72 @@ namespace OsuXaml.Generator
 
                 string member = attribute.Name.LocalName;
 
+                if (member == "Style" && findMember(type, member) == null)
+                    continue;
+
+                // Panels and osu!framework containers take ItemsSource + ItemTemplate without having such properties.
                 if (member == items_source && findMember(type, member) == null)
                 {
-                    itemsSource = attribute;
+                    legacyItemsSource = attribute;
                     continue;
                 }
 
-                emitAttribute(v, type, attribute, scope);
+                if (member == item_template && findMember(type, member) == null)
+                {
+                    legacyTemplate = resourceTemplate(attribute);
+                    continue;
+                }
+
+                if (member == "Content")
+                    hasContent = true;
+
+                emitProperty(v, type, new PropertyValue
+                {
+                    Name = member,
+                    Namespace = attribute.Name.NamespaceName,
+                    Text = attribute.Value,
+                    Source = attribute,
+                    Context = element,
+                    Owner = element,
+                }, scope);
             }
 
-            XElement template = null;
+            emitImplicitItemTemplate(v, type, element, scope, local);
 
             foreach (var child in element.Elements())
             {
-                string local = child.Name.LocalName;
-                int dot = local.IndexOf('.');
+                string childName = child.Name.LocalName;
+                int dot = childName.IndexOf('.');
 
                 if (dot >= 0)
                 {
-                    if (local.Substring(dot + 1) == item_template)
-                        template = child;
-                    else
-                        report(Diagnostics.UnknownMember, child, type.Name, local.Substring(dot + 1));
+                    string member = childName.Substring(dot + 1);
 
+                    if (member == "Resources")
+                        continue;
+
+                    if (member == item_template && findMember(type, member) == null)
+                    {
+                        var roots = child.Elements().ToList();
+
+                        if (roots.Count != 1)
+                            report(Diagnostics.BadTemplate, child, "ItemTemplate must contain exactly one element");
+                        else
+                            legacyTemplate = roots[0];
+
+                        continue;
+                    }
+
+                    if (member == "Content")
+                        hasContent = true;
+
+                    emitPropertyElement(v, type, child, scope);
                     continue;
                 }
 
-                var childType = resolveType(child);
-                if (childType == null)
-                    continue;
+                hasContent = true;
 
-                string c = emitElement(child, childType, scope, isRoot: false);
+                var (c, childType) = emitValueElement(child, scope);
                 if (c != null)
                     emitAddChild(v, type, childType, c, child, isRoot);
             }
@@ -279,15 +442,93 @@ namespace OsuXaml.Generator
             string content = string.Concat(element.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
 
             if (content.Length > 0)
+            {
+                hasContent = true;
                 emitContent(v, type, content, element, scope);
+            }
 
-            if (itemsSource != null || template != null)
-                emitItems(v, type, element, itemsSource, template, scope);
+            // <ContentPresenter /> in a ControlTemplate shows the templated control's content.
+            if (!hasContent && scope.TemplatedParent != null && inherits(type, compilation.GetTypeByMetadataName("OsuXaml.Controls.ContentPresenter"))
+                && inherits(scope.TemplatedParentType, compilation.GetTypeByMetadataName("OsuXaml.Controls.ContentControl")))
+                line($"{scope.TemplatedParent}.AttachPresenter({v});");
+
+            if (legacyItemsSource != null || legacyTemplate != null)
+                emitItems(v, type, element, legacyItemsSource, legacyTemplate, scope);
 
             return v;
         }
 
-        private void emitAddChild(string v, INamedTypeSymbol parent, INamedTypeSymbol child, string c, XElement childElement, bool isRoot)
+        /// <summary>
+        /// Creates the value an element stands for: a drawable or object, or a literal for
+        /// <c>&lt;x:String&gt;</c>, <c>&lt;x:Double&gt;</c> and friends.
+        /// </summary>
+        private (string Expr, ITypeSymbol Type) emitValueElement(XElement element, Scope scope)
+        {
+            if (directive_namespaces.Contains(element.Name.NamespaceName))
+            {
+                var primitive = directiveType(element.Name.LocalName);
+
+                if (primitive == null)
+                {
+                    report(Diagnostics.UnknownType, element, "x:" + element.Name.LocalName, " (use x:String, x:Double, x:Single, x:Int32 or x:Boolean)");
+                    return (null, null);
+                }
+
+                string literal = convertLiteral(element.Value, primitive, out string hint);
+
+                if (literal == null)
+                {
+                    report(Diagnostics.BadLiteral, element, element.Value, primitive.ToDisplayString(), hint ?? "");
+                    return (null, null);
+                }
+
+                string v = "e" + counter++;
+                line($"var {v} = {literal};");
+                return (v, primitive);
+            }
+
+            var type = resolveType(element);
+            if (type == null)
+                return (null, null);
+
+            return (emitElement(element, type, scope, isRoot: false), type);
+        }
+
+        private ITypeSymbol directiveType(string name)
+        {
+            switch (name)
+            {
+                case "String": return compilation.GetSpecialType(SpecialType.System_String);
+                case "Double": return compilation.GetSpecialType(SpecialType.System_Double);
+                case "Single": return compilation.GetSpecialType(SpecialType.System_Single);
+                case "Int32": return compilation.GetSpecialType(SpecialType.System_Int32);
+                case "Boolean": return compilation.GetSpecialType(SpecialType.System_Boolean);
+                default: return null;
+            }
+        }
+
+        /// <summary>Attribute and property element names set directly on an element; these beat style setters.</summary>
+        private static HashSet<string> localPropertyNames(XElement element)
+        {
+            var set = new HashSet<string>();
+
+            foreach (var a in element.Attributes())
+            {
+                if (!a.IsNamespaceDeclaration && !directive_namespaces.Contains(a.Name.NamespaceName))
+                    set.Add(a.Name.LocalName);
+            }
+
+            foreach (var c in element.Elements())
+            {
+                int dot = c.Name.LocalName.IndexOf('.');
+                if (dot >= 0)
+                    set.Add(c.Name.LocalName.Substring(dot + 1));
+            }
+
+            return set;
+        }
+
+        private void emitAddChild(string v, INamedTypeSymbol parent, ITypeSymbol child, string c, XElement childElement, bool isRoot)
         {
             var containerChild = containerChildType(parent);
 
@@ -303,7 +544,7 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            // Panels such as Grid and StackPanel expose Add(Drawable) without being osu!framework containers.
+            // Panels expose Add(Drawable) and items controls Add(object) without being osu!framework containers.
             var add = findMethods(parent, "Add").FirstOrDefault(m => !m.IsStatic && m.Parameters.Length == 1 && implicitly(child, m.Parameters[0].Type));
 
             if (add != null)
@@ -339,69 +580,206 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            emitAssignment(v, type, textMember, content, element, scope);
+            emitAssignment(v, type, textMember, content, element, element, element, scope);
         }
 
         #endregion
 
-        #region Attributes
+        #region Properties
 
-        private void emitAttribute(string v, INamedTypeSymbol type, XAttribute attribute, Scope scope)
+        /// <summary>
+        /// Sets one property: a member of the element, an attached property (<c>Grid.Row</c>),
+        /// or a global property every element accepts (<c>HorizontalAlignment</c>, <c>ToolTip</c>).
+        /// </summary>
+        private void emitProperty(string v, INamedTypeSymbol type, PropertyValue value, Scope scope)
         {
-            string name = attribute.Name.LocalName;
-
-            // Attached properties: Grid.Row="1" calls Grid.SetRow(element, 1).
+            string name = value.Name;
             int dot = name.IndexOf('.');
 
             if (dot > 0)
             {
-                var owner = resolveType(attribute.Name.NamespaceName.Length > 0 ? attribute.Name.NamespaceName : attribute.Parent.GetDefaultNamespace().NamespaceName, name.Substring(0, dot));
+                string ownerName = name.Substring(0, dot);
+                string memberName = name.Substring(dot + 1);
+                var owner = resolveType(value.Namespace.Length > 0 ? value.Namespace : value.Context.GetDefaultNamespace().NamespaceName, ownerName);
 
                 if (owner == null)
                 {
-                    report(Diagnostics.UnknownType, attribute, name.Substring(0, dot), "");
+                    report(Diagnostics.UnknownType, value.Source, ownerName, "");
                     return;
                 }
 
-                emitAttached(v, type, owner, name.Substring(dot + 1), attribute, scope);
+                // Button.Background on a Button is just Background (and <Bag.Tags> fills the Tags collection).
+                if (inherits(type, owner))
+                {
+                    if (findMember(type, memberName) is ISymbol own)
+                    {
+                        emitMemberValue(v, type, own, value, scope);
+                        return;
+                    }
+
+                    if (value.Element != null && findCollection(type, memberName) is IPropertySymbol ownCollection)
+                    {
+                        emitCollection(v, type, ownCollection, value, scope);
+                        return;
+                    }
+                }
+
+                emitAttachedValue(v, type, owner, memberName, value, scope);
                 return;
             }
 
             var member = findMember(type, name);
 
-            if (member == null)
+            if (member != null)
             {
-                // Layout properties every element accepts, such as HorizontalAlignment, live on OsuXaml.Controls.Layout.
-                var layout = compilation.GetTypeByMetadataName("OsuXaml.Controls.Layout");
+                emitMemberValue(v, type, member, value, scope);
+                return;
+            }
 
-                if (layout != null && attachedSetter(layout, name, type) != null)
+            if (value.Element != null && findCollection(type, name) is IPropertySymbol collection)
+            {
+                emitCollection(v, type, collection, value, scope);
+                return;
+            }
+
+            var provider = globalProviders().FirstOrDefault(p => attachedSetters(p, name, type).Any());
+
+            if (provider != null)
+            {
+                emitAttachedValue(v, type, provider, name, value, scope);
+                return;
+            }
+
+            report(Diagnostics.UnknownMember, value.Source, type.Name, name);
+        }
+
+        private void emitPropertyElement(string v, INamedTypeSymbol type, XElement property, Scope scope)
+        {
+            emitProperty(v, type, new PropertyValue
+            {
+                Name = property.Name.LocalName,
+                Namespace = property.Name.NamespaceName,
+                Element = property,
+                Source = property,
+                Context = property,
+                Owner = property.Parent,
+            }, scope);
+        }
+
+        private void emitMemberValue(string v, INamedTypeSymbol type, ISymbol member, PropertyValue value, Scope scope)
+        {
+            if (value.Element == null)
+            {
+                emitAssignment(v, type, member, value.Text, value.Source, value.Context, value.Owner, scope);
+                return;
+            }
+
+            var children = value.Element.Elements().ToList();
+            string text = string.Concat(value.Element.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
+            var target = memberType(member);
+
+            if (children.Count == 0)
+            {
+                if (text.Length > 0)
+                    emitAssignment(v, type, member, text, value.Element, value.Context, value.Owner, scope);
+                return;
+            }
+
+            if (children.Count > 1)
+            {
+                report(Diagnostics.BadTemplate, value.Element, $"'{member.Name}' takes a single element");
+                return;
+            }
+
+            if (member is IEventSymbol || target == null)
+            {
+                report(Diagnostics.UnknownMember, value.Element, type.Name, member.Name + " (events take a method name)");
+                return;
+            }
+
+            if (isTemplateType(target))
+            {
+                string t = emitTemplate(children[0], target, templateHint(type, value.Owner, member.Name, target, scope), scope);
+                if (t != null)
+                    assign(v, member, t);
+                return;
+            }
+
+            var (c, childType) = emitValueElement(children[0], scope);
+            if (c != null)
+                assignChecked(v, member, c, childType, children[0]);
+        }
+
+        /// <summary>A read-only collection property filled from a property element: <c>&lt;GridView.Columns&gt;</c>.</summary>
+        private void emitCollection(string v, INamedTypeSymbol type, IPropertySymbol collection, PropertyValue value, Scope scope)
+        {
+            foreach (var child in value.Element.Elements())
+            {
+                var (c, childType) = emitValueElement(child, scope);
+                if (c == null)
+                    continue;
+
+                bool canAdd = findMethods(collection.Type, "Add").Any(m => !m.IsStatic && m.Parameters.Length == 1 && implicitly(childType, m.Parameters[0].Type));
+
+                if (!canAdd)
+                    report(Diagnostics.TypeMismatch, child, childType.Name, collection.Name, collection.Type.ToDisplayString(), "");
+                else
+                    line($"{v}.{collection.Name}.Add({c});");
+            }
+        }
+
+        private void emitAssignment(string v, INamedTypeSymbol type, ISymbol member, string value, XObject source, XElement context, XElement owner, Scope scope)
+        {
+            if (Markup.IsMarkup(value))
+            {
+                var markup = Markup.Parse(value, out string error);
+
+                if (markup == null)
                 {
-                    emitAttached(v, type, layout, name, attribute, scope);
+                    report(Diagnostics.BadMarkup, source, error);
                     return;
                 }
 
-                report(Diagnostics.UnknownMember, attribute, type.Name, name);
-                return;
+                switch (markup.Extension)
+                {
+                    case Markup.Bind:
+                    case Markup.TemplateBinding:
+                        emitBinding(v, type, member, markup, source, owner, scope);
+                        return;
+
+                    case Markup.StaticResource:
+                        emitResourceValue(v, type, member, markup.Path, source, context, owner, scope);
+                        return;
+
+                    case Markup.Static:
+                    {
+                        var (expr, exprType) = staticMember(markup.Path, context, source);
+                        if (expr == null)
+                            return;
+
+                        string converted = convertValue(expr, exprType, valueType(member), new Markup(), source);
+                        if (converted != null)
+                            assign(v, member, converted);
+                        return;
+                    }
+
+                    case Markup.Null:
+                    {
+                        var target = valueType(member);
+                        if (target.IsValueType && target.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T)
+                            report(Diagnostics.BadLiteral, source, "{x:Null}", target.ToDisplayString(), " (value types can't be null)");
+                        else
+                            assign(v, member, "null");
+                        return;
+                    }
+
+                    default:
+                        report(Diagnostics.BadMarkup, source, $"{{x:{markup.Extension}}} can't be used as a property value");
+                        return;
+                }
             }
 
-            emitAssignment(v, type, member, attribute.Value, attribute, scope);
-        }
-
-        private void emitAssignment(string v, INamedTypeSymbol type, ISymbol member, string value, XObject source, Scope scope)
-        {
-            if (BindMarkup.IsMarkup(value))
-            {
-                var bind = BindMarkup.Parse(value, out string error);
-
-                if (bind == null)
-                    report(Diagnostics.BadMarkup, source, error);
-                else
-                    emitBinding(v, member, bind, source, scope);
-
-                return;
-            }
-
-            value = BindMarkup.Unescape(value);
+            value = Markup.Unescape(value);
 
             if (member is IEventSymbol ev)
             {
@@ -411,9 +789,9 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            var target = memberType(member);
+            var memberTarget = memberType(member);
 
-            if (target is INamedTypeSymbol { TypeKind: TypeKind.Delegate } del)
+            if (memberTarget is INamedTypeSymbol { TypeKind: TypeKind.Delegate } del)
             {
                 string handler = methodHandler(del, value, source);
                 if (handler != null)
@@ -421,17 +799,50 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            // A literal on a bindable member (TextBox.Text, CheckBox.IsChecked) sets its value.
-            var bindableValue = bindableClassValueType(target);
-            string literal = convertLiteral(value, bindableValue ?? target, out string hint);
-
-            if (literal == null)
+            // DisplayMemberPath="Name": a path on a template property means "show this member as text".
+            if (isTemplateType(memberTarget))
             {
-                report(Diagnostics.BadLiteral, source, value, (bindableValue ?? target).ToDisplayString(), hint ?? "");
+                string t = emitTextTemplate(Markup.ForPath(value), templateHint(type, owner, member.Name, memberTarget, scope), scope, source, member.Name);
+                if (t != null)
+                    assign(v, member, t);
                 return;
             }
 
-            line(bindableValue != null ? $"{v}.{member.Name}.Value = {literal};" : $"{v}.{member.Name} = {literal};");
+            // A literal on a bindable member (TextBox.Text, CheckBox.IsChecked) sets its value.
+            var target2 = valueType(member);
+            string literal = convertLiteral(value, target2, out string hint);
+
+            if (literal == null)
+            {
+                report(Diagnostics.BadLiteral, source, value, target2.ToDisplayString(), hint ?? "");
+                return;
+            }
+
+            assign(v, member, literal);
+        }
+
+        /// <summary>The type a value is assigned as: the T of a Bindable&lt;T&gt; member, else the member type.</summary>
+        private ITypeSymbol valueType(ISymbol member)
+        {
+            var target = memberType(member);
+            return bindableClassValueType(target) ?? target;
+        }
+
+        /// <summary><c>v.Member = expr</c>, or <c>v.Member.Value = expr</c> for a bindable member.</summary>
+        private void assign(string v, ISymbol member, string expr)
+            => line(bindableClassValueType(memberType(member)) != null ? $"{v}.{member.Name}.Value = {expr};" : $"{v}.{member.Name} = {expr};");
+
+        private void assignChecked(string v, ISymbol member, string expr, ITypeSymbol exprType, XObject source)
+        {
+            var target = valueType(member);
+
+            if (exprType != null && !implicitly(exprType, target))
+            {
+                report(Diagnostics.TypeMismatch, source, exprType.ToDisplayString(), member.Name, target.ToDisplayString(), "");
+                return;
+            }
+
+            assign(v, member, expr);
         }
 
         /// <summary>A plain attribute value on a delegate or event names a method on the x:Class (code-behind).</summary>
@@ -445,7 +856,12 @@ namespace OsuXaml.Generator
                 return null;
             }
 
-            return lambda(delegateType, "this." + method.Name, method, null, null);
+            string handler = lambda(delegateType, "this." + method.Name, method, null, null);
+
+            if (handler == null)
+                report(Diagnostics.UnknownMethod, source, $"'{method.Name}' must take no parameters or the same parameters as {delegateType.Name}");
+
+            return handler;
         }
 
         /// <summary>
@@ -456,14 +872,14 @@ namespace OsuXaml.Generator
         private string lambda(INamedTypeSymbol delegateType, string target, IMethodSymbol method, string item, ITypeSymbol itemType)
         {
             var invoke = delegateType.DelegateInvokeMethod;
-            var names = invoke.Parameters.Select((_, i) => "a" + i).ToArray();
-            string parameters = "(" + string.Join(", ", names) + ")";
+            var parameterNames = invoke.Parameters.Select((_, i) => "a" + i).ToArray();
+            string parameters = "(" + string.Join(", ", parameterNames) + ")";
 
             string args;
 
             if (method.Parameters.Length == invoke.Parameters.Length)
-                args = string.Join(", ", names);
-            else if (method.Parameters.Length == 1 && item != null && ((Microsoft.CodeAnalysis.CSharp.CSharpCompilation)compilation).ClassifyConversion(itemType, method.Parameters[0].Type).IsImplicit)
+                args = string.Join(", ", parameterNames);
+            else if (method.Parameters.Length == 1 && item != null && implicitly(itemType, method.Parameters[0].Type))
                 args = item;
             else if (method.Parameters.Length == 0)
                 args = string.Empty;
@@ -471,609 +887,6 @@ namespace OsuXaml.Generator
                 return null;
 
             return $"{parameters} => {target}({args})";
-        }
-
-        #endregion
-
-        #region Bindings
-
-        private void emitBinding(string v, ISymbol member, BindMarkup bind, XObject source, Scope scope)
-        {
-            bool fromRoot = string.Equals(bind.Get("Source"), "Root", StringComparison.OrdinalIgnoreCase);
-            string dc = fromRoot ? scope.RootDataContext : scope.DataContext;
-            var dcType = fromRoot ? scope.RootDataContextType : scope.DataContextType;
-
-            if (dc == null)
-            {
-                report(Diagnostics.BadMarkup, source, "{Bind} needs a data context. Add x:DataType=\"prefix:ViewModelType\" to the root element");
-                return;
-            }
-
-            if (!resolvePath(dc, dcType, bind.Path, source, out string expr, out ISymbol last, out ITypeSymbol sourceType))
-                return;
-
-            // Methods bind to events and delegate properties: Action="{Bind AddItem}".
-            if (last is IMethodSymbol method)
-            {
-                var del = member is IEventSymbol ev ? ev.Type as INamedTypeSymbol : memberType(member) as INamedTypeSymbol;
-
-                if (del?.TypeKind != TypeKind.Delegate)
-                {
-                    report(Diagnostics.TypeMismatch, source, "method '" + method.Name + "'", member.Name, memberType(member)?.ToDisplayString() ?? "event", " (methods bind only to events and delegates)");
-                    return;
-                }
-
-                string handler = lambda(del, expr, method, scope.Item, scope.ItemType);
-
-                if (handler == null)
-                {
-                    report(Diagnostics.UnknownMethod, source, $"'{method.Name}' must take no parameters, the template item, or the same parameters as {del.Name}");
-                    return;
-                }
-
-                line(member is IEventSymbol ? $"{v}.{member.Name} += {handler};" : $"{v}.{member.Name} = {handler};");
-                return;
-            }
-
-            var target = memberType(member);
-
-            if (target == null)
-            {
-                report(Diagnostics.UnknownMember, source, member.ContainingType.Name, member.Name);
-                return;
-            }
-
-            string mode = bind.Get("Mode") ?? "Default";
-
-            // A control's own bindable (Checkbox.Current, TextBox.Current) links to a view model bindable in both directions.
-            var targetBindableValue = bindableClassValueType(target);
-
-            if (targetBindableValue != null && !mode.Equals("OneWay", StringComparison.OrdinalIgnoreCase))
-            {
-                var sourceBindableValue = bindableClassValueType(sourceType);
-
-                if (sourceBindableValue == null || !SymbolEqualityComparer.Default.Equals(sourceBindableValue, targetBindableValue))
-                {
-                    report(Diagnostics.TypeMismatch, source, describe(sourceType), member.Name, target.ToDisplayString(),
-                        $" (two-way bindings need a Bindable<{targetBindableValue.ToDisplayString()}> source)");
-                    return;
-                }
-
-                line($"global::OsuXaml.XamlBinding.TwoWay({v}.{member.Name}, {expr});");
-                return;
-            }
-
-            if (mode.Equals("TwoWay", StringComparison.OrdinalIgnoreCase))
-            {
-                report(Diagnostics.TypeMismatch, source, describe(sourceType), member.Name, target.ToDisplayString(), " (Mode=TwoWay needs a Bindable target such as Current)");
-                return;
-            }
-
-            var assignTo = targetBindableValue ?? target;
-            string assign = targetBindableValue != null ? $"{v}.{member.Name}.Value" : $"{v}.{member.Name}";
-
-            var valueType = bindableValueType(sourceType);
-
-            if (valueType != null)
-            {
-                string converted = convertValue("x", valueType, assignTo, bind, source);
-                if (converted == null)
-                    return;
-
-                string animate = bind.Get("Animate");
-
-                if (animate != null && targetBindableValue == null)
-                {
-                    if (!double.TryParse(animate, NumberStyles.Float, CultureInfo.InvariantCulture, out double duration))
-                    {
-                        report(Diagnostics.BadMarkup, source, $"Animate must be a duration in milliseconds, not '{animate}'");
-                        return;
-                    }
-
-                    string easing = bind.Get("Easing") ?? "OutQuint";
-                    var easingType = compilation.GetTypeByMetadataName("osu.Framework.Graphics.Easing");
-
-                    if (easingType?.GetMembers(easing).OfType<IFieldSymbol>().Any() != true)
-                    {
-                        report(Diagnostics.BadMarkup, source, $"Unknown Easing '{easing}'");
-                        return;
-                    }
-
-                    // The first value is applied directly; later changes run as an osu!framework transform.
-                    line($"global::OsuXaml.XamlBinding.OneWay({scope.Bindings}, {expr}, (x, initial) =>");
-                    line("{");
-                    indent++;
-                    line($"var value = {converted};");
-                    line($"if (initial) {assign} = value;");
-                    line($"else global::osu.Framework.Graphics.TransformableExtensions.TransformTo({v}, nameof({v}.{member.Name}), value, {literalDouble(duration)}, global::osu.Framework.Graphics.Easing.{easing});");
-                    indent--;
-                    line("});");
-                    return;
-                }
-
-                line($"global::OsuXaml.XamlBinding.OneWay({scope.Bindings}, {expr}, (x, _) => {assign} = {converted});");
-                return;
-            }
-
-            // A plain property or field is read once.
-            string once = convertValue(expr, sourceType, assignTo, bind, source);
-            if (once != null)
-                line($"{assign} = {once};");
-        }
-
-        private void emitItems(string v, INamedTypeSymbol type, XElement element, XAttribute itemsSource, XElement template, Scope scope)
-        {
-            if (itemsSource == null || template == null)
-            {
-                report(Diagnostics.BadTemplate, element, "ItemsSource and an ItemTemplate property element must be used together");
-                return;
-            }
-
-            var itemsHost = compilation.GetTypeByMetadataName("OsuXaml.Controls.IItemsHost");
-
-            if (containerChildType(type)?.ToDisplayString() != "osu.Framework.Graphics.Drawable" && !inherits(type, itemsHost))
-            {
-                report(Diagnostics.BadTemplate, element, $"ItemsSource needs a panel or a Container<Drawable> such as FillFlowContainer, but '{type.Name}' is neither");
-                return;
-            }
-
-            var bind = BindMarkup.IsMarkup(itemsSource.Value) ? BindMarkup.Parse(itemsSource.Value, out _) : null;
-
-            if (bind == null)
-            {
-                report(Diagnostics.BadTemplate, itemsSource, "ItemsSource must be a binding, e.g. ItemsSource=\"{Bind Items}\"");
-                return;
-            }
-
-            bool fromRoot = string.Equals(bind.Get("Source"), "Root", StringComparison.OrdinalIgnoreCase);
-            string dc = fromRoot ? scope.RootDataContext : scope.DataContext;
-            var dcType = fromRoot ? scope.RootDataContextType : scope.DataContextType;
-
-            if (dc == null)
-            {
-                report(Diagnostics.BadMarkup, itemsSource, "{Bind} needs a data context. Add x:DataType to the root element");
-                return;
-            }
-
-            if (!resolvePath(dc, dcType, bind.Path, itemsSource, out string expr, out _, out ITypeSymbol sourceType))
-                return;
-
-            var itemType = bindableListItemType(sourceType);
-
-            if (itemType == null)
-            {
-                report(Diagnostics.TypeMismatch, itemsSource, describe(sourceType), items_source, "IBindableList<T>", "");
-                return;
-            }
-
-            var templateRoots = template.Elements().ToList();
-
-            if (templateRoots.Count != 1)
-            {
-                report(Diagnostics.BadTemplate, template, "ItemTemplate must contain exactly one element");
-                return;
-            }
-
-            var rootElement = templateRoots[0];
-            var rootElementType = resolveType(rootElement);
-            if (rootElementType == null)
-                return;
-
-            string item = "item" + counter;
-            string itemScope = "scope" + counter++;
-
-            var inner = new Scope
-            {
-                DataContext = item,
-                DataContextType = itemType,
-                RootDataContext = scope.RootDataContext,
-                RootDataContextType = scope.RootDataContextType,
-                Item = item,
-                ItemType = itemType,
-                Bindings = itemScope,
-            };
-
-            line($"global::OsuXaml.XamlBinding.Items<{typeName(itemType)}>({scope.Bindings}, {v}, {expr}, ({item}, {itemScope}) =>");
-            line("{");
-            indent++;
-            string created = emitElement(rootElement, rootElementType, inner, isRoot: false);
-            if (created != null)
-                line($"return {created};");
-            else
-                line("return null;");
-            indent--;
-            line("});");
-        }
-
-        /// <summary>Resolves a dotted path such as <c>Player.Volume</c> against the data context type.</summary>
-        private bool resolvePath(string dc, ITypeSymbol dcType, string bindingPath, XObject source, out string expr, out ISymbol last, out ITypeSymbol type)
-        {
-            expr = dc;
-            last = null;
-            type = dcType;
-
-            // {Bind} with no path binds the data context itself, e.g. each string of an ItemsSource.
-            if (string.IsNullOrEmpty(bindingPath))
-                return true;
-
-            foreach (string segment in bindingPath.Split('.'))
-            {
-                if (last is IMethodSymbol)
-                {
-                    report(Diagnostics.UnknownPath, source, last.Name, segment);
-                    return false;
-                }
-
-                var member = findReadable(type, segment);
-
-                if (member == null)
-                {
-                    report(Diagnostics.UnknownPath, source, type.ToDisplayString(), segment);
-                    return false;
-                }
-
-                expr += "." + segment;
-                last = member;
-                type = member is IMethodSymbol m ? m.ReturnType : memberType(member);
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Converts a bound value to the target type: Converter first, then StringFormat, then ToString for text targets.
-        /// Anything that still has no implicit conversion is a build error rather than a runtime surprise.
-        /// </summary>
-        private string convertValue(string expr, ITypeSymbol from, ITypeSymbol to, BindMarkup bind, XObject source)
-        {
-            string converter = bind.Get("Converter");
-
-            if (converter != null)
-            {
-                var method = findConverter(converter, from, source);
-                if (method == null)
-                    return null;
-
-                expr = $"{method.Value.Call}({expr})";
-                from = method.Value.Method.ReturnType;
-            }
-
-            string format = bind.Get("StringFormat");
-
-            if (format != null)
-            {
-                expr = $"string.Format(global::System.Globalization.CultureInfo.CurrentCulture, {SymbolDisplay.FormatLiteral(format, true)}, {expr})";
-                from = compilation.GetSpecialType(SpecialType.System_String);
-            }
-
-            if (isText(to) && !isText(from))
-            {
-                expr = from.IsValueType ? $"{expr}.ToString()" : $"{expr}?.ToString()";
-                from = compilation.GetSpecialType(SpecialType.System_String);
-            }
-
-            var conversion = ((Microsoft.CodeAnalysis.CSharp.CSharpCompilation)compilation).ClassifyConversion(from, to);
-
-            if (!conversion.IsImplicit)
-            {
-                report(Diagnostics.TypeMismatch, source, from.ToDisplayString(), source is XAttribute a ? a.Name.LocalName : "value", to.ToDisplayString(), " (add a Converter)");
-                return null;
-            }
-
-            return expr;
-        }
-
-        /// <summary>
-        /// A converter is a one-parameter method: <c>Converter=DoneToAlpha</c> looks on the x:Class,
-        /// <c>Converter=local:Converters.DoneToAlpha</c> on a static class.
-        /// </summary>
-        private (string Call, IMethodSymbol Method)? findConverter(string name, ITypeSymbol input, XObject source)
-        {
-            INamedTypeSymbol owner = rootType;
-            string methodName = name;
-            string call = name;
-
-            int dot = name.LastIndexOf('.');
-
-            if (dot >= 0)
-            {
-                owner = resolveTypeName(name.Substring(0, dot), source.Parent ?? (XElement)source);
-                methodName = name.Substring(dot + 1);
-
-                if (owner == null)
-                {
-                    report(Diagnostics.UnknownType, source, name.Substring(0, dot), "");
-                    return null;
-                }
-
-                call = typeName(owner) + "." + methodName;
-            }
-
-            var method = owner.GetMembers(methodName).OfType<IMethodSymbol>()
-                              .FirstOrDefault(m => m.Parameters.Length == 1 && ((Microsoft.CodeAnalysis.CSharp.CSharpCompilation)compilation).ClassifyConversion(input, m.Parameters[0].Type).IsImplicit);
-
-            if (method == null)
-            {
-                report(Diagnostics.UnknownMethod, source, $"Converter '{name}' must be a method on '{owner.Name}' taking one {input.ToDisplayString()} parameter");
-                return null;
-            }
-
-            return (call, method);
-        }
-
-        /// <summary>Emits <c>Owner.SetName(element, value)</c> for a literal or a binding.</summary>
-        private void emitAttached(string v, INamedTypeSymbol elementType, INamedTypeSymbol owner, string name, XAttribute attribute, Scope scope)
-        {
-            var setter = attachedSetter(owner, name, elementType);
-
-            if (setter == null)
-            {
-                report(Diagnostics.UnknownMember, attribute, owner.Name, name + " (attached properties need a static Set" + name + "(Drawable, value) method)");
-                return;
-            }
-
-            var valueType = setter.Parameters[1].Type;
-            string call = typeName(owner) + "." + setter.Name;
-
-            if (!BindMarkup.IsMarkup(attribute.Value))
-            {
-                string literal = convertLiteral(BindMarkup.Unescape(attribute.Value), valueType, out string hint);
-
-                if (literal == null)
-                    report(Diagnostics.BadLiteral, attribute, attribute.Value, valueType.ToDisplayString(), hint ?? "");
-                else
-                    line($"{call}({v}, {literal});");
-
-                return;
-            }
-
-            var bind = BindMarkup.Parse(attribute.Value, out string error);
-
-            if (bind == null)
-            {
-                report(Diagnostics.BadMarkup, attribute, error);
-                return;
-            }
-
-            bool fromRoot = string.Equals(bind.Get("Source"), "Root", StringComparison.OrdinalIgnoreCase);
-            string dc = fromRoot ? scope.RootDataContext : scope.DataContext;
-
-            if (dc == null)
-            {
-                report(Diagnostics.BadMarkup, attribute, "{Bind} needs a data context. Add x:DataType to the root element");
-                return;
-            }
-
-            if (!resolvePath(dc, fromRoot ? scope.RootDataContextType : scope.DataContextType, bind.Path, attribute, out string expr, out _, out ITypeSymbol sourceType))
-                return;
-
-            var bound = bindableValueType(sourceType);
-            string converted = convertValue(bound != null ? "x" : expr, bound ?? sourceType, valueType, bind, attribute);
-
-            if (converted == null)
-                return;
-
-            line(bound != null
-                ? $"global::OsuXaml.XamlBinding.OneWay({scope.Bindings}, {expr}, (x, _) => {call}({v}, {converted}));"
-                : $"{call}({v}, {converted});");
-        }
-
-        private IMethodSymbol attachedSetter(INamedTypeSymbol owner, string name, ITypeSymbol elementType)
-            => owner.GetMembers("Set" + name).OfType<IMethodSymbol>()
-                    .FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 2 && implicitly(elementType, m.Parameters[0].Type) && canAccess(m));
-
-        private bool implicitly(ITypeSymbol from, ITypeSymbol to) => ((CSharpCompilation)compilation).ClassifyConversion(from, to).IsImplicit;
-
-        private IEnumerable<IMethodSymbol> findMethods(ITypeSymbol type, string name)
-        {
-            for (var t = type; t != null; t = t.BaseType)
-            {
-                foreach (var m in t.GetMembers(name).OfType<IMethodSymbol>())
-                {
-                    if (canAccess(m))
-                        yield return m;
-                }
-            }
-        }
-
-        #endregion
-
-        #region Literals
-
-        private string convertLiteral(string value, ITypeSymbol type, out string hint)
-        {
-            hint = null;
-            string s = value.Trim();
-            string full = type.ToDisplayString();
-
-            switch (type.SpecialType)
-            {
-                case SpecialType.System_String:
-                    return SymbolDisplay.FormatLiteral(value, true);
-
-                case SpecialType.System_Boolean:
-                    return bool.TryParse(s, out bool b) ? (b ? "true" : "false") : null;
-
-                case SpecialType.System_Int32:
-                    return int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int i) ? i.ToString(CultureInfo.InvariantCulture) : null;
-
-                case SpecialType.System_Single:
-                    return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float f) ? literalFloat(f) : null;
-
-                case SpecialType.System_Double:
-                    return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) ? literalDouble(d) : null;
-            }
-
-            if (type.TypeKind == TypeKind.Enum)
-            {
-                var parts = s.Split(new[] { '|', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToArray();
-                var names = type.GetMembers().OfType<IFieldSymbol>().Select(m => m.Name).ToList();
-
-                if (parts.Length == 0 || parts.Any(p => !names.Contains(p)))
-                {
-                    hint = ". Valid values: " + string.Join(", ", names.Take(12)) + (names.Count > 12 ? ", ..." : "");
-                    return null;
-                }
-
-                return string.Join(" | ", parts.Select(p => typeName(type) + "." + p));
-            }
-
-            switch (full)
-            {
-                case "osu.Framework.Localisation.LocalisableString":
-                    return SymbolDisplay.FormatLiteral(value, true);
-
-                case "osuTK.Vector2":
-                {
-                    var n = numbers(s);
-                    if (n == null || n.Length < 1 || n.Length > 2)
-                        break;
-
-                    return n.Length == 1 ? $"new global::osuTK.Vector2({literalFloat(n[0])})" : $"new global::osuTK.Vector2({literalFloat(n[0])}, {literalFloat(n[1])})";
-                }
-
-                case "osu.Framework.Graphics.MarginPadding":
-                {
-                    var n = numbers(s);
-                    const string mp = "global::osu.Framework.Graphics.MarginPadding";
-
-                    if (n?.Length == 1)
-                        return $"new {mp}({literalFloat(n[0])})";
-                    if (n?.Length == 2)
-                        return $"new {mp} {{ Horizontal = {literalFloat(n[0])}, Vertical = {literalFloat(n[1])} }}";
-                    if (n?.Length == 4)
-                        return $"new {mp} {{ Left = {literalFloat(n[0])}, Top = {literalFloat(n[1])}, Right = {literalFloat(n[2])}, Bottom = {literalFloat(n[3])} }}";
-
-                    hint = " (use \"all\", \"horizontal,vertical\" or \"left,top,right,bottom\")";
-                    return null;
-                }
-
-                case "osu.Framework.Graphics.Colour4":
-                case "osu.Framework.Graphics.Colour.ColourInfo":
-                case "osuTK.Graphics.Color4":
-                    return colour(s, out hint);
-
-                case "osu.Framework.Graphics.Sprites.FontUsage":
-                    return font(s);
-            }
-
-            if (full == "OsuXaml.Controls.GridLengthCollection" && !validGridLengths(s))
-            {
-                hint = " (use a comma-separated list of Auto, pixels, * or 2*)";
-                return null;
-            }
-
-            // Any type with a static Parse(string) accepts a string, e.g. RowDefinitions="Auto,*,40".
-            if (type is INamedTypeSymbol named && named.GetMembers("Parse").OfType<IMethodSymbol>()
-                                                    .Any(m => m.IsStatic && m.Parameters.Length == 1 && m.Parameters[0].Type.SpecialType == SpecialType.System_String
-                                                              && SymbolEqualityComparer.Default.Equals(m.ReturnType, type)))
-                return $"{typeName(type)}.Parse({SymbolDisplay.FormatLiteral(value, true)})";
-
-            hint = " (no XAML conversion exists for this type yet)";
-            return null;
-        }
-
-        private static bool validGridLengths(string s)
-        {
-            foreach (string raw in s.Split(','))
-            {
-                string p = raw.Trim();
-
-                if (p.Equals("Auto", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string number = p.EndsWith("*", StringComparison.Ordinal) ? p.Substring(0, p.Length - 1) : p;
-
-                if (number.Length == 0 && p == "*")
-                    continue;
-
-                if (!float.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out float f) || f < 0)
-                    return false;
-            }
-
-            return true;
-        }
-
-        private string colour(string s, out string hint)
-        {
-            hint = null;
-            const string c4 = "global::osu.Framework.Graphics.Colour4";
-
-            if (s.StartsWith("#", StringComparison.Ordinal))
-            {
-                string hex = s.Substring(1);
-
-                if ((hex.Length == 3 || hex.Length == 4 || hex.Length == 6 || hex.Length == 8) && hex.All(Uri.IsHexDigit))
-                    return $"{c4}.FromHex({SymbolDisplay.FormatLiteral(hex, true)})";
-
-                hint = " (expected #rgb, #rgba, #rrggbb or #rrggbbaa)";
-                return null;
-            }
-
-            var colour4 = compilation.GetTypeByMetadataName("osu.Framework.Graphics.Colour4");
-
-            if (colour4?.GetMembers(s).Any(m => m.IsStatic && (m is IPropertySymbol || m is IFieldSymbol)) == true)
-                return $"{c4}.{s}";
-
-            hint = " (use #rrggbb or a Colour4 name such as White)";
-            return null;
-        }
-
-        /// <summary>
-        /// <c>Font="24"</c>, <c>Font="Bold,24"</c>, <c>Font="Roboto,18,Italic"</c>: numbers set the size,
-        /// Italic sets italics, known weights set the weight and anything else is the family.
-        /// </summary>
-        private string font(string s)
-        {
-            string family = null, size = null, weight = null, italics = null;
-            var weights = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Thin", "Light", "Regular", "Medium", "SemiBold", "Bold", "Black" };
-
-            foreach (string raw in s.Split(','))
-            {
-                string p = raw.Trim();
-
-                if (p.Length == 0)
-                    continue;
-
-                if (float.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out float f))
-                    size = literalFloat(f);
-                else if (p.Equals("Italic", StringComparison.OrdinalIgnoreCase))
-                    italics = "true";
-                else if (weights.Contains(p))
-                    weight = SymbolDisplay.FormatLiteral(p, true);
-                else
-                    family = SymbolDisplay.FormatLiteral(p, true);
-            }
-
-            var args = new List<string>();
-            if (family != null) args.Add("family: " + family);
-            if (size != null) args.Add("size: " + size);
-            if (weight != null) args.Add("weight: " + weight);
-            if (italics != null) args.Add("italics: " + italics);
-
-            return "global::osu.Framework.Graphics.FrameworkFont.Regular.With(" + string.Join(", ", args) + ")";
-        }
-
-        private static float[] numbers(string s)
-        {
-            var parts = s.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            var result = new float[parts.Length];
-
-            for (int i = 0; i < parts.Length; i++)
-            {
-                if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out result[i]))
-                    return null;
-            }
-
-            return result;
-        }
-
-        private static string literalFloat(float f) => f.ToString("R", CultureInfo.InvariantCulture) + "f";
-
-        private static string literalDouble(double d)
-        {
-            string s = d.ToString("R", CultureInfo.InvariantCulture);
-            return s.Contains(".") || s.Contains("E") ? s : s + ".0";
         }
 
         #endregion

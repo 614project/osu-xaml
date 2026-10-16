@@ -38,6 +38,58 @@ namespace OsuXaml
         public static void TwoWay<T>(Bindable<T> target, Bindable<T> source) => target.BindTo(source);
 
         /// <summary>
+        /// Links a control's <c>Bindable&lt;object&gt;</c> (for example <c>ListBox.SelectedItem</c>) to a typed view model bindable.
+        /// Values the source can't hold, such as a different item type, are not written back.
+        /// </summary>
+        public static void TwoWayObject<T>(BindingScope scope, Bindable<object> target, Bindable<T> source)
+        {
+            var copy = source.GetBoundCopy();
+            scope.Add(copy);
+
+            bool updating = false;
+
+            copy.BindValueChanged(e =>
+            {
+                if (updating)
+                    return;
+
+                updating = true;
+                target.Value = e.NewValue;
+                updating = false;
+            }, true);
+
+            target.BindValueChanged(e =>
+            {
+                if (updating || copy.Disabled)
+                    return;
+
+                if (e.NewValue is T value)
+                {
+                    updating = true;
+                    copy.Value = value;
+                    updating = false;
+                }
+                else if (e.NewValue == null && default(T) == null)
+                {
+                    updating = true;
+                    copy.Value = default;
+                    updating = false;
+                }
+            });
+        }
+
+        /// <summary>
+        /// A bound copy of a view model list for an <c>IEnumerable</c> property such as <c>ItemsControl.ItemsSource</c>.
+        /// The copy raises the same change notifications and is unbound with the view, so the view model never holds the control.
+        /// </summary>
+        public static IBindableList<T> ListCopy<T>(BindingScope scope, IBindableList<T> source)
+        {
+            var copy = source.GetBoundCopy();
+            scope.Add(copy);
+            return copy;
+        }
+
+        /// <summary>
         /// Keeps the children of a WPF-style panel in sync with <paramref name="source"/>, inserting rows at their list index.
         /// </summary>
         public static void Items<T>(BindingScope scope, Controls.IItemsHost host, IBindableList<T> source, Func<T, BindingScope, Drawable> template)

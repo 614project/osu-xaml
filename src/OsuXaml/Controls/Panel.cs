@@ -67,7 +67,12 @@ namespace OsuXaml.Controls
 
             var slot = slots[index];
             slots.RemoveAt(index);
-            RemoveInternal(slot, disposeImmediately);
+
+            // A child that isn't disposed may be added somewhere else, so it leaves its slot.
+            if (!disposeImmediately)
+                slot.Detach();
+
+            RemoveInternal(slot, true);
             return true;
         }
 
@@ -139,14 +144,20 @@ namespace OsuXaml.Controls
             float along = 0, cross = 0;
             var constraint = Make(float.PositiveInfinity, Cross(available, Orientation), Orientation);
 
+            int visible = 0;
+
             foreach (var slot in Slots)
             {
+                if (Layout.IsCollapsed(slot.Content))
+                    continue;
+
                 var d = slot.Measure(constraint);
                 along += Axis(d, Orientation);
                 cross = Math.Max(cross, Cross(d, Orientation));
+                visible++;
             }
 
-            along += Math.Max(0, Slots.Count - 1) * Spacing;
+            along += Math.Max(0, visible - 1) * Spacing;
             return Make(along, cross, Orientation);
         }
 
@@ -158,6 +169,12 @@ namespace OsuXaml.Controls
 
             foreach (var slot in Slots)
             {
+                if (Layout.IsCollapsed(slot.Content))
+                {
+                    slot.Arrange(Make(position, 0, Orientation), Vector2.Zero);
+                    continue;
+                }
+
                 float length = Axis(slot.Measure(constraint), Orientation);
                 slot.Arrange(Make(position, 0, Orientation), Make(length, cross, Orientation));
                 position += length + Spacing;
@@ -185,6 +202,13 @@ namespace OsuXaml.Controls
 
             for (int i = 0; i < Slots.Count; i++)
             {
+                if (Layout.IsCollapsed(Slots[i].Content))
+                {
+                    if (arrange)
+                        Slots[i].Arrange(Make(along, crossOffset, Orientation), Vector2.Zero);
+                    continue;
+                }
+
                 float a = Axis(sizes[i], Orientation);
 
                 if (i > lineStart && along + a > limit)

@@ -17,8 +17,9 @@ namespace OsuXaml.Generator
         public static readonly DiagnosticDescriptor UnknownPath = error("OX0006", "Unknown binding path", "'{0}' has no member named '{1}'");
         public static readonly DiagnosticDescriptor TypeMismatch = error("OX0007", "Binding type mismatch", "Cannot bind {0} to '{1}' of type {2}{3}");
         public static readonly DiagnosticDescriptor NoChildren = error("OX0008", "Children not supported", "'{0}' cannot contain child elements");
-        public static readonly DiagnosticDescriptor BadTemplate = error("OX0009", "Invalid item template", "{0}");
+        public static readonly DiagnosticDescriptor BadTemplate = error("OX0009", "Invalid template", "{0}");
         public static readonly DiagnosticDescriptor BadMarkup = error("OX0010", "Invalid markup extension", "{0}");
         public static readonly DiagnosticDescriptor UnknownMethod = error("OX0011", "Unknown method", "{0}");
+        public static readonly DiagnosticDescriptor UnknownResource = error("OX0012", "Unknown resource", "No resource with key '{0}' is in scope (look in X.Resources of this element or its parents, or a ResourceDictionary file)");
     }
 }

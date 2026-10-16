@@ -1,13 +1,6 @@
-using System;
 using System.Collections.Immutable;
-using System.IO;
-using System.Linq;
-using System.Threading;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
 using NUnit.Framework;
-using OsuXaml.Generator;
 
 namespace OsuXaml.Tests
 {
@@ -135,7 +128,7 @@ namespace Demo
         public void UnknownElementIsReported()
         {
             var diagnostic = single(header + @"
-  <ListView />
+  <NoSuchControl />
 </CompositeDrawable>");
 
             Assert.That(diagnostic.Id, Is.EqualTo("OX0003"));
@@ -192,52 +185,12 @@ namespace Demo
             Assert.That(diagnostic.GetMessage(), Does.Contain("Rowz"));
         }
 
-        private static Diagnostic single(string xaml)
-        {
-            var (diagnostics, _, _) = run(xaml);
-            Assert.That(diagnostics, Has.Length.EqualTo(1), string.Join("\n", diagnostics));
-            return diagnostics[0];
-        }
+        private static Diagnostic single(string xaml) => GeneratorRunner.SingleError(code_behind, xaml);
 
         private static (ImmutableArray<Diagnostic> Diagnostics, Diagnostic[] CompileErrors, string Source) run(string xaml)
         {
-            var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))
-                             .Split(Path.PathSeparator)
-                             .Concat(new[] { typeof(osu.Framework.Game).Assembly.Location, typeof(XamlBinding).Assembly.Location })
-                             .Distinct()
-                             .Select(p => MetadataReference.CreateFromFile(p));
-
-            var compilation = CSharpCompilation.Create("Demo",
-                new[] { CSharpSyntaxTree.ParseText(code_behind) },
-                references,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-            GeneratorDriver driver = CSharpGeneratorDriver.Create(
-                new[] { new XamlGenerator().AsSourceGenerator() },
-                new[] { (AdditionalText)new InMemoryText("View.xaml", xaml) });
-
-            driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
-
-            var result = driver.GetRunResult();
-            string source = string.Join("\n", result.GeneratedTrees.Select(t => t.ToString()));
-            var errors = output.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
-
-            return (diagnostics, errors, source);
-        }
-
-        private sealed class InMemoryText : AdditionalText
-        {
-            private readonly string text;
-
-            public InMemoryText(string path, string text)
-            {
-                Path = path;
-                this.text = text;
-            }
-
-            public override string Path { get; }
-
-            public override SourceText GetText(CancellationToken cancellationToken = default) => SourceText.From(text);
+            var result = GeneratorRunner.Run(code_behind, xaml);
+            return (result.Diagnostics, result.CompileErrors, result.Source);
         }
     }
 }
