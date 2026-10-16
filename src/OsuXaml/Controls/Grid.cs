@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using osu.Framework.Graphics;
@@ -26,6 +27,24 @@ namespace OsuXaml.Controls
             Type = type;
         }
 
+        /// <summary>A fixed size in pixels, like WPF's <c>new GridLength(120)</c>.</summary>
+        public GridLength(float pixels)
+            : this(pixels, GridUnitType.Pixel)
+        {
+        }
+
+        /// <summary>Sized to the content of the row or column.</summary>
+        public static GridLength Auto => new GridLength(0, GridUnitType.Auto);
+
+        /// <summary>One share of the space left over (<c>*</c>).</summary>
+        public static GridLength Star => new GridLength(1, GridUnitType.Star);
+
+        public bool IsAuto => Type == GridUnitType.Auto;
+
+        public bool IsStar => Type == GridUnitType.Star;
+
+        public bool IsAbsolute => Type == GridUnitType.Pixel;
+
         public static GridLength Parse(string text)
         {
             string s = text.Trim();
@@ -51,11 +70,93 @@ namespace OsuXaml.Controls
     }
 
     /// <summary>
-    /// Row or column definitions written as one string: <c>RowDefinitions="Auto,*,2*,40"</c>.
-    /// The XAML compiler validates the syntax at build time and calls <see cref="Parse"/>.
+    /// One row or column of a <see cref="Grid"/>: its requested length, optional limits, and the size the grid gave it.
+    /// XAML usually writes the axis-specific <see cref="RowDefinition"/> or <see cref="ColumnDefinition"/>.
+    /// Changing <see cref="Length"/> at runtime (as <see cref="GridSplitter"/> does) takes effect on the next layout pass.
     /// </summary>
-    public sealed class GridLengthCollection : List<GridLength>
+    public class DefinitionBase
     {
+        public DefinitionBase()
+        {
+        }
+
+        public DefinitionBase(GridLength length)
+        {
+            Length = length;
+        }
+
+        public GridLength Length { get; set; } = GridLength.Star;
+
+        public float MinLength { get; set; }
+
+        public float MaxLength { get; set; } = float.PositiveInfinity;
+
+        /// <summary>The size from the most recent layout pass.</summary>
+        public float ActualLength { get; internal set; }
+
+        /// <summary>Applies the limits. Like WPF, the minimum wins when the limits contradict each other.</summary>
+        internal float Constrain(float size) => Math.Max(MinLength, Math.Min(size, MaxLength));
+
+        public override string ToString() => Length.ToString();
+    }
+
+    /// <summary>A grid row: <c>&lt;RowDefinition Height="Auto" MinHeight="40" /&gt;</c>. Height defaults to <c>*</c>.</summary>
+    public sealed class RowDefinition : DefinitionBase
+    {
+        public GridLength Height
+        {
+            get => Length;
+            set => Length = value;
+        }
+
+        public float MinHeight
+        {
+            get => MinLength;
+            set => MinLength = value;
+        }
+
+        public float MaxHeight
+        {
+            get => MaxLength;
+            set => MaxLength = value;
+        }
+
+        public float ActualHeight => ActualLength;
+    }
+
+    /// <summary>A grid column: <c>&lt;ColumnDefinition Width="2*" MinWidth="40" /&gt;</c>. Width defaults to <c>*</c>.</summary>
+    public sealed class ColumnDefinition : DefinitionBase
+    {
+        public GridLength Width
+        {
+            get => Length;
+            set => Length = value;
+        }
+
+        public float MinWidth
+        {
+            get => MinLength;
+            set => MinLength = value;
+        }
+
+        public float MaxWidth
+        {
+            get => MaxLength;
+            set => MaxLength = value;
+        }
+
+        public float ActualWidth => ActualLength;
+    }
+
+    /// <summary>
+    /// The rows or columns of a <see cref="Grid"/>. XAML fills it either from one string,
+    /// <c>RowDefinitions="Auto,*,2*,40"</c> (validated at build time, then <see cref="Parse"/>), or WPF-style from
+    /// <c>&lt;Grid.RowDefinitions&gt;&lt;RowDefinition Height="Auto" /&gt;...&lt;/Grid.RowDefinitions&gt;</c> through Add.
+    /// </summary>
+    public sealed class GridLengthCollection : Collection<DefinitionBase>
+    {
+        public void Add(GridLength length) => Add(new DefinitionBase(length));
+
         public static GridLengthCollection Parse(string text)
         {
             var result = new GridLengthCollection();
@@ -95,18 +196,26 @@ namespace OsuXaml.Controls
 
         public static int GetColumn(Drawable drawable) => Layout.Get(drawable).Column;
 
-        private static readonly GridLength[] single_star = { new GridLength(1, GridUnitType.Star) };
+        public static int GetRowSpan(Drawable drawable) => Layout.Get(drawable).RowSpan;
 
-        private IReadOnlyList<GridLength> rows => RowDefinitions.Count > 0 ? RowDefinitions : single_star;
+        public static int GetColumnSpan(Drawable drawable) => Layout.Get(drawable).ColumnSpan;
 
-        private IReadOnlyList<GridLength> columns => ColumnDefinitions.Count > 0 ? ColumnDefinitions : single_star;
+        // A grid without definitions has one star row and column; they are per grid because layout writes their actual size.
+        private readonly DefinitionBase[] implicitRow = { new RowDefinition() };
+        private readonly DefinitionBase[] implicitColumn = { new ColumnDefinition() };
+
+        /// <summary>The rows used for layout: <see cref="RowDefinitions"/>, or a single star row when there are none.</summary>
+        internal IReadOnlyList<DefinitionBase> EffectiveRows => RowDefinitions?.Count > 0 ? RowDefinitions : implicitRow;
+
+        /// <summary>The columns used for layout: <see cref="ColumnDefinitions"/>, or a single star column when there are none.</summary>
+        internal IReadOnlyList<DefinitionBase> EffectiveColumns => ColumnDefinitions?.Count > 0 ? ColumnDefinitions : implicitColumn;
 
         protected override Vector2 MeasureOverride(Vector2 available)
         {
             var desired = Slots.Select(s => s.Measure(available)).ToList();
 
-            var columnSizes = solve(columns, available.X, ColumnSpacing, desired, d => d.X, cellOf: s => (Layout.Get(s.Content).Column, Layout.Get(s.Content).ColumnSpan));
-            var rowSizes = solve(rows, available.Y, RowSpacing, desired, d => d.Y, cellOf: s => (Layout.Get(s.Content).Row, Layout.Get(s.Content).RowSpan));
+            var columnSizes = solve(EffectiveColumns, available.X, ColumnSpacing, desired, d => d.X, cellOf: s => (Layout.Get(s.Content).Column, Layout.Get(s.Content).ColumnSpan));
+            var rowSizes = solve(EffectiveRows, available.Y, RowSpacing, desired, d => d.Y, cellOf: s => (Layout.Get(s.Content).Row, Layout.Get(s.Content).RowSpan));
 
             return new Vector2(
                 columnSizes.Sum() + ColumnSpacing * (columnSizes.Length - 1),
@@ -116,9 +225,16 @@ namespace OsuXaml.Controls
         protected override void ArrangeOverride(Vector2 size)
         {
             var desired = Slots.Select(s => s.Measure(size)).ToList();
+            var columns = EffectiveColumns;
+            var rows = EffectiveRows;
 
             var columnSizes = solve(columns, size.X, ColumnSpacing, desired, d => d.X, s => (Layout.Get(s.Content).Column, Layout.Get(s.Content).ColumnSpan));
             var rowSizes = solve(rows, size.Y, RowSpacing, desired, d => d.Y, s => (Layout.Get(s.Content).Row, Layout.Get(s.Content).RowSpan));
+
+            for (int i = 0; i < columns.Count; i++)
+                columns[i].ActualLength = columnSizes[i];
+            for (int i = 0; i < rows.Count; i++)
+                rows[i].ActualLength = rowSizes[i];
 
             var columnStarts = starts(columnSizes, ColumnSpacing);
             var rowStarts = starts(rowSizes, RowSpacing);
@@ -139,9 +255,10 @@ namespace OsuXaml.Controls
 
         /// <summary>
         /// Sizes one axis: pixels first, then Auto from the largest single-span child, then stars share what is left.
-        /// When the grid is sizing to its content (infinite space), a star track takes the size its content needs.
+        /// Every track is kept within its Min/Max limits. When the grid is sizing to its content (infinite space),
+        /// a star track takes the size its content needs.
         /// </summary>
-        private float[] solve(IReadOnlyList<GridLength> defs, float available, float spacing, List<Vector2> desired, Func<Vector2, float> axis,
+        private float[] solve(IReadOnlyList<DefinitionBase> defs, float available, float spacing, List<Vector2> desired, Func<Vector2, float> axis,
                               Func<Slot, (int index, int span)> cellOf)
         {
             var sizes = new float[defs.Count];
@@ -158,52 +275,89 @@ namespace OsuXaml.Controls
             }
 
             float used = spacing * (defs.Count - 1);
-            float totalWeight = 0;
+            var stars = new List<int>();
 
             for (int i = 0; i < defs.Count; i++)
             {
-                switch (defs[i].Type)
+                switch (defs[i].Length.Type)
                 {
                     case GridUnitType.Pixel:
-                        sizes[i] = defs[i].Value;
+                        sizes[i] = defs[i].Constrain(defs[i].Length.Value);
                         used += sizes[i];
                         break;
 
                     case GridUnitType.Auto:
-                        sizes[i] = content[i];
+                        sizes[i] = defs[i].Constrain(content[i]);
                         used += sizes[i];
                         break;
 
                     case GridUnitType.Star:
-                        totalWeight += defs[i].Value;
+                        stars.Add(i);
                         break;
                 }
             }
 
-            if (totalWeight > 0)
+            if (stars.Count == 0)
+                return sizes;
+
+            if (float.IsInfinity(available))
             {
-                float unit;
+                float unit = 0;
 
-                if (float.IsInfinity(available))
+                foreach (int i in stars)
                 {
-                    unit = 0;
-                    for (int i = 0; i < defs.Count; i++)
-                    {
-                        if (defs[i].Type == GridUnitType.Star && defs[i].Value > 0)
-                            unit = Math.Max(unit, content[i] / defs[i].Value);
-                    }
+                    if (defs[i].Length.Value > 0)
+                        unit = Math.Max(unit, content[i] / defs[i].Length.Value);
                 }
-                else
-                    unit = Math.Max(0, available - used) / totalWeight;
 
-                for (int i = 0; i < defs.Count; i++)
-                {
-                    if (defs[i].Type == GridUnitType.Star)
-                        sizes[i] = unit * defs[i].Value;
-                }
+                foreach (int i in stars)
+                    sizes[i] = defs[i].Constrain(unit * defs[i].Length.Value);
             }
+            else
+                shareStars(defs, stars, sizes, Math.Max(0, available - used));
 
             return sizes;
+        }
+
+        /// <summary>
+        /// Shares <paramref name="space"/> between star tracks by weight. A track whose share breaks its limit is fixed at
+        /// that limit and the rest is shared again among the others, so a MinWidth column never squeezes below its minimum.
+        /// </summary>
+        private static void shareStars(IReadOnlyList<DefinitionBase> defs, List<int> stars, float[] sizes, float space)
+        {
+            var pending = new List<int>(stars);
+            var limited = new List<int>();
+
+            while (pending.Count > 0)
+            {
+                float totalWeight = 0;
+                foreach (int i in pending)
+                    totalWeight += defs[i].Length.Value;
+
+                float unit = totalWeight > 0 ? space / totalWeight : 0;
+
+                // Minimums are settled first: giving a track its minimum leaves less for the others, never more.
+                limited.Clear();
+                limited.AddRange(pending.Where(i => unit * defs[i].Length.Value < defs[i].MinLength));
+                bool atMinimum = limited.Count > 0;
+
+                if (!atMinimum)
+                    limited.AddRange(pending.Where(i => unit * defs[i].Length.Value > defs[i].MaxLength));
+
+                if (limited.Count == 0)
+                {
+                    foreach (int i in pending)
+                        sizes[i] = unit * defs[i].Length.Value;
+                    return;
+                }
+
+                foreach (int i in limited)
+                {
+                    sizes[i] = atMinimum ? defs[i].MinLength : defs[i].Constrain(defs[i].MaxLength);
+                    space = Math.Max(0, space - sizes[i]);
+                    pending.Remove(i);
+                }
+            }
         }
 
         private static float[] starts(float[] sizes, float spacing)
