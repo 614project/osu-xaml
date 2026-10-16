@@ -1,7 +1,9 @@
+using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Testing;
 using OsuXaml.Controls;
 using osuTK;
@@ -299,6 +301,35 @@ namespace OsuXaml.Tests
 
             AddStep("uncheck", () => toggle.IsChecked.Value = false);
             AddUntilStep("new Foreground", () => ((TextBlock)toggle.PresentedContent).Colour == Colour4.Red);
+        }
+
+        [Test]
+        public void TemplatedCheckBoxDoesNotDrawItsDefaultBox()
+        {
+            CheckBox box = null;
+            Border templateRoot = null;
+
+            AddStep("create", () =>
+            {
+                box = new CheckBox
+                {
+                    Content = new Container { Size = new Vector2(40, 8) },
+                    Template = new ControlTemplate<CheckBox>((c, _) =>
+                    {
+                        var presenter = new ContentPresenter();
+                        templateRoot = new Border { Background = Colour4.Red, Padding = new MarginPadding(1), Child = presenter };
+                        c.AttachPresenter(presenter);
+                        return templateRoot;
+                    }),
+                };
+                Child = box;
+            });
+            AddUntilStep("laid out", () => box.PresentedContent?.DrawWidth > 0);
+            AddAssert("default box hidden", () => !box.ChildrenOfType<SpriteIcon>().Single().Parent.IsPresent);
+            AddAssert("sized to the template", () => near(box.DrawHeight, templateRoot.DrawHeight) && templateRoot.DrawHeight < 18);
+
+            AddStep("remove the template", () => box.Template = null);
+            AddUntilStep("default box back", () => box.ChildrenOfType<SpriteIcon>().Single().Parent.IsPresent);
         }
     }
 }
