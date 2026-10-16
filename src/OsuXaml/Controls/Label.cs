@@ -48,6 +48,9 @@ namespace OsuXaml.Controls
             return new TextBlock { Text = shown, Colour = Foreground };
         }
 
+        // The click moves focus itself; the framework must not take it away again afterwards.
+        public override bool ChangeFocusOnClick => false;
+
         protected override bool OnClick(ClickEvent e) => FocusTarget();
 
         protected override bool OnKeyDown(KeyDownEvent e)
