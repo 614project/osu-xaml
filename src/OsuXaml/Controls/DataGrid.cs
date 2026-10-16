@@ -387,6 +387,15 @@ namespace OsuXaml.Controls
             row.IsSelected = IsSelected(item);
         }
 
+        protected override void ClearContainer(Drawable container, object item)
+        {
+            // The row is about to be disposed, so an edit in it is thrown away rather than left pointing at a dead cell.
+            if (editingCell != null && editingCell.Row == container)
+                editingCell.CancelEdit();
+
+            base.ClearContainer(container, item);
+        }
+
         protected override void OnItemsChanged()
         {
             base.OnItemsChanged();
@@ -484,6 +493,10 @@ namespace OsuXaml.Controls
 
             if (layout == null)
                 return;
+
+            // Every cell is about to be recreated, so the edit finishes first, as when moving to another row.
+            if (editingCell != null && !editingCell.CommitEdit())
+                editingCell.CancelEdit();
 
             headers.RebuildCells();
 

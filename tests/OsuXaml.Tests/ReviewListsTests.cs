@@ -67,5 +67,71 @@ namespace OsuXaml.Tests
             AddStep("DataGrid.Sort(null)", () => grid.Sort(null));
             AddAssert("DataGrid back in source order", () => order(grid) == "Cid,Ann,Bob" && gridName.SortDirection == null);
         }
+
+        [Test]
+        public void RemovingTheEditedRowEndsTheEdit()
+        {
+            var people = ListsTestData.People();
+            var scope = new BindingScope();
+            DataGrid grid = null;
+            DataGridTextColumn name = null;
+            Person ann = null;
+
+            AddStep("create", () =>
+            {
+                grid = new DataGrid { Size = new Vector2(400, 200), ItemsSource = XamlBinding.ListCopy(scope, people) };
+                grid.Columns.Add(name = new DataGridTextColumn { Header = "Name", Binding = ListsTestData.NameBinding, Width = GridLength.Parse("*") });
+                Child = grid;
+            });
+            AddUntilStep("laid out", () => name.ActualWidth > 0);
+
+            AddStep("edit Ann's name", () =>
+            {
+                ann = people[1];
+                grid.SelectedItem.Value = ann;
+                var cell = grid.CellFor(ann, name);
+                cell.BeginEdit();
+                ((TextBox)cell.PresentedContent).Text.Value = "typed";
+            });
+            AddStep("view model removes Ann", () => people.Remove(ann));
+            AddAssert("nothing is being edited", () => grid.EditingCell == null);
+
+            AddStep("edit Bob's name", () => grid.CellFor(people[1], name).BeginEdit());
+            AddAssert("the removed item was not written", () => ann.Name.Value == "Ann");
+            AddAssert("Bob's cell edits", () => grid.EditingCell == grid.CellFor(people[1], name) && grid.EditingCell.IsEditing);
+        }
+
+        [Test]
+        public void ReplacingItemsSourceOrColumnsEndsTheEdit()
+        {
+            var people = ListsTestData.People();
+            var scope = new BindingScope();
+            DataGrid grid = null;
+            DataGridTextColumn name = null;
+
+            AddStep("create", () =>
+            {
+                grid = new DataGrid { Size = new Vector2(400, 200), ItemsSource = XamlBinding.ListCopy(scope, people) };
+                grid.Columns.Add(name = new DataGridTextColumn { Header = "Name", Binding = ListsTestData.NameBinding, Width = GridLength.Parse("*") });
+                Child = grid;
+            });
+            AddUntilStep("laid out", () => name.ActualWidth > 0);
+
+            AddStep("edit, then add a column", () =>
+            {
+                grid.CellFor(people[0], name).BeginEdit();
+                grid.Columns.Add(new DataGridTextColumn { Header = "Age", Binding = ListsTestData.AgeBinding });
+            });
+            AddAssert("nothing is being edited", () => grid.EditingCell == null);
+
+            AddStep("edit, then replace the items", () =>
+            {
+                grid.CellFor(people[0], name).BeginEdit();
+                grid.ItemsSource = XamlBinding.ListCopy(scope, ListsTestData.People());
+            });
+            AddAssert("nothing is being edited", () => grid.EditingCell == null);
+            AddStep("edit a new row", () => grid.CellFor(grid.Items[0], name).BeginEdit());
+            AddAssert("new cell edits", () => grid.EditingCell == grid.CellFor(grid.Items[0], name));
+        }
     }
 }
