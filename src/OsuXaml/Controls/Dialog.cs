@@ -44,6 +44,9 @@ namespace OsuXaml.Controls
         private TaskCompletionSource<bool?> completion;
         private bool closed;
 
+        // Text boxes in the dialog whose Enter commits are watched, so Enter in a text field clicks the default button as in WPF.
+        private readonly HashSet<TextBox> watchedTextBoxes = new HashSet<TextBox>();
+
         public Dialog()
         {
             Background = Theme.Base;
@@ -249,6 +252,10 @@ namespace OsuXaml.Controls
                     if (e.Repeat)
                         return true;
 
+                    // An open drop-down or menu inside the dialog closes first, even when the dialog itself has focus.
+                    if (host.PopupLayer.DismissTop())
+                        return true;
+
                     var cancelButton = DialogService.FindButton(this, cancel: true);
 
                     if (cancelButton != null)
@@ -260,6 +267,45 @@ namespace OsuXaml.Controls
             }
 
             return base.OnKeyDown(e);
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+
+            // osu!framework text boxes take Enter themselves (they commit), so the dialog never sees it as a key press.
+            // A plain TextBox or PasswordBox that gets focus is watched instead; ones inside other controls (an editable
+            // ComboBox, a DataGrid cell editor) keep Enter for their control.
+            if (IsOpen && GetContainingInputManager()?.FocusedDrawable is TextBox textBox && !(textBox is DataGridTextEditor)
+                && !watchedTextBoxes.Contains(textBox) && DialogService.FindDialog(textBox) == this)
+            {
+                watchedTextBoxes.Add(textBox);
+                textBox.OnCommit += onTextBoxCommit;
+            }
+        }
+
+        private void onTextBoxCommit(osu.Framework.Graphics.UserInterface.TextBox sender, bool newText)
+        {
+            var keys = GetContainingInputManager()?.CurrentState.Keyboard.Keys;
+
+            // Commits also happen when focus leaves a box that commits on focus loss; only Enter picks the default button.
+            if (!IsOpen || keys == null || !(keys.IsPressed(Key.Enter) || keys.IsPressed(Key.KeypadEnter)))
+                return;
+
+            Schedule(() =>
+            {
+                if (IsOpen)
+                    DialogService.FindButton(this, cancel: false)?.TriggerClick();
+            });
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            foreach (var textBox in watchedTextBoxes)
+                textBox.OnCommit -= onTextBoxCommit;
+
+            watchedTextBoxes.Clear();
+            base.Dispose(isDisposing);
         }
 
         public override Vector2 Measure(Vector2 availableSize)
@@ -440,6 +486,9 @@ namespace OsuXaml.Controls
 
             return true;
         }
+
+        /// <summary>The nearest dialog <paramref name="element"/> is in, if any.</summary>
+        internal static Dialog FindDialog(Drawable element) => findDialog(element);
 
         private static Dialog findDialog(Drawable element)
         {

@@ -256,6 +256,17 @@ namespace OsuXaml.Controls
 
         internal bool HasDismissable => open.Any(p => !p.StaysOpen);
 
+        /// <summary>Closes the newest popup that doesn't stay open, as Escape does. Returns whether there was one.</summary>
+        internal bool DismissTop()
+        {
+            var top = open.LastOrDefault(p => !p.StaysOpen);
+            if (top == null)
+                return false;
+
+            top.IsOpen.Value = false;
+            return true;
+        }
+
         /// <summary>
         /// The deepest of <paramref name="candidates"/> that is visible under <paramref name="screenSpacePos"/> and belongs to this layer.
         /// Over an open popup only that popup's content counts, so elements underneath don't react through it.
@@ -371,15 +382,7 @@ namespace OsuXaml.Controls
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {
-            if (e.Key != Key.Escape)
-                return false;
-
-            var top = open.LastOrDefault(p => !p.StaysOpen);
-            if (top == null)
-                return false;
-
-            top.IsOpen.Value = false;
-            return true;
+            return e.Key == Key.Escape && DismissTop();
         }
 
         /// <summary>Catches clicks outside every popup while a dismissable popup is open.</summary>
