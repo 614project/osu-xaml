@@ -307,5 +307,61 @@ namespace OsuXaml.Tests
             });
             AddAssert("raised once", () => raised == 1 && list.SelectedItems.Count == 2);
         }
+
+        [Test]
+        public void ScrollIntoViewRightAfterAddingAnItem()
+        {
+            var items = new BindableList<string>(Enumerable.Range(0, 30).Select(i => "item " + i));
+            var scope = new BindingScope();
+            ListBox list = null;
+            ScrollViewer scroll() => list.ChildrenOfType<ScrollViewer>().Single();
+
+            AddStep("create", () => Child = list = new ListBox { Size = new Vector2(200, 100), ItemsSource = XamlBinding.ListCopy(scope, items) });
+            AddUntilStep("laid out", () => scroll().ScrollableHeight > 500);
+
+            AddStep("add an item and scroll to it", () =>
+            {
+                items.Add("new");
+                list.SelectedItem.Value = "new";
+                list.ScrollIntoView("new");
+            });
+            AddUntilStep("the new item is in view", () =>
+            {
+                var row = list.ContainerFromItem("new").ScreenSpaceDrawQuad;
+                var viewport = scroll().ScreenSpaceDrawQuad;
+                return row.Height > 0 && row.TopLeft.Y >= viewport.TopLeft.Y - 1 && row.BottomLeft.Y <= viewport.BottomLeft.Y + 1;
+            });
+
+            var roots = new BindableList<Node>(Enumerable.Range(0, 30).Select(i => new Node("node " + i)));
+            var added = new Node("new");
+            TreeView tree = null;
+            ScrollViewer treeScroll() => tree.ChildrenOfType<ScrollViewer>().Single();
+
+            AddStep("create a tree", () => Child = tree = new TreeView
+            {
+                Size = new Vector2(200, 100),
+                ItemTemplate = new HierarchicalDataTemplate<Node>((n, _) => new TextBlock { Text = n.Label }, (n, s) => XamlBinding.ListCopy(s, n.Children)),
+                ItemsSource = XamlBinding.ListCopy(scope, roots),
+            });
+            AddUntilStep("tree laid out", () => treeScroll().ScrollableHeight > 300);
+
+            AddStep("add a node and scroll to it", () =>
+            {
+                roots.Add(added);
+                tree.ScrollIntoView(added);
+            });
+            AddUntilStep("the new node is in view", () =>
+            {
+                var row = tree.ContainerFromDataItem(added).HeaderRow.ScreenSpaceDrawQuad;
+                var viewport = treeScroll().ScreenSpaceDrawQuad;
+                return row.Height > 0 && row.TopLeft.Y >= viewport.TopLeft.Y - 1 && row.BottomLeft.Y <= viewport.BottomLeft.Y + 1;
+            });
+        }
+    }
+
+    /// <summary>Review tests that need real mouse and keyboard input.</summary>
+    [HeadlessTest]
+    public partial class ReviewListsInputTests : ManualInputManagerTestScene
+    {
     }
 }

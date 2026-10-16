@@ -101,8 +101,15 @@ namespace OsuXaml.Controls
         public void ScrollIntoView(object item)
         {
             var container = item as TreeViewItem ?? ContainerFromDataItem(item);
-            if (container != null)
-                scroll?.ScrollIntoView(container.HeaderRow);
+            if (container == null || scroll == null)
+                return;
+
+            // A node added this frame has no position until its panel arranges it, so scroll once layout has run.
+            ScheduleAfterChildren(() =>
+            {
+                if (container.Parent != null)
+                    scroll.ScrollIntoView(container.HeaderRow);
+            });
         }
 
         protected override Drawable CreateItemsHost(Panel panel)

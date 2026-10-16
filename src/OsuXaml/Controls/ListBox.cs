@@ -92,8 +92,15 @@ namespace OsuXaml.Controls
         public void ScrollIntoView(object item)
         {
             var container = ContainerFromItem(item);
-            if (container != null)
-                scroll?.ScrollIntoView(container);
+            if (container == null || scroll == null)
+                return;
+
+            // A container added this frame has no position until the panel arranges it, so scroll once layout has run.
+            ScheduleAfterChildren(() =>
+            {
+                if (container.Parent != null)
+                    scroll.ScrollIntoView(container);
+            });
         }
 
         public void SelectAll()
