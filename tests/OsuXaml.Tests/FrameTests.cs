@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Testing;
 using OsuXaml.Controls;
 using osuTK.Input;
@@ -270,6 +271,47 @@ namespace OsuXaml.Tests
             AddUntilStep("put right again", () => !frame.CanGoBack.Value && !source.Value);
             navigate(() => details);
             AddAssert("view model follows", () => source.Value);
+        }
+
+        [Test]
+        public void TheOptionalNavigationBarShowsTitleAndButtons()
+        {
+            SpriteIcon arrow(IconUsage icon) => frame.ChildrenOfType<SpriteIcon>().Single(i => i.Icon.Equals(icon));
+
+            bool shown(Drawable d)
+            {
+                for (; d != null; d = d.Parent)
+                {
+                    if (!d.IsPresent)
+                        return false;
+                }
+
+                return true;
+            }
+
+            AddAssert("hidden by default", () => frame.ChildrenOfType<SpriteIcon>().All(i => !shown(i)) && presenterOf(home).ScreenSpaceDrawQuad.TopLeft.Y == frame.ScreenSpaceDrawQuad.TopLeft.Y);
+            AddStep("Automatic", () => frame.NavigationUIVisibility = NavigationUIVisibility.Automatic);
+            AddAssert("still hidden without history", () => !shown(arrow(FontAwesome.Solid.ArrowLeft)));
+            navigate(() => details);
+            settle();
+            AddAssert("shown once there is history, above the page", () => shown(arrow(FontAwesome.Solid.ArrowLeft))
+                                                                            && presenterOf(details).ScreenSpaceDrawQuad.TopLeft.Y >= frame.ScreenSpaceDrawQuad.TopLeft.Y + 39);
+            AddUntilStep("with the page title", () => frame.ChildrenOfType<TextBlock>().Any(t => t.Text.ToString() == "Details" && shown(t) && !(t.Parent?.Parent?.Parent?.Parent is Button)));
+
+            AddStep("click the bar's back arrow", () =>
+            {
+                InputManager.MoveMouseTo(arrow(FontAwesome.Solid.ArrowLeft));
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("back", () => frame.Content == home);
+            AddStep("click the bar's forward arrow", () =>
+            {
+                InputManager.MoveMouseTo(arrow(FontAwesome.Solid.ArrowRight));
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("forward", () => frame.Content == details);
+            AddStep("Hidden", () => frame.NavigationUIVisibility = NavigationUIVisibility.Hidden);
+            AddAssert("gone", () => !shown(arrow(FontAwesome.Solid.ArrowLeft)));
         }
 
         [Test]

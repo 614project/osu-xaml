@@ -85,7 +85,7 @@ namespace App
       <Button Content=""Back"" Click=""OnBack"" IsEnabled=""{Bind CanGoBack, ElementName=frame}"" />
       <Button Content=""Forward"" Click=""OnForward"" IsEnabled=""{Bind CanGoForward, ElementName=frame}"" />
     </StackPanel>
-    <Frame x:Name=""frame"" Navigated=""OnNavigated"" Navigating=""OnNavigating"" CanGoBack=""{Bind CanGoBack}"">
+    <Frame x:Name=""frame"" Navigated=""OnNavigated"" Navigating=""OnNavigating"" CanGoBack=""{Bind CanGoBack}"" NavigationUIVisibility=""Automatic"">
       <local:HomePage />
     </Frame>
   </DockPanel>

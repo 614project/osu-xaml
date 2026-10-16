@@ -4,12 +4,26 @@ using System.Linq;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Events;
 using osuTK;
 using osuTK.Input;
 
 namespace OsuXaml.Controls
 {
+    /// <summary>When a <see cref="Frame"/> shows its own back/forward bar, with WPF's names.</summary>
+    public enum NavigationUIVisibility
+    {
+        /// <summary>While there is history to move through.</summary>
+        Automatic,
+
+        Visible,
+
+        /// <summary>Never (the default here; WPF's default is Automatic). Shells usually bind their own Back button instead.</summary>
+        Hidden,
+    }
+
     /// <summary>
     /// Shows one page at a time with back/forward history, like WPF's Frame. <see cref="Navigate"/> takes a <see cref="Page"/>,
     /// any drawable, or another object shown through <see cref="ContentTemplate"/> (or as text); initial content can be a
@@ -19,13 +33,18 @@ namespace OsuXaml.Controls
     /// for object navigation: going back shows the same page instance with its state. Content dropped from the history
     /// (the forward stack when navigating somewhere new, or <see cref="RemoveBackEntry"/>) is disposed. Pages slide and fade
     /// between each other, and the mouse's back/forward buttons and Alt+Left/Alt+Right navigate too.
+    /// <see cref="NavigationUIVisibility"/> adds a bar with back/forward buttons and the page's title.
     /// </summary>
     public partial class Frame : CompositeDrawable, ILayoutElement
     {
         private const double transition_duration = 250;
         private const float slide_distance = 40;
 
+        private const float bar_height = 40;
+
         private readonly Container<EntryPresenter> pageArea;
+        private readonly NavigationBar bar;
+        private NavigationUIVisibility navigationUIVisibility = NavigationUIVisibility.Hidden;
 
         // Most recent last; BackStack and ForwardStack list them most recent first, as WPF does.
         private readonly List<object> backStack = new List<object>();
@@ -45,15 +64,43 @@ namespace OsuXaml.Controls
         {
             NavigationService = new NavigationService(this);
 
-            InternalChild = pageArea = new Container<EntryPresenter>
+            InternalChildren = new Drawable[]
             {
-                RelativeSizeAxes = Axes.Both,
-                // Pages slide in from the side; nothing should show outside the frame while they do.
-                Masking = true,
+                pageArea = new Container<EntryPresenter>
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    // Pages slide in from the side; nothing should show outside the frame while they do.
+                    Masking = true,
+                },
+                bar = new NavigationBar(this) { RelativeSizeAxes = Axes.X, Height = bar_height },
             };
 
             CanGoBack.BindValueChanged(_ => coerceCanNavigate());
             CanGoForward.BindValueChanged(_ => coerceCanNavigate());
+            applyNavigationUI();
+        }
+
+        /// <summary>Whether the frame shows its own bar with back/forward buttons and the current page's title.</summary>
+        public NavigationUIVisibility NavigationUIVisibility
+        {
+            get => navigationUIVisibility;
+            set
+            {
+                navigationUIVisibility = value;
+                applyNavigationUI();
+            }
+        }
+
+        private bool barVisible => navigationUIVisibility == NavigationUIVisibility.Visible
+                                   || (navigationUIVisibility == NavigationUIVisibility.Automatic && (backStack.Count > 0 || forwardStack.Count > 0));
+
+        private void applyNavigationUI()
+        {
+            bool visible = barVisible;
+
+            bar.Alpha = visible ? 1 : 0;
+            pageArea.Padding = new MarginPadding { Top = visible ? bar_height : 0 };
+            bar.Refresh();
         }
 
         /// <summary>Navigates the frame; pages hosted by it get this as <see cref="Page.NavigationService"/>.</summary>
@@ -310,6 +357,7 @@ namespace OsuXaml.Controls
         {
             CanGoBack.Value = backStack.Count > 0;
             CanGoForward.Value = forwardStack.Count > 0;
+            applyNavigationUI();
         }
 
         /// <summary>
@@ -397,7 +445,12 @@ namespace OsuXaml.Controls
             return false;
         }
 
-        public Vector2 Measure(Vector2 availableSize) => current?.Measure(availableSize) ?? Vector2.Zero;
+        public Vector2 Measure(Vector2 availableSize)
+        {
+            float top = barVisible ? bar_height : 0;
+            var desired = current?.Measure(Vector2.ComponentMax(Vector2.Zero, availableSize - new Vector2(0, top))) ?? Vector2.Zero;
+            return desired + new Vector2(0, top);
+        }
 
         protected override void LoadComplete()
         {
@@ -430,6 +483,120 @@ namespace OsuXaml.Controls
 
             presenters.Clear();
             base.Dispose(isDisposing);
+        }
+
+        /// <summary>The bar <see cref="NavigationUIVisibility"/> shows: back and forward buttons and the current page's title.</summary>
+        private partial class NavigationBar : CompositeDrawable
+        {
+            private readonly Frame frame;
+            private readonly NavigationButton backButton;
+            private readonly NavigationButton forwardButton;
+            private readonly TextBlock title;
+
+            public NavigationBar(Frame frame)
+            {
+                this.frame = frame;
+
+                InternalChildren = new Drawable[]
+                {
+                    new Box { RelativeSizeAxes = Axes.Both, Colour = Theme.Mantle },
+                    new Box { RelativeSizeAxes = Axes.X, Height = 1, Anchor = Anchor.BottomLeft, Origin = Anchor.BottomLeft, Colour = Theme.Border },
+                    new FillFlowContainer
+                    {
+                        AutoSizeAxes = Axes.Both,
+                        Anchor = Anchor.CentreLeft,
+                        Origin = Anchor.CentreLeft,
+                        Direction = FillDirection.Horizontal,
+                        Spacing = new Vector2(4, 0),
+                        Padding = new MarginPadding { Left = 8 },
+                        Children = new Drawable[]
+                        {
+                            backButton = new NavigationButton(FontAwesome.Solid.ArrowLeft, frame.GoBack),
+                            forwardButton = new NavigationButton(FontAwesome.Solid.ArrowRight, frame.GoForward),
+                            title = new TextBlock { Anchor = Anchor.CentreLeft, Origin = Anchor.CentreLeft, Margin = new MarginPadding { Left = 8 }, FontWeight = FontWeight.Bold },
+                        },
+                    },
+                };
+            }
+
+            public override bool PropagatePositionalInputSubTree => Alpha > 0 && base.PropagatePositionalInputSubTree;
+
+            public void Refresh()
+            {
+                backButton.IsEnabled = frame.backStack.Count > 0;
+                forwardButton.IsEnabled = frame.forwardStack.Count > 0;
+            }
+
+            protected override void Update()
+            {
+                base.Update();
+
+                // Page titles are plain properties, so the bar follows them here.
+                string text = (frame.content as Page)?.Title ?? string.Empty;
+                if (title.Text.ToString() != text)
+                    title.Text = text;
+            }
+
+            // Clicks on the bar's background stay on the bar.
+            protected override bool OnMouseDown(MouseDownEvent e) => e.Button == MouseButton.Left;
+        }
+
+        private partial class NavigationButton : CompositeDrawable
+        {
+            private readonly Action action;
+            private readonly Box highlight;
+            private bool isEnabled;
+
+            public NavigationButton(IconUsage icon, Action action)
+            {
+                this.action = action;
+
+                Size = new Vector2(28);
+                Anchor = Anchor.CentreLeft;
+                Origin = Anchor.CentreLeft;
+                Masking = true;
+                CornerRadius = 6;
+
+                InternalChildren = new Drawable[]
+                {
+                    highlight = new Box { RelativeSizeAxes = Axes.Both, Colour = Theme.Text, Alpha = 0 },
+                    new SpriteIcon
+                    {
+                        Anchor = Anchor.Centre,
+                        Origin = Anchor.Centre,
+                        Size = new Vector2(12),
+                        Icon = icon,
+                        Colour = Theme.Text,
+                    },
+                };
+            }
+
+            public bool IsEnabled
+            {
+                get => isEnabled;
+                set
+                {
+                    isEnabled = value;
+                    this.FadeTo(value ? 1 : 0.35f, 150, Easing.OutQuint);
+                    if (!value) highlight.FadeOut(150, Easing.OutQuint);
+                }
+            }
+
+            protected override bool OnHover(HoverEvent e)
+            {
+                if (isEnabled)
+                    highlight.FadeTo(0.1f, 100, Easing.OutQuint);
+                return true;
+            }
+
+            protected override void OnHoverLost(HoverLostEvent e) => highlight.FadeOut(250, Easing.OutQuint);
+
+            protected override bool OnClick(ClickEvent e)
+            {
+                if (isEnabled)
+                    action();
+                return true;
+            }
         }
 
         /// <summary>Shows one entry's content; only the current entry takes input.</summary>
