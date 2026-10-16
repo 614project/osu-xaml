@@ -46,7 +46,8 @@ namespace OsuXaml.Controls
     /// MessageBoxButton.YesNo, MessageBoxImage.Warning)</c>. The update thread can't wait, so Show returns a task (or calls back)
     /// with the button that closed the box. <c>owner</c> is any element of the window the box covers; without one the box opens
     /// over the game's window. Enter picks the default button, Escape (and the close button) picks Cancel, No for a Yes/No box,
-    /// or OK for an OK box. Clicking outside does nothing. Boxes can stack, and Show may be called from any thread.
+    /// or OK for an OK box. Clicking outside does nothing. Boxes can stack. Show may be called from another thread when the
+    /// owner is in a <see cref="Window"/> or there is no owner; otherwise call it from the update thread.
     /// </summary>
     public static class MessageBox
     {
@@ -180,6 +181,10 @@ namespace OsuXaml.Controls
 
             Result = result;
             DialogResult = result == MessageBoxResult.OK || result == MessageBoxResult.Yes;
+
+            // A Closing handler kept the box open, so nothing was chosen after all.
+            if (IsOpen)
+                Result = MessageBoxResult.None;
         }
 
         protected override void OnCancel() => Choose(cancelResult);
