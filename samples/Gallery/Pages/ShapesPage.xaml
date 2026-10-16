@@ -1,0 +1,134 @@
+<UserControl
+    xmlns="osu-xaml"
+    xmlns:x="osu-xaml:x"
+    xmlns:local="clr-namespace:Gallery"
+    x:Class="Gallery.ShapesPage"
+    x:DataType="local:GalleryViewModel">
+
+  <UserControl.Resources>
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="#181825" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style x:Key="Heading" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#a6adc8" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style x:Key="Caption" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#a6adc8" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Geometry x:Key="Heart">M 40,70 C 0,42 0,12 20,6 C 31,3 38,10 40,18 C 42,10 49,3 60,6 C 80,12 80,42 40,70 Z</Geometry>
+  </UserControl.Resources>
+
+  <!-- Drag the bar between the two columns: a GridSplitter in its own column. -->
+  <Grid Padding="20">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="3*" MinWidth="360" />
+      <ColumnDefinition Width="20" />
+      <ColumnDefinition Width="2*" MinWidth="320" />
+    </Grid.ColumnDefinitions>
+
+    <StackPanel Spacing="16">
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="SHAPES (FILL FOLLOWS THE COLOR PICKER)" Style="{StaticResource Heading}" />
+          <WrapPanel Spacing="18">
+            <StackPanel Spacing="6">
+              <Rectangle Width="80" Height="60" Fill="{Bind Tint}" RadiusX="10" RadiusY="10" />
+              <TextBlock Text="Rectangle" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Rectangle Width="80" Height="60" Stroke="#89b4fa" StrokeThickness="3" />
+              <TextBlock Text="Stroke" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Ellipse Width="80" Height="60" Fill="{Bind Tint}" Stroke="#cdd6f4" StrokeThickness="2" />
+              <TextBlock Text="Ellipse" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Line X1="4" Y1="56" X2="76" Y2="4" Stroke="#a6e3a1" StrokeThickness="4" Width="80" Height="60" />
+              <TextBlock Text="Line" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Polyline Points="2,50 16,12 30,42 46,4 62,32 78,8" Stroke="#fab387" StrokeThickness="3" Width="80" Height="60" />
+              <TextBlock Text="Polyline" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Polygon Points="40,2 78,58 2,58" Fill="{Bind Tint}" Stroke="#cdd6f4" StrokeThickness="2" Width="80" Height="60" />
+              <TextBlock Text="Polygon" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Path Data="{StaticResource Heart}" Fill="#f38ba8" Stretch="Uniform" Width="80" Height="60" />
+              <TextBlock Text="Path" Style="{StaticResource Caption}" />
+            </StackPanel>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="ICONS" Style="{StaticResource Heading}" />
+          <StackPanel Orientation="Horizontal" Spacing="18">
+            <Icon Kind="Solid.Check" Size="24" Foreground="#a6e3a1" />
+            <Icon Kind="Solid.Heart" Size="24" Foreground="#f38ba8" />
+            <Icon Kind="Solid.Star" Size="24" Foreground="#f9e2af" />
+            <Icon Kind="Solid.Music" Size="24" Foreground="#89b4fa" />
+            <Icon Kind="Regular.Bell" Size="24" Foreground="#cba6f7" />
+            <Icon Kind="Brands.Github" Size="24" Foreground="#cdd6f4" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="VIEWBOX SCALES ITS CONTENT" Style="{StaticResource Heading}" />
+          <StackPanel Orientation="Horizontal" Spacing="16">
+            <Viewbox Width="60">
+              <Border Background="#313244" CornerRadius="6" Padding="10,6">
+                <TextBlock Text="Viewbox" />
+              </Border>
+            </Viewbox>
+            <Viewbox Width="120">
+              <Border Background="#313244" CornerRadius="6" Padding="10,6">
+                <TextBlock Text="Viewbox" />
+              </Border>
+            </Viewbox>
+            <Viewbox Width="200">
+              <Border Background="#313244" CornerRadius="6" Padding="10,6">
+                <TextBlock Text="Viewbox" />
+              </Border>
+            </Viewbox>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <GridSplitter Grid.Column="1" Width="6" ToolTip="Drag to resize the columns" />
+
+    <ScrollViewer Grid.Column="2">
+      <StackPanel Spacing="16">
+        <Border Style="{StaticResource Card}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="IMAGE (UNIFORM, UNIFORMTOFILL, FILL)" Style="{StaticResource Heading}" />
+            <StackPanel Orientation="Horizontal" Spacing="16">
+              <Image Source="Assets/logo.png" Width="96" Height="96" />
+              <Image Source="Assets/logo.png" Width="140" Height="64" Stretch="UniformToFill" />
+              <Image Source="Assets/logo.png" Width="48" Height="96" Stretch="Fill" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Card}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="COLOR" Style="{StaticResource Heading}" />
+            <ColorPicker SelectedColor="{Bind Tint}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

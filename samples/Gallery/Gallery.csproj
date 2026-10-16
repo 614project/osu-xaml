@@ -11,5 +11,6 @@
   <ItemGroup>
     <!-- Every .xaml file is compiled by the OsuXaml source generator. -->
     <AdditionalFiles Include="**\*.xaml" />
+    <None Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
