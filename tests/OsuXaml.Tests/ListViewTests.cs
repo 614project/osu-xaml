@@ -429,7 +429,7 @@ namespace Demo
                 Child = list;
             });
 
-            AddUntilStep("content taller than the viewport", () => list.ChildrenOfType<BasicScrollContainer>().Single().ScrollableExtent > 500);
+            AddUntilStep("content taller than the viewport", () => list.ChildrenOfType<ScrollViewer>().Single().ScrollableHeight > 500);
             AddStep("scroll to the last item", () => list.ScrollIntoView("item 29"));
             AddUntilStep("scrolled", () => list.ChildrenOfType<ScrollViewer>().Single().VerticalOffset > 500);
         }
