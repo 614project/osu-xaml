@@ -119,5 +119,108 @@ namespace OsuXaml.Tests
             AddAssert("clicked", () => clicks.SequenceEqual(new[] { "paste" }));
             AddAssert("text box still focused", () => textBox.HasFocus);
         }
+
+        [Test]
+        public void MenuBarKeyboardWhileATextBoxIsFocused()
+        {
+            focusTextBox();
+            AddStep("Alt+F", () =>
+            {
+                InputManager.PressKey(Key.AltLeft);
+                InputManager.Key(Key.F);
+                InputManager.ReleaseKey(Key.AltLeft);
+            });
+            AddAssert("File open at Open", () => file.IsSubmenuOpen.Value && file.HighlightedItem == open);
+            AddStep("Down, Down, Enter", () =>
+            {
+                InputManager.Key(Key.Down);
+                InputManager.Key(Key.Down);
+                InputManager.Key(Key.Enter);
+            });
+            AddAssert("Exit clicked", () => clicks.SequenceEqual(new[] { "exit" }) && !file.IsSubmenuOpen.Value);
+            AddAssert("text box focused again", () => textBox.HasFocus);
+        }
+
+        [Test]
+        public void ContextMenuKeyboardWhileATextBoxIsFocused()
+        {
+            focusTextBox();
+            rightClickArea();
+            AddStep("Down, Down, Enter", () =>
+            {
+                InputManager.Key(Key.Down);
+                InputManager.Key(Key.Down);
+                InputManager.Key(Key.Enter);
+            });
+            AddAssert("Paste clicked", () => clicks.SequenceEqual(new[] { "paste" }) && !areaMenu.IsOpen.Value);
+            AddAssert("text box focused again", () => textBox.HasFocus);
+        }
+
+        [Test]
+        public void ContextMenuEscapeWhileATextBoxIsFocused()
+        {
+            focusTextBox();
+            rightClickArea();
+            AddStep("Escape", () => InputManager.Key(Key.Escape));
+            AddAssert("menu closed", () => !areaMenu.IsOpen.Value);
+            AddAssert("text box focused again", () => textBox.HasFocus);
+        }
+
+        [Test]
+        public void ContextMenuArrowsDontChangeAFocusedComboBox()
+        {
+            ComboBox combo = null;
+
+            AddStep("combo and area", () =>
+            {
+                combo = new ComboBox { Width = 200 };
+                combo.Add("Apple");
+                combo.Add("Banana");
+                area = new Border { Size = new Vector2(200, 100), Background = Theme.Surface };
+                ContextMenuService.SetContextMenu(area, areaMenu);
+
+                var panel = new StackPanel { Padding = new MarginPadding(20), Spacing = 10 };
+                panel.Add(combo);
+                panel.Add(area);
+                window.Child = panel;
+            });
+            AddUntilStep("loaded", () => combo.IsLoaded && combo.DrawWidth > 0 && area.DrawWidth > 0);
+            AddStep("focus the combo", () =>
+            {
+                InputManager.MoveMouseTo(combo);
+                InputManager.Click(MouseButton.Left);
+                InputManager.Key(Key.Escape);
+            });
+            AddAssert("combo focused, closed", () => combo.HasFocus && !combo.IsDropDownOpen.Value && combo.SelectedIndex.Value == -1);
+            AddStep("right-click the area", () =>
+            {
+                InputManager.MoveMouseTo(area);
+                InputManager.Click(MouseButton.Right);
+            });
+            AddUntilStep("menu showing", () => areaMenu.IsOpen.Value && copy.IsLoaded && copy.IsPresent && copy.DrawWidth > 0);
+            AddStep("Down", () => InputManager.Key(Key.Down));
+            AddAssert("the menu moved, the combo didn't", () => areaMenu.HighlightedItem == copy && combo.SelectedIndex.Value == -1);
+            AddStep("Escape", () => InputManager.Key(Key.Escape));
+            AddAssert("combo focused again", () => !areaMenu.IsOpen.Value && combo.HasFocus);
+        }
+
+        [Test]
+        public void ClickingASeparatorKeepsTheMenuOnTheKeyboard()
+        {
+            Separator separator = null;
+
+            AddStep("add a separator", () => areaMenu.Add(separator = new Separator()));
+            focusTextBox();
+            rightClickArea();
+            AddUntilStep("separator showing", () => separator.IsLoaded && separator.DrawWidth > 0);
+            AddStep("click the separator", () =>
+            {
+                InputManager.MoveMouseTo(separator);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("menu still open", () => areaMenu.IsOpen.Value);
+            AddStep("Escape", () => InputManager.Key(Key.Escape));
+            AddAssert("closed and the text box has focus again", () => !areaMenu.IsOpen.Value && textBox.HasFocus);
+        }
     }
 }
