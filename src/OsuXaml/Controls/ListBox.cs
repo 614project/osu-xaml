@@ -43,7 +43,7 @@ namespace OsuXaml.Controls
             SelectedItems.BindCollectionChanged((_, _) =>
             {
                 if (!updatingSelectedItems)
-                    SelectionHasChanged();
+                    selectedItemsChanged();
             });
         }
 
@@ -239,6 +239,20 @@ namespace OsuXaml.Controls
             SelectedIndex.Value = index;
             ScrollIntoView(Items[index]);
             return true;
+        }
+
+        /// <summary>SelectedItems was changed from outside: SelectedItem follows it (the first selected item, as in WPF).</summary>
+        private void selectedItemsChanged()
+        {
+            object current = SelectedItem.Value;
+            object item = SelectionMode == SelectionMode.Single ? SelectedItems.LastOrDefault()
+                : SelectedItems.Contains(current) ? current : SelectedItems.FirstOrDefault();
+
+            updatingSelectedItems = true;
+            SelectedItem.Value = item;
+            updatingSelectedItems = false;
+
+            SelectionHasChanged();
         }
 
         private void toggle(object item)

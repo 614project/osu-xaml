@@ -135,6 +135,30 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void SelectedItemsCanBeChangedFromCode()
+        {
+            ListBox list = null;
+
+            AddStep("create", () => Child = list = letters(SelectionMode.Extended));
+            AddUntilStep("loaded", () => list.IsLoaded);
+
+            AddStep("select b and c through SelectedItems", () =>
+            {
+                list.SelectedItems.Add("b");
+                list.SelectedItems.Add("c");
+            });
+            AddAssert("both stay selected", () => list.SelectedItems.SequenceEqual(new object[] { "b", "c" }));
+            AddAssert("SelectedItem is the first of them", () => (string)list.SelectedItem.Value == "b" && list.SelectedIndex.Value == 1);
+            AddAssert("rows show it", () => !shownSelected(list, 0) && shownSelected(list, 1) && shownSelected(list, 2));
+
+            AddStep("unselect b through SelectedItems", () => list.SelectedItems.Remove("b"));
+            AddAssert("only c", () => list.SelectedItems.SequenceEqual(new object[] { "c" }) && (string)list.SelectedItem.Value == "c" && !shownSelected(list, 1));
+
+            AddStep("clear SelectedItems", () => list.SelectedItems.Clear());
+            AddAssert("nothing selected", () => list.SelectedItem.Value == null && list.SelectedIndex.Value == -1 && !shownSelected(list, 2));
+        }
+
+        [Test]
         public void SelectedItemAndIndexStayInSync()
         {
             ListBox list = null;
