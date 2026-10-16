@@ -26,10 +26,12 @@ namespace OsuXaml.Controls
         private readonly SpriteIcon check;
         private bool isEnabled = true;
         private bool hovered;
+        private MarginPadding padding;
+        private float boxSpace = box_size;
 
         public CheckBox()
         {
-            Padding = new MarginPadding { Left = box_size };
+            applyPadding();
             VerticalContentAlignment = VerticalAlignment.Center;
 
             AddInternal(box = new Container
@@ -90,6 +92,17 @@ namespace OsuXaml.Controls
 
         public override bool AcceptsFocus => isEnabled;
 
+        /// <summary>Space around the content. The box always sits to the left of it.</summary>
+        public new MarginPadding Padding
+        {
+            get => padding;
+            set
+            {
+                padding = value;
+                applyPadding();
+            }
+        }
+
         /// <summary>Toggles the box as a click would.</summary>
         public void Toggle()
         {
@@ -121,9 +134,15 @@ namespace OsuXaml.Controls
 
             // Without content the control is just the box.
             float left = PresentedContent == null ? box_size : box_size + label_gap;
-            if (Padding.Left != left)
-                Padding = new MarginPadding { Left = left };
+
+            if (boxSpace != left)
+            {
+                boxSpace = left;
+                applyPadding();
+            }
         }
+
+        private void applyPadding() => base.Padding = new MarginPadding { Left = padding.Left + boxSpace, Top = padding.Top, Right = padding.Right, Bottom = padding.Bottom };
 
         protected override bool OnHover(HoverEvent e)
         {

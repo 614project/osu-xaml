@@ -165,5 +165,28 @@ namespace OsuXaml.Tests
             AddStep("no content", () => label.Content = null);
             AddAssert("no access key without content", () => label.AccessKey == null);
         }
+
+        [Test]
+        public void CheckBoxPaddingIsKept()
+        {
+            CheckBox box = null, plain = null;
+
+            AddStep("create", () =>
+            {
+                box = new CheckBox { Content = "padded", Padding = new MarginPadding { Vertical = 10, Left = 6 } };
+                plain = new CheckBox { Content = "padded" };
+                var panel = new StackPanel { Width = 300 };
+                panel.Add(box);
+                panel.Add(plain);
+                Child = panel;
+            });
+            AddUntilStep("laid out", () => box.PresentedContent?.DrawHeight > 0 && plain.PresentedContent?.DrawHeight > 0);
+            AddWaitStep("settle", 3);
+            AddAssert("padding still set", () => box.Padding.Top == 10 && box.Padding.Left == 6);
+            AddAssert("vertical padding around the text", () => near(box.DrawHeight, box.PresentedContent.DrawHeight + 20));
+            AddAssert("left padding between the box and the text", () =>
+                near(box.PresentedContent.ScreenSpaceDrawQuad.TopLeft.X - box.ScreenSpaceDrawQuad.TopLeft.X,
+                    plain.PresentedContent.ScreenSpaceDrawQuad.TopLeft.X - plain.ScreenSpaceDrawQuad.TopLeft.X + 6));
+        }
     }
 }
