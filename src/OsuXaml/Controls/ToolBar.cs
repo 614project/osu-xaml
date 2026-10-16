@@ -143,8 +143,12 @@ namespace OsuXaml.Controls
                     break;
 
                 default:
-                    // Text and fixed-size elements sit in the middle of the strip rather than at its top.
-                    if (!(container is ILayoutElement))
+                    // Text and fixed-size elements, which can't fill the strip's thickness, sit in its middle rather than at its start.
+                    var across = horizontal ? Axes.Y : Axes.X;
+                    float size = horizontal ? container.Height : container.Width;
+                    bool fillsAcross = !Layout.AutoSizeAxes(container).HasFlag(across) && (container.RelativeSizeAxes.HasFlag(across) || size == 0);
+
+                    if (!fillsAcross)
                     {
                         var props = Layout.Get(container);
 
