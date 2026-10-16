@@ -49,6 +49,17 @@ namespace Demo
         public List<string> Tags { get; } = new List<string>();
     }
 
+    public class Col
+    {
+        public string Header { get; set; }
+        public OsuXaml.ItemBinding Binding { get; set; }
+    }
+
+    public partial class Table : OsuXaml.Controls.ItemsControl
+    {
+        public List<Col> Columns { get; } = new List<Col>();
+    }
+
     public partial class View : CompositeDrawable
     {
     }
@@ -264,6 +275,29 @@ namespace Demo
 
             Assert.That(source, Does.Contain("FontSize = 19f"));
             Assert.That(source, Does.Contain("FromHex(\"cba6f7\")"));
+        }
+
+        [Test]
+        public void ItemBindingsCompileToTypedAccessors()
+        {
+            string source = compiles(@"
+  <local:Table ItemsSource=""{Bind People}"">
+    <local:Table.Columns>
+      <local:Col Header=""Name"" Binding=""{Binding Name}"" />
+      <local:Col Header=""Age"" Binding=""Age"" />
+    </local:Table.Columns>
+  </local:Table>");
+
+            Assert.That(source, Does.Contain("new global::OsuXaml.ItemBinding<global::Demo.Person, string>(\"Name\""));
+            Assert.That(source, Does.Contain("new global::OsuXaml.ItemBinding<global::Demo.Person, int>(\"Age\""));
+            Assert.That(source, Does.Contain(".Age.Value)"));
+        }
+
+        [Test]
+        public void ItemBindingWithoutItemTypeIsReported()
+        {
+            var diagnostic = error(@"<local:Table><local:Table.Columns><local:Col Binding=""{Bind Name}"" /></local:Table.Columns></local:Table>");
+            Assert.That(diagnostic.Id, Is.EqualTo("OX0009"));
         }
 
         [Test]

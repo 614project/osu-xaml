@@ -17,6 +17,12 @@ namespace OsuXaml.Generator
         {
             var target = member is IEventSymbol ? null : memberType(member);
 
+            if (target != null && isItemBindingType(target) && bind.Extension == Markup.Bind)
+            {
+                emitItemBinding(v, member, bind, templateHint(type, owner, member.Name, target, scope), source);
+                return;
+            }
+
             // DisplayMemberBinding="{Bind Name}": a binding on a template property shows that member as text for each item.
             if (target != null && isTemplateType(target) && bind.Extension == Markup.Bind)
             {

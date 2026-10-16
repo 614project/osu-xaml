@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 
 namespace OsuXaml
@@ -89,5 +90,81 @@ namespace OsuXaml
         public override Type TargetType => typeof(T);
 
         public override Drawable Build(object control, BindingScope scope) => build((T)control, scope);
+    }
+
+    /// <summary>
+    /// A compiled path into each item, for columns and other per-item settings: <c>Binding="{Bind Done}"</c> on a
+    /// member of this type becomes <c>new ItemBinding&lt;Todo, bool&gt;("Done", x =&gt; x.Done, x =&gt; x.Done.Value)</c>.
+    /// The item type comes from the nearest ItemsSource. No reflection is involved.
+    /// </summary>
+    public abstract class ItemBinding
+    {
+        protected ItemBinding(string path)
+        {
+            Path = path;
+        }
+
+        /// <summary>The path as written in XAML, e.g. for column headers or sorting.</summary>
+        public string Path { get; }
+
+        public abstract Type ItemType { get; }
+
+        /// <summary>The value type; for a bindable member this is the bindable's T.</summary>
+        public abstract Type ValueType { get; }
+
+        /// <summary>The member itself: the view model's Bindable for bindable members (bind to it for editing), otherwise the value.</summary>
+        public abstract object GetSource(object item);
+
+        /// <summary>The member's current value.</summary>
+        public abstract object GetValue(object item);
+
+        /// <summary>
+        /// Calls <paramref name="changed"/> with the current value and again whenever a bindable member changes.
+        /// The bound copy this needs is added to <paramref name="scope"/>.
+        /// </summary>
+        public abstract void Observe(object item, BindingScope scope, Action<object> changed);
+    }
+
+    /// <summary>An <see cref="ItemBinding"/> for items of type <typeparamref name="TItem"/>.</summary>
+    public sealed class ItemBinding<TItem, TValue> : ItemBinding
+    {
+        private readonly Func<TItem, object> source;
+        private readonly Func<TItem, TValue> value;
+
+        public ItemBinding(string path, Func<TItem, object> source, Func<TItem, TValue> value)
+            : base(path)
+        {
+            this.source = source ?? throw new ArgumentNullException(nameof(source));
+            this.value = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        public override Type ItemType => typeof(TItem);
+
+        public override Type ValueType => typeof(TValue);
+
+        public override object GetSource(object item) => item is TItem t ? source(t) : null;
+
+        public override object GetValue(object item) => item is TItem t ? value(t) : null;
+
+        /// <summary>The current value, typed.</summary>
+        public TValue GetTypedValue(TItem item) => value(item);
+
+        public override void Observe(object item, BindingScope scope, Action<object> changed)
+        {
+            if (!(item is TItem t))
+            {
+                changed(null);
+                return;
+            }
+
+            if (source(t) is IBindable<TValue> bindable)
+            {
+                var copy = bindable.GetBoundCopy();
+                scope.Add(copy);
+                copy.BindValueChanged(e => changed(e.NewValue), true);
+            }
+            else
+                changed(value(t));
+        }
     }
 }

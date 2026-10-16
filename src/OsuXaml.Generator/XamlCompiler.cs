@@ -799,6 +799,12 @@ namespace OsuXaml.Generator
                 return;
             }
 
+            if (isItemBindingType(memberTarget))
+            {
+                emitItemBinding(v, member, Markup.ForPath(value), templateHint(type, owner, member.Name, memberTarget, scope), source);
+                return;
+            }
+
             // DisplayMemberPath="Name": a path on a template property means "show this member as text".
             if (isTemplateType(memberTarget))
             {

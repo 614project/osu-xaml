@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace OsuXaml.Generator
 {
@@ -348,6 +349,52 @@ namespace OsuXaml.Generator
             }
 
             return value;
+        }
+
+        private bool isItemBindingType(ITypeSymbol type)
+            => type != null && inherits(type, compilation.GetTypeByMetadataName("OsuXaml.ItemBinding"));
+
+        /// <summary>
+        /// <c>Binding="{Bind Done}"</c> (or <c>Binding="Done"</c>) on an ItemBinding member: a typed accessor into each item,
+        /// whose item type comes from the nearest ItemsSource.
+        /// </summary>
+        private void emitItemBinding(string v, ISymbol member, Markup bind, ITypeSymbol itemType, XObject source)
+        {
+            foreach (string option in bind.Options.Keys)
+            {
+                if (!option.Equals("Mode", StringComparison.OrdinalIgnoreCase) && !option.Equals("UpdateSourceTrigger", StringComparison.OrdinalIgnoreCase))
+                {
+                    report(Diagnostics.BadMarkup, source, $"'{member.Name}' takes a plain path; '{option}' isn't supported here");
+                    return;
+                }
+            }
+
+            if (itemType == null)
+            {
+                report(Diagnostics.BadTemplate, source, $"'{member.Name}' can't tell the item type. Bind ItemsSource to a typed list (e.g. BindableList<Person>)");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(bind.Path))
+            {
+                report(Diagnostics.BadMarkup, source, $"'{member.Name}' needs a path, e.g. {{Bind Name}}");
+                return;
+            }
+
+            string x = "i" + counter++;
+
+            if (!resolvePath(x, itemType, bind.Path, source, out string expr, out ISymbol last, out ITypeSymbol type) || last is IMethodSymbol)
+            {
+                if (last is IMethodSymbol)
+                    report(Diagnostics.TypeMismatch, source, "method '" + last.Name + "'", member.Name, "a property path", "");
+                return;
+            }
+
+            var bound = bindableValueType(type);
+            var valueType = bound ?? type;
+            string value = bound != null ? expr + ".Value" : expr;
+
+            assign(v, member, $"new global::OsuXaml.ItemBinding<{typeName(itemType)}, {typeName(valueType)}>({SymbolDisplay.FormatLiteral(bind.Path, true)}, {x} => {expr}, {x} => {value})");
         }
 
         #endregion

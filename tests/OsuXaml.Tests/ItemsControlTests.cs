@@ -225,4 +225,36 @@ namespace OsuXaml.Tests
 
         private static bool Precision(float a, float b) => System.Math.Abs(a - b) < 1;
     }
+
+    [TestFixture]
+    public class ItemBindingTests
+    {
+        private sealed class Todo
+        {
+            public string Title = "a";
+            public readonly BindableBool Done = new BindableBool();
+        }
+
+        [Test]
+        public void ObservesBindableMembersAndReadsPlainOnes()
+        {
+            var todo = new Todo();
+            var scope = new BindingScope();
+            var done = new ItemBinding<Todo, bool>("Done", t => t.Done, t => t.Done.Value);
+            var title = new ItemBinding<Todo, string>("Title", t => t.Title, t => t.Title);
+
+            var seen = new System.Collections.Generic.List<object>();
+            done.Observe(todo, scope, v => seen.Add(v));
+            todo.Done.Value = true;
+
+            Assert.That(seen, Is.EqualTo(new object[] { false, true }));
+            Assert.That(done.GetSource(todo), Is.SameAs(todo.Done));
+            Assert.That(title.GetValue(todo), Is.EqualTo("a"));
+            Assert.That(done.ValueType, Is.EqualTo(typeof(bool)));
+
+            scope.UnbindAll();
+            todo.Done.Value = false;
+            Assert.That(seen, Has.Count.EqualTo(2), "unbound with its scope");
+        }
+    }
 }
