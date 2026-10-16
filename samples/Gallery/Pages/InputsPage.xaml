@@ -1,0 +1,100 @@
+<UserControl
+    xmlns="osu-xaml"
+    xmlns:x="osu-xaml:x"
+    xmlns:local="clr-namespace:Gallery"
+    x:Class="Gallery.InputsPage"
+    x:DataType="local:GalleryViewModel">
+
+  <UserControl.Resources>
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="#181825" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style x:Key="Heading" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#a6adc8" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+  </UserControl.Resources>
+
+  <Grid Padding="20" ColumnDefinitions="*,*,Auto" ColumnSpacing="20">
+
+    <!-- Buttons and text -->
+    <ScrollViewer>
+      <StackPanel Spacing="16">
+        <Border Style="{StaticResource Card}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="BUTTONS" Style="{StaticResource Heading}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Button" Click="{Bind Click}" />
+              <ToggleButton Content="Bold" IsChecked="{Bind Bold}" />
+              <ToggleButton Content="Italic" IsChecked="{Bind Italic}" />
+              <RepeatButton Content="Hold +1" Click="{Bind Increment}" ToolTip="Keeps counting while held" />
+              <TextBlock Text="{Bind Count}" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Text="Read more about" />
+              <Hyperlink NavigateUri="https://github.com/ppy/osu-framework">osu!framework</Hyperlink>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Card}">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+            <TextBlock Grid.ColumnSpan="2" Text="TEXT" Style="{StaticResource Heading}" />
+            <Label Grid.Row="1" Content="_Name" Target="{Binding ElementName=nameBox}" VerticalAlignment="Center" />
+            <TextBox x:Name="nameBox" Grid.Row="1" Grid.Column="1" Text="{Bind Name}" PlaceholderText="Your name" />
+            <Label Grid.Row="2" Content="_Password" Target="{Binding ElementName=passwordBox}" VerticalAlignment="Center" />
+            <PasswordBox x:Name="passwordBox" Grid.Row="2" Grid.Column="1" Password="{Bind Password}" PlaceholderText="Type a password" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Bind PasswordInfo}" FontSize="14" Foreground="#a6adc8" />
+          </Grid>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Ranges -->
+    <StackPanel Grid.Column="1" Spacing="16">
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="RANGES" Style="{StaticResource Heading}" />
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Text="{Bind Volume, StringFormat='{0:0}%'}" Width="48" Margin="12,0,0,0" />
+            <Slider Value="{Bind Volume}" Maximum="100" TickFrequency="10" IsSnapToTickEnabled="True" TickPlacement="BottomRight" />
+          </DockPanel>
+          <ProgressBar Value="{Bind Volume}" Maximum="100" />
+          <CheckBox Content="Busy (indeterminate progress)" IsChecked="{Bind Busy}" />
+          <ProgressBar IsIndeterminate="{Bind Busy}" />
+        </StackPanel>
+      </Border>
+
+      <GroupBox Header="GROUPBOX WITH RADIO BUTTONS">
+        <StackPanel Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="16">
+            <RadioButton Content="Small" IsChecked="{Bind SizeSmall}" />
+            <RadioButton Content="Medium" IsChecked="{Bind SizeMedium}" />
+            <RadioButton Content="Large" IsChecked="{Bind SizeLarge}" />
+          </StackPanel>
+          <CheckBox Content="Enable notifications" IsChecked="{Bind Notifications}" />
+        </StackPanel>
+      </GroupBox>
+
+      <Expander Header="Expander: click to show more" IsExpanded="{Bind ShowDetails}" Background="#181825" Padding="12">
+        <TextBlock Text="TextWrapping=Wrap lets long text flow onto several lines inside the space the panel gives it, the way WPF's TextBlock does."
+                   TextWrapping="Wrap" Foreground="#a6adc8" />
+      </Expander>
+    </StackPanel>
+
+    <!-- Dates -->
+    <StackPanel Grid.Column="2" Spacing="16">
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="DATES" Style="{StaticResource Heading}" />
+          <DatePicker SelectedDate="{Bind Birthday}" SelectedDateFormat="Long" PlaceholderText="Pick a day" />
+          <Calendar SelectedDate="{Bind Birthday}" FirstDayOfWeek="Monday" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </Grid>
+</UserControl>

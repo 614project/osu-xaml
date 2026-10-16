@@ -22,5 +22,25 @@ namespace OsuXaml.Controls
 
         /// <summary>Raised when <see cref="SelectedColor"/> changes, with the new colour.</summary>
         public event Action<Colour4> SelectedColorChanged;
+
+        protected override HSVColourPicker CreateHSVColourPicker() => new ThemedHSVColourPicker();
+
+        protected override HexColourPicker CreateHexColourPicker() => new ThemedHexColourPicker();
+
+        private partial class ThemedHSVColourPicker : BasicHSVColourPicker
+        {
+            public ThemedHSVColourPicker()
+            {
+                Background.Colour = Theme.Mantle;
+            }
+        }
+
+        private partial class ThemedHexColourPicker : BasicHexColourPicker
+        {
+            public ThemedHexColourPicker()
+            {
+                Background.Colour = Theme.Mantle;
+            }
+        }
     }
 }

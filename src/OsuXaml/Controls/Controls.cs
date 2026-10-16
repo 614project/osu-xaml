@@ -234,6 +234,9 @@ namespace OsuXaml.Controls
         public TextBox()
         {
             Height = 36;
+
+            // osu!framework sizes text to the box's height unless told otherwise; match the rest of the controls instead.
+            FontSize = 16;
             BackgroundUnfocused = Theme.Surface;
             BackgroundFocused = Theme.Border;
             BackgroundCommit = Theme.Accent;
@@ -271,6 +274,8 @@ namespace OsuXaml.Controls
 
         protected override Color4 SelectionColour => Theme.Accent;
 
+        protected override float LeftRightPadding => 10;
+
         protected override SpriteText CreatePlaceholder()
         {
             var placeholder = base.CreatePlaceholder();
@@ -289,7 +294,12 @@ namespace OsuXaml.Controls
             if (DrawWidth != laidOutWidth && !HasFocus)
             {
                 laidOutWidth = DrawWidth;
-                RefreshText();
+
+                // An empty box has nothing to re-set, but its placeholder was scrolled against the old width just the same.
+                if (string.IsNullOrEmpty(base.Text))
+                    MoveCursorBy(0);
+                else
+                    RefreshText();
             }
         }
 

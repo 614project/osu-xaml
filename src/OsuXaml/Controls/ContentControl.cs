@@ -195,6 +195,10 @@ namespace OsuXaml.Controls
             {
                 Chrome.BorderThickness = value;
                 contentArea.Padding = Layout.Add(new MarginPadding(value), padding);
+
+                // osu!framework draws a masked container's border only over pixels its children draw, so without a
+                // background the (invisible) background box still has to be drawn for the border to show.
+                BackgroundBox.AlwaysPresent = value > 0;
             }
         }
 

@@ -1,4 +1,6 @@
+using System;
 using osu.Framework.Bindables;
+using osu.Framework.Graphics;
 
 namespace Gallery
 {
@@ -46,6 +48,32 @@ namespace Gallery
 
         public BindableBool ShowStatusBar { get; } = new BindableBool(true);
 
+        public BindableInt CurrentTab { get; } = new BindableInt();
+
+        public BindableBool Bold { get; } = new BindableBool(true);
+
+        public BindableBool Italic { get; } = new BindableBool();
+
+        public BindableBool SizeSmall { get; } = new BindableBool();
+
+        public BindableBool SizeMedium { get; } = new BindableBool(true);
+
+        public BindableBool SizeLarge { get; } = new BindableBool();
+
+        public BindableInt Count { get; } = new BindableInt();
+
+        public Bindable<string> Password { get; } = new Bindable<string>(string.Empty);
+
+        public Bindable<string> PasswordInfo { get; } = new Bindable<string>("No password yet");
+
+        public BindableBool Busy { get; } = new BindableBool(true);
+
+        public BindableBool ShowDetails { get; } = new BindableBool();
+
+        public Bindable<DateTime?> Birthday { get; } = new Bindable<DateTime?>(new DateTime(2026, 10, 16));
+
+        public Bindable<Colour4> Tint { get; } = new Bindable<Colour4>(Colour4.FromHex("cba6f7"));
+
         private int nextTag = 1;
         private int nextPerson = 1;
 
@@ -58,6 +86,11 @@ namespace Gallery
             SelectedFile.BindValueChanged(e => Status.Value = e.NewValue == null ? "No file" : $"File {e.NewValue.Name}");
             SelectedTheme.BindValueChanged(e => Status.Value = $"Theme {e.NewValue}");
             WordWrap.BindValueChanged(e => Status.Value = e.NewValue ? "Word wrap on" : "Word wrap off");
+            Password.BindValueChanged(e => PasswordInfo.Value = e.NewValue.Length == 0 ? "No password yet" : $"{e.NewValue.Length} characters");
+            Birthday.BindValueChanged(e => Status.Value = e.NewValue is DateTime d ? $"Picked {d:D}" : "No date");
+            SizeLarge.BindValueChanged(e => { if (e.NewValue) Status.Value = "Size: large"; });
+            SizeMedium.BindValueChanged(e => { if (e.NewValue) Status.Value = "Size: medium"; });
+            SizeSmall.BindValueChanged(e => { if (e.NewValue) Status.Value = "Size: small"; });
         }
 
         public void AddPerson()
@@ -78,6 +111,8 @@ namespace Gallery
             if (SelectedPerson.Value != null)
                 RemovePerson(SelectedPerson.Value);
         }
+
+        public void Increment() => Count.Value++;
 
         public void Command(string name) => Status.Value = name;
 
