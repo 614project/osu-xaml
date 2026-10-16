@@ -626,6 +626,14 @@ namespace OsuXaml.Generator
                         emitCollection(v, type, ownCollection, value, scope);
                         return;
                     }
+
+                    // <Border.ContextMenu> is WPF's spelling of a property every element accepts.
+                    if (!attachedSetters(owner, memberName, type).Any()
+                        && globalProviders().FirstOrDefault(p => attachedSetters(p, memberName, type).Any()) is INamedTypeSymbol globalOwner)
+                    {
+                        emitAttachedValue(v, type, globalOwner, memberName, value, scope);
+                        return;
+                    }
                 }
 
                 emitAttachedValue(v, type, owner, memberName, value, scope);

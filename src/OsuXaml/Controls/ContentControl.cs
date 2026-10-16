@@ -410,6 +410,14 @@ namespace OsuXaml.Controls
     }
 
     /// <summary>
+    /// Like WPF's UserControl: the root of a reusable piece of XAML (<c>&lt;UserControl x:Class="App.SettingsPage"&gt;</c>).
+    /// It is a chrome-less ContentControl, so its content stretches to whatever space the parent gives it.
+    /// </summary>
+    public partial class UserControl : ContentControl
+    {
+    }
+
+    /// <summary>
     /// Like WPF's Window: the root of a screen, with a background, one child and a layer that
     /// popups (ComboBox drop-downs, menus, tooltips) open in. <c>Title</c> sets the OS window title.
     /// </summary>

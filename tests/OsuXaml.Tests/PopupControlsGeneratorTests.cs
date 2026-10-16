@@ -255,6 +255,31 @@ namespace Demo
         }
 
         [Test]
+        public void OwnerQualifiedPropertyElementsLikeWpf()
+        {
+            string source = compiles(@"
+  <StackPanel>
+    <Border Background=""#313244"">
+      <Border.ContextMenu>
+        <ContextMenu>
+          <MenuItem Header=""_Copy"" />
+        </ContextMenu>
+      </Border.ContextMenu>
+    </Border>
+    <Button Content=""Rich"">
+      <Button.ToolTip>
+        <ToolTip>
+          <TextBlock Text=""Rich tooltip"" />
+        </ToolTip>
+      </Button.ToolTip>
+    </Button>
+  </StackPanel>");
+
+            Assert.That(source, Does.Contain("ContextMenuService.SetContextMenu(e"));
+            Assert.That(source, Does.Contain("ToolTipService.SetToolTip(e"));
+        }
+
+        [Test]
         public void ContextMenuMustBeAContextMenu()
         {
             var diagnostic = error(@"<Border><ContextMenuService.ContextMenu><TextBlock Text=""no"" /></ContextMenuService.ContextMenu></Border>");

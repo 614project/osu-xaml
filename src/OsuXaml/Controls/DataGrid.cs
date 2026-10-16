@@ -734,9 +734,20 @@ namespace OsuXaml.Controls
 
             var target = editor.AcceptsFocus ? editor : editor.ChildrenOfType<Drawable>().FirstOrDefault(d => d.AcceptsFocus);
 
+            if (target == null)
+                return;
+
             // A freshly added editor only becomes focusable once its parent has made it alive, a frame or two later.
-            if (target != null && GetContainingFocusManager()?.ChangeFocus(target) == false && ++focusAttempts < 10)
-                Schedule(focusEditor);
+            if (GetContainingFocusManager()?.ChangeFocus(target) == false)
+            {
+                if (++focusAttempts < 10)
+                    Schedule(focusEditor);
+
+                return;
+            }
+
+            // Typing replaces the value, as in spreadsheet-like grids.
+            (target as osu.Framework.Graphics.UserInterface.TextBox)?.SelectAll();
         }
 
         private void endEdit(bool committed)
