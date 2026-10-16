@@ -178,11 +178,16 @@ namespace OsuXaml.Controls
     /// <summary>
     /// WPF-style Grid: rows and columns sized by pixels, by content (Auto) or by weight (*),
     /// with children placed by the Grid.Row / Grid.Column / Grid.RowSpan / Grid.ColumnSpan attached properties.
+    /// Definitions are written compactly (<c>ColumnDefinitions="Auto,*,2*"</c>) or as WPF elements with limits
+    /// (<c>&lt;ColumnDefinition Width="2*" MinWidth="40" /&gt;</c>). The grid lays out every frame, so lengths changed
+    /// at runtime (by code or a <see cref="GridSplitter"/>) apply on the next frame.
     /// </summary>
     public partial class Grid : Panel
     {
+        /// <summary>The rows, top to bottom. Without any, the grid has one star row.</summary>
         public GridLengthCollection RowDefinitions { get; set; } = new GridLengthCollection();
 
+        /// <summary>The columns, left to right. Without any, the grid has one star column.</summary>
         public GridLengthCollection ColumnDefinitions { get; set; } = new GridLengthCollection();
 
         public float RowSpacing { get; set; }

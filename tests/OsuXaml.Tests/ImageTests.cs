@@ -12,6 +12,7 @@ using osuTK;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Image = OsuXaml.Controls.Image;
+using Path = System.IO.Path;
 
 namespace OsuXaml.Tests
 {
