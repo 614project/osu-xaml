@@ -45,20 +45,25 @@ namespace OsuXaml.Controls
 
         public bool IsAbsolute => Type == GridUnitType.Pixel;
 
+        /// <summary>Reads <c>Auto</c>, <c>120</c>, <c>*</c> or <c>2*</c>.</summary>
+        /// <exception cref="FormatException">The text is none of those.</exception>
         public static GridLength Parse(string text)
         {
             string s = text.Trim();
 
             if (s.Equals("Auto", StringComparison.OrdinalIgnoreCase))
-                return new GridLength(0, GridUnitType.Auto);
+                return Auto;
 
-            if (s.EndsWith("*", StringComparison.Ordinal))
-            {
-                string weight = s.Substring(0, s.Length - 1);
-                return new GridLength(weight.Length == 0 ? 1 : float.Parse(weight, CultureInfo.InvariantCulture), GridUnitType.Star);
-            }
+            bool star = s.EndsWith("*", StringComparison.Ordinal);
+            string number = star ? s.Substring(0, s.Length - 1) : s;
 
-            return new GridLength(float.Parse(s, CultureInfo.InvariantCulture), GridUnitType.Pixel);
+            if (star && number.Length == 0)
+                return Star;
+
+            if (!float.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || value < 0 || !float.IsFinite(value))
+                throw new FormatException($"'{text}' is not a grid length: use Auto, a number of pixels, * or a weighted star such as 2*.");
+
+            return new GridLength(value, star ? GridUnitType.Star : GridUnitType.Pixel);
         }
 
         public override string ToString() => Type switch
@@ -320,13 +325,15 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>
-        /// Shares <paramref name="space"/> between star tracks by weight. A track whose share breaks its limit is fixed at
-        /// that limit and the rest is shared again among the others, so a MinWidth column never squeezes below its minimum.
+        /// Shares <paramref name="space"/> between star tracks by weight, keeping each within its limits. Each round
+        /// clamps every share; if the clamps add space overall the tracks held at their minimum are fixed there, if they
+        /// remove space the ones held at their maximum are, and the rest is shared again among the others. So a MinWidth
+        /// column never squeezes below its minimum and a capped column hands what it can't take to its neighbours.
         /// </summary>
         private static void shareStars(IReadOnlyList<DefinitionBase> defs, List<int> stars, float[] sizes, float space)
         {
             var pending = new List<int>(stars);
-            var limited = new List<int>();
+            var fixedNow = new List<int>();
 
             while (pending.Count > 0)
             {
@@ -335,25 +342,25 @@ namespace OsuXaml.Controls
                     totalWeight += defs[i].Length.Value;
 
                 float unit = totalWeight > 0 ? space / totalWeight : 0;
+                float violation = 0;
 
-                // Minimums are settled first: giving a track its minimum leaves less for the others, never more.
-                limited.Clear();
-                limited.AddRange(pending.Where(i => unit * defs[i].Length.Value < defs[i].MinLength));
-                bool atMinimum = limited.Count > 0;
-
-                if (!atMinimum)
-                    limited.AddRange(pending.Where(i => unit * defs[i].Length.Value > defs[i].MaxLength));
-
-                if (limited.Count == 0)
+                foreach (int i in pending)
                 {
-                    foreach (int i in pending)
-                        sizes[i] = unit * defs[i].Length.Value;
-                    return;
+                    float share = unit * defs[i].Length.Value;
+                    sizes[i] = defs[i].Constrain(share);
+                    violation += sizes[i] - share;
                 }
 
-                foreach (int i in limited)
+                if (Math.Abs(violation) < 0.001f)
+                    return;
+
+                fixedNow.Clear();
+                fixedNow.AddRange(pending.Where(i => violation > 0
+                    ? sizes[i] > unit * defs[i].Length.Value
+                    : sizes[i] < unit * defs[i].Length.Value));
+
+                foreach (int i in fixedNow)
                 {
-                    sizes[i] = atMinimum ? defs[i].MinLength : defs[i].Constrain(defs[i].MaxLength);
                     space = Math.Max(0, space - sizes[i]);
                     pending.Remove(i);
                 }
