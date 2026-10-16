@@ -349,10 +349,14 @@ namespace OsuXaml.Generator
             var local = localPropertyNames(element);
 
             // Style setters first, so the element's own attributes win.
+            var styled = new HashSet<string>();
+
             if (!isRoot)
             {
                 foreach (var setter in styleSetters(element, type))
                 {
+                    styled.Add(setter.Name);
+
                     if (!local.Contains(setter.Name))
                         emitProperty(v, type, setter, scope);
                 }
@@ -399,7 +403,7 @@ namespace OsuXaml.Generator
                 }, scope);
             }
 
-            emitImplicitItemTemplate(v, type, element, scope, local);
+            emitImplicitItemTemplate(v, type, element, scope, new HashSet<string>(local.Concat(styled)));
 
             foreach (var child in element.Elements())
             {
@@ -678,10 +682,34 @@ namespace OsuXaml.Generator
             string text = string.Concat(value.Element.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
             var target = memberType(member);
 
+            // <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>: the wrapper is optional.
+            if (children.Count == 1 && children[0].Name.LocalName == "ItemsPanelTemplate" && !children[0].Name.NamespaceName.StartsWith("clr-namespace:", StringComparison.Ordinal))
+                children = children[0].Elements().ToList();
+
             if (children.Count == 0)
             {
                 if (text.Length > 0)
                     emitAssignment(v, type, member, text, value.Element, value.Context, value.Owner, scope);
+                return;
+            }
+
+            // Several children, or a child the property can't hold, add to the collection the property already has,
+            // as WPF does for <Grid.RowDefinitions><RowDefinition /></Grid.RowDefinitions>.
+            if (member is IPropertySymbol { GetMethod: { } } && target != null && findMethods(target, "Add").Any(m => !m.IsStatic && m.Parameters.Length == 1)
+                && (children.Count > 1 || !childAssignable(children[0], target)))
+            {
+                foreach (var child in children)
+                {
+                    var (item, itemType) = emitValueElement(child, scope);
+                    if (item == null)
+                        continue;
+
+                    if (findMethods(target, "Add").Any(m => !m.IsStatic && m.Parameters.Length == 1 && implicitly(itemType, m.Parameters[0].Type)))
+                        line($"{v}.{member.Name}.Add({item});");
+                    else
+                        report(Diagnostics.TypeMismatch, child, itemType.ToDisplayString(), member.Name, target.ToDisplayString(), "");
+                }
+
                 return;
             }
 
@@ -708,6 +736,16 @@ namespace OsuXaml.Generator
             var (c, childType) = emitValueElement(children[0], scope);
             if (c != null)
                 assignChecked(v, member, c, childType, children[0]);
+        }
+
+        /// <summary>Whether the element's type (resolved quietly) can be assigned to <paramref name="target"/>.</summary>
+        private bool childAssignable(XElement child, ITypeSymbol target)
+        {
+            var type = directive_namespaces.Contains(child.Name.NamespaceName)
+                ? directiveType(child.Name.LocalName)
+                : resolveType(child.Name.NamespaceName, child.Name.LocalName);
+
+            return type == null || implicitly(type, bindableClassValueType(target) ?? target) || isTemplateType(target);
         }
 
         /// <summary>A read-only collection property filled from a property element: <c>&lt;GridView.Columns&gt;</c>.</summary>

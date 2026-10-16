@@ -47,6 +47,7 @@ namespace Demo
     public partial class Bag : Drawable
     {
         public List<string> Tags { get; } = new List<string>();
+        public List<string> Words { get; set; } = new List<string>();
     }
 
     public class Col
@@ -298,6 +299,29 @@ namespace Demo
         {
             var diagnostic = error(@"<local:Table><local:Table.Columns><local:Col Binding=""{Bind Name}"" /></local:Table.Columns></local:Table>");
             Assert.That(diagnostic.Id, Is.EqualTo("OX0009"));
+        }
+
+        [Test]
+        public void PropertyElementsAddToCollectionsAndUnwrapItemsPanelTemplate()
+        {
+            string source = compiles(@"
+  <StackPanel>
+    <local:Bag>
+      <local:Bag.Words>
+        <x:String>one</x:String>
+      </local:Bag.Words>
+    </local:Bag>
+    <ListBox>
+      <ListBox.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation=""Horizontal"" />
+        </ItemsPanelTemplate>
+      </ListBox.ItemsPanel>
+    </ListBox>
+  </StackPanel>");
+
+            Assert.That(source, Does.Contain(".Words.Add(e"));
+            Assert.That(source, Does.Contain(".ItemsPanel = e"));
         }
 
         [Test]
