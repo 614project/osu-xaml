@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Testing;
 using OsuXaml.Controls;
 using osuTK;
@@ -230,6 +232,69 @@ namespace OsuXaml.Tests
                 return quad.BottomRight.X <= mouse.X + 1 && quad.BottomRight.Y <= mouse.Y + 1
                        && quad.BottomRight.X >= mouse.X - 2 && quad.BottomRight.Y >= mouse.Y - 2;
             });
+        }
+
+        private ComboBox createCombo(bool editable, BindableList<string> source = null)
+        {
+            var combo = new ComboBox { Width = 200, IsEditable = editable };
+
+            if (source != null)
+                combo.ItemsSource = source;
+            else
+            {
+                combo.Add("Apple");
+                combo.Add("Banana");
+                combo.Add("Cherry");
+            }
+
+            var panel = new StackPanel { Padding = new MarginPadding(20), Spacing = 10 };
+            panel.Add(combo);
+            window.Child = panel;
+            return combo;
+        }
+
+        [Test]
+        public void EditableComboBoxEnterPicksAndEscapeCloses()
+        {
+            ComboBox combo = null;
+
+            AddStep("editable combo", () => combo = createCombo(true));
+            AddUntilStep("loaded", () => combo.IsLoaded && combo.DrawWidth > 0);
+            AddStep("click the text", () =>
+            {
+                InputManager.MoveMouseTo(combo, new Vector2(-40, 0));
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("text box focused and the list open", () => combo.ChildrenOfType<BasicTextBox>().Single().HasFocus && combo.IsDropDownOpen.Value);
+            AddStep("Down, Down, Enter", () =>
+            {
+                InputManager.Key(Key.Down);
+                InputManager.Key(Key.Down);
+                InputManager.Key(Key.Enter);
+            });
+            AddAssert("Banana picked and closed", () => combo.SelectedIndex.Value == 1 && combo.Text.Value == "Banana" && !combo.IsDropDownOpen.Value);
+            AddStep("F4", () => InputManager.Key(Key.F4));
+            AddAssert("open", () => combo.IsDropDownOpen.Value);
+            AddStep("Escape", () => InputManager.Key(Key.Escape));
+            AddAssert("closed", () => !combo.IsDropDownOpen.Value && window.PopupLayer.OpenPopups.Count == 0);
+            AddAssert("text box still focused", () => combo.ChildrenOfType<BasicTextBox>().Single().HasFocus);
+        }
+
+        [Test]
+        public void EditableComboBoxEscapeClosesTheList()
+        {
+            ComboBox combo = null;
+
+            AddStep("editable combo", () => combo = createCombo(true));
+            AddUntilStep("loaded", () => combo.IsLoaded && combo.DrawWidth > 0);
+            AddStep("click the text", () =>
+            {
+                InputManager.MoveMouseTo(combo, new Vector2(-40, 0));
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("list open", () => combo.IsDropDownOpen.Value);
+            AddStep("Escape", () => InputManager.Key(Key.Escape));
+            AddAssert("closed", () => !combo.IsDropDownOpen.Value && window.PopupLayer.OpenPopups.Count == 0);
         }
 
         [Test]
