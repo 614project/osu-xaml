@@ -70,6 +70,9 @@ namespace OsuXaml.Controls
                 },
             });
 
+            // The list lives in the popup layer and keeps updating while the box itself is hidden.
+            popup.Child.OnUpdate += _ => closeIfHidden();
+
             face = new Container
             {
                 RelativeSizeAxes = Axes.Both,
@@ -149,7 +152,7 @@ namespace OsuXaml.Controls
 
                 if (value)
                 {
-                    selectionClip.Add(textBox = new EditableTextBox { RelativeSizeAxes = Axes.Both });
+                    selectionClip.Add(textBox = new EditableTextBox(this) { RelativeSizeAxes = Axes.Both });
                     textBox.Current.Value = Text.Value;
                     textBox.Current.ValueChanged += e =>
                     {
@@ -322,7 +325,25 @@ namespace OsuXaml.Controls
             }
 
             base.OnItemsChanged();
-            setHighlight(Math.Min(highlightedIndex, Items.Count - 1));
+
+            // The highlight stays on its item when items are inserted or removed before it.
+            int follow = -1;
+
+            for (int i = 0; i < Items.Count && follow < 0; i++)
+            {
+                if (ContainerFromIndex(i) is ComboBoxItem { IsHighlighted: true })
+                    follow = i;
+            }
+
+            if (follow >= 0)
+                highlightedIndex = follow;
+            else
+            {
+                // The highlighted item went away: highlight whatever now sits at its place.
+                int index = Math.Min(highlightedIndex, Items.Count - 1);
+                highlightedIndex = -1;
+                setHighlight(index);
+            }
         }
 
         protected override void OnSelectionChanged()
@@ -453,6 +474,11 @@ namespace OsuXaml.Controls
             if (!isEnabled || !(HasFocus || textBox?.HasFocus == true))
                 return base.OnKeyDown(e);
 
+            return handleKey(e) || base.OnKeyDown(e);
+        }
+
+        private bool handleKey(KeyDownEvent e)
+        {
             bool open = IsDropDownOpen.Value;
 
             switch (e.Key)
@@ -513,7 +539,7 @@ namespace OsuXaml.Controls
                     return false;
             }
 
-            return base.OnKeyDown(e);
+            return false;
         }
 
         private int navigate(int current, Key key)
@@ -564,6 +590,23 @@ namespace OsuXaml.Controls
             }
 
             updateFace();
+        }
+
+        /// <summary>Closes the list once the box (or anything around it) is hidden, as WPF closes it when the box loses focus.</summary>
+        private void closeIfHidden()
+        {
+            if (!IsDropDownOpen.Value)
+                return;
+
+            for (Drawable d = this; d != null; d = d.Parent)
+            {
+                // A popup's content fades in from nothing, so a combo box inside another popup isn't hidden by that.
+                if (!d.IsPresent && !(d is PopupRoot))
+                {
+                    IsDropDownOpen.Value = false;
+                    return;
+                }
+            }
         }
 
         private void setHighlight(int index)
@@ -747,10 +790,12 @@ namespace OsuXaml.Controls
         /// <summary>A borderless text box for <see cref="IsEditable"/> that re-lays out its text on resize without reporting edits.</summary>
         private partial class EditableTextBox : BasicTextBox
         {
+            private readonly ComboBox owner;
             private float laidOutWidth = -1;
 
-            public EditableTextBox()
+            public EditableTextBox(ComboBox owner)
             {
+                this.owner = owner;
                 BackgroundUnfocused = Colour4.Transparent;
                 BackgroundFocused = Colour4.Transparent;
                 BackgroundCommit = Colour4.Transparent;
@@ -758,6 +803,9 @@ namespace OsuXaml.Controls
 
             /// <summary>True while the text is re-applied for layout, so the owner ignores the change.</summary>
             public bool Relayouting { get; private set; }
+
+            // The focused text box sees keys first and would take Enter (commit) and Escape (unfocus); the combo box's keys win.
+            protected override bool OnKeyDown(KeyDownEvent e) => (owner.isEnabled && owner.handleKey(e)) || base.OnKeyDown(e);
 
             protected override void Update()
             {

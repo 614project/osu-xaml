@@ -494,7 +494,8 @@ namespace OsuXaml.Controls
         {
             if (isOpen)
             {
-                layer ??= PopupLayer.Find(this);
+                // Looked up on every open: the popup (or its owner) may have moved to another window since.
+                layer = PopupLayer.Find(this);
 
                 if (layer == null)
                 {
@@ -516,11 +517,12 @@ namespace OsuXaml.Controls
 
         protected override void Dispose(bool isDisposing)
         {
-            // The content lives in another part of the tree; hand it back to the layer's update thread to remove.
-            if (layer != null && layer.IsLoaded)
-                layer.ScheduleRelease(Root);
-            else if (Root.Parent == null)
+            // Closed content is in no tree and goes now (the layer may be disposed along with this popup, so its
+            // scheduler would never run). Open content lives in the layer; hand it to the layer's update thread to remove.
+            if (Root.Parent == null)
                 Root.Dispose();
+            else if (layer != null && layer.IsLoaded)
+                layer.ScheduleRelease(Root);
 
             base.Dispose(isDisposing);
         }
@@ -606,6 +608,8 @@ namespace OsuXaml.Controls
             {
                 case PlacementMode.Top:
                     position = new Vector2(topLeft.X, topLeft.Y - size.Y);
+                    // Flip below the target when there is no room above.
+                    if (position.Y < 0 && bottomRight.Y + size.Y <= bounds.Y) position.Y = bottomRight.Y;
                     break;
 
                 case PlacementMode.Right:
@@ -620,6 +624,9 @@ namespace OsuXaml.Controls
 
                 case PlacementMode.Mouse:
                     position = container.ToLocalSpace(Owner.MousePosition);
+                    // Open up or to the left of the pointer when there is no room, instead of sliding under it.
+                    if (position.X + size.X > bounds.X && position.X - size.X >= 0) position.X -= size.X;
+                    if (position.Y + size.Y > bounds.Y && position.Y - size.Y >= 0) position.Y -= size.Y;
                     break;
 
                 case PlacementMode.Center:
