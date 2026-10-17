@@ -83,6 +83,26 @@ namespace OsuXaml.Controls
             slots.Clear();
         }
 
+        /// <summary>Puts the slots in the order of <paramref name="contents"/>, which must be exactly this panel's children.</summary>
+        internal void ReorderChildren(IEnumerable<Drawable> contents)
+        {
+            var byContent = slots.ToDictionary(s => s.Content);
+            slots.Clear();
+
+            foreach (var content in contents)
+                slots.Add(byContent[content]);
+        }
+
+        /// <summary>The slot holding <paramref name="content"/>, or null.</summary>
+        internal Slot SlotOf(Drawable content)
+        {
+            // A loaded slot is its content's parent; before loading, parents aren't set yet.
+            if (content?.Parent is Slot slot && slot.Parent == this)
+                return slot;
+
+            return content == null ? null : slots.Find(s => s.Content == content);
+        }
+
         public Vector2 Measure(Vector2 availableSize)
         {
             // Nested panels measure their subtree once per frame per constraint.
@@ -96,6 +116,9 @@ namespace OsuXaml.Controls
             measuredFor = availableSize;
             return measured = desired;
         }
+
+        /// <summary>Makes the next <see cref="Measure"/> run again this frame, for panels whose desired size just changed.</summary>
+        protected void InvalidateMeasure() => measuredAt = double.NaN;
 
         protected abstract Vector2 MeasureOverride(Vector2 available);
 
@@ -139,45 +162,50 @@ namespace OsuXaml.Controls
 
         public float Spacing { get; set; }
 
-        protected override Vector2 MeasureOverride(Vector2 available)
+        protected override Vector2 MeasureOverride(Vector2 available) => MeasureStack(Slots, available, Orientation, Spacing);
+
+        protected override void ArrangeOverride(Vector2 size) => ArrangeStack(Slots, size, Orientation, Spacing);
+
+        /// <summary>The size of <paramref name="slots"/> in a line; shared with <see cref="VirtualizingStackPanel"/> when it isn't virtualizing.</summary>
+        internal static Vector2 MeasureStack(IReadOnlyList<Slot> slots, Vector2 available, Orientation orientation, float spacing)
         {
             float along = 0, cross = 0;
-            var constraint = Make(float.PositiveInfinity, Cross(available, Orientation), Orientation);
+            var constraint = Make(float.PositiveInfinity, Cross(available, orientation), orientation);
 
             int visible = 0;
 
-            foreach (var slot in Slots)
+            foreach (var slot in slots)
             {
                 if (Layout.IsCollapsed(slot.Content))
                     continue;
 
                 var d = slot.Measure(constraint);
-                along += Axis(d, Orientation);
-                cross = Math.Max(cross, Cross(d, Orientation));
+                along += Axis(d, orientation);
+                cross = Math.Max(cross, Cross(d, orientation));
                 visible++;
             }
 
-            along += Math.Max(0, visible - 1) * Spacing;
-            return Make(along, cross, Orientation);
+            along += Math.Max(0, visible - 1) * spacing;
+            return Make(along, cross, orientation);
         }
 
-        protected override void ArrangeOverride(Vector2 size)
+        internal static void ArrangeStack(IReadOnlyList<Slot> slots, Vector2 size, Orientation orientation, float spacing)
         {
             float position = 0;
-            float cross = Cross(size, Orientation);
-            var constraint = Make(float.PositiveInfinity, cross, Orientation);
+            float cross = Cross(size, orientation);
+            var constraint = Make(float.PositiveInfinity, cross, orientation);
 
-            foreach (var slot in Slots)
+            foreach (var slot in slots)
             {
                 if (Layout.IsCollapsed(slot.Content))
                 {
-                    slot.Arrange(Make(position, 0, Orientation), Vector2.Zero);
+                    slot.Arrange(Make(position, 0, orientation), Vector2.Zero);
                     continue;
                 }
 
-                float length = Axis(slot.Measure(constraint), Orientation);
-                slot.Arrange(Make(position, 0, Orientation), Make(length, cross, Orientation));
-                position += length + Spacing;
+                float length = Axis(slot.Measure(constraint), orientation);
+                slot.Arrange(Make(position, 0, orientation), Make(length, cross, orientation));
+                position += length + spacing;
             }
         }
     }

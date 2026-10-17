@@ -497,7 +497,7 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            string call(IMethodSymbol setter) => typeName(owner) + "." + setter.Name;
+            string call(IMethodSymbol setter) => typeName(setter.ContainingType) + "." + setter.Name;
 
             string text = value.Text;
 
@@ -648,9 +648,22 @@ namespace OsuXaml.Generator
             }
         }
 
+        /// <summary>Static <c>SetName(element, value)</c> methods on <paramref name="owner"/> or a base type, as C# would find them:
+        /// <c>VirtualizingStackPanel.IsVirtualizing</c> uses the setter declared on VirtualizingPanel.</summary>
         private IEnumerable<IMethodSymbol> attachedSetters(INamedTypeSymbol owner, string name, ITypeSymbol elementType)
-            => owner.GetMembers("Set" + name).OfType<IMethodSymbol>()
-                    .Where(m => m.IsStatic && m.Parameters.Length == 2 && implicitly(elementType, m.Parameters[0].Type) && canAccess(m));
+        {
+            for (var type = owner; type != null; type = type.BaseType)
+            {
+                var setters = type.GetMembers("Set" + name).OfType<IMethodSymbol>()
+                                  .Where(m => m.IsStatic && m.Parameters.Length == 2 && implicitly(elementType, m.Parameters[0].Type) && canAccess(m))
+                                  .ToList();
+
+                if (setters.Count > 0)
+                    return setters;
+            }
+
+            return Enumerable.Empty<IMethodSymbol>();
+        }
 
         private List<INamedTypeSymbol> providers;
 

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
@@ -22,7 +23,8 @@ namespace OsuXaml.Controls
     /// <summary>
     /// A scrollable list of selectable items, like WPF's ListBox. Use <c>ItemsSource</c> with an <c>ItemTemplate</c>
     /// or <c>DisplayMemberPath</c>, or list <c>&lt;ListBoxItem&gt;</c> children. Up/Down/Home/End move the selection
-    /// once the list has focus.
+    /// once the list has focus. Its items panel is a <see cref="VirtualizingStackPanel"/>, so only the rows in view have
+    /// containers; selection is kept by item, so it survives rows scrolling away.
     /// </summary>
     public partial class ListBox : Selector
     {
@@ -90,9 +92,12 @@ namespace OsuXaml.Controls
 
         protected override bool IsUpdatingSelection => updatingSelectedItems;
 
-        /// <summary>Scrolls until the item's container is visible.</summary>
+        /// <summary>Scrolls until the item's container is visible, creating it first in a virtualizing list.</summary>
         public void ScrollIntoView(object item)
         {
+            if (BringIndexIntoView(IndexOf(item)))
+                return;
+
             var container = ContainerFromItem(item);
             if (container == null || scroll == null)
                 return;
@@ -114,6 +119,8 @@ namespace OsuXaml.Controls
         }
 
         public void UnselectAll() => setSelectedItems();
+
+        protected override Panel CreateDefaultItemsPanel() => new VirtualizingStackPanel();
 
         protected override Drawable CreateItemsHost(Panel panel)
         {
@@ -199,7 +206,8 @@ namespace OsuXaml.Controls
 
         protected override void OnItemsChanged()
         {
-            var gone = SelectedItems.Where(i => IndexOf(i) < 0).ToArray();
+            var present = SelectedItems.Count > 0 ? new HashSet<object>(Items) : null;
+            var gone = SelectedItems.Where(i => !present.Contains(i)).ToArray();
 
             if (gone.Length > 0)
             {

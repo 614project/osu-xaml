@@ -13,7 +13,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml/Controls` | WPF식 컨트롤 (패널, 목록, 메뉴, 탭, 입력, 날짜 등. 아래 [목록](#wpf식-컨트롤)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
-| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 384개 |
+| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 404개 |
 
 ## 실행
 
@@ -170,11 +170,11 @@ public partial class MainView : CompositeDrawable
 | 범위 | `Slider` | `Value` (양방향), `Minimum`, `Maximum`, `Orientation`, `TickFrequency`, `TickPlacement`, `IsSnapToTickEnabled`, 키보드 |
 | | `ProgressBar` | `Value`, `Minimum`, `Maximum`, `IsIndeterminate`, `Orientation` |
 | | `ScrollBar`, `Thumb` | `Value` (양방향), `ViewportSize`, `SmallChange`/`LargeChange`, `Scroll`; `Thumb`의 `DragStarted`/`DragDelta`/`DragCompleted` |
-| 목록 | `ItemsControl` | `ItemsSource`, `ItemTemplate`, `DisplayMemberPath`, `ItemsPanel` |
-| | `ListBox` | `SelectedItem`/`SelectedIndex` (양방향), `SelectionMode`, `SelectedItems`, 키보드, `ScrollIntoView` |
+| 목록 | `ItemsControl` | `ItemsSource`, `ItemTemplate`, `DisplayMemberPath`, `ItemsPanel` (`VirtualizingStackPanel`이면 가상화) |
+| | `ListBox` | `SelectedItem`/`SelectedIndex` (양방향), `SelectionMode`, `SelectedItems`, 키보드, `ScrollIntoView`, 가상화 |
 | | `ListView` + `GridView` | `GridViewColumn` (`Header`, `DisplayMemberBinding`, `CellTemplate`, `Width`, `SortMemberPath`), 머리글 클릭 정렬, 경계 드래그로 열 너비 조절 |
 | | `DataGrid` | `DataGridTextColumn`/`DataGridCheckBoxColumn`/`DataGridTemplateColumn`, 더블클릭·F2 편집, `AlternatingRowBackground`, `IsReadOnly`, 정렬 |
-| | `TreeView` | `HierarchicalDataTemplate`, `TreeViewItem`, `SelectedItem` (양방향), `IsExpandedBinding`, 키보드 |
+| | `TreeView` | `HierarchicalDataTemplate`, `TreeViewItem`, `SelectedItem` (양방향), `IsExpandedBinding`, 키보드, 가상화 (`IsVirtualizing="True"`일 때) |
 | | `ComboBox` | `SelectedItem`/`SelectedIndex`/`SelectedValue` (양방향), `IsDropDownOpen`, `IsEditable` + `Text`, `PlaceholderText`, 키보드 |
 | 메뉴·팝업 | `Menu`, `MenuItem` | `Header="_File"`, `Click`, `InputGestureText`, `IsCheckable`/`IsChecked`, 하위 메뉴, Alt 접근 키 |
 | | `ContextMenu` | 모든 요소에 `<Border.ContextMenu>`로 붙이고 오른쪽 클릭으로 엽니다 |
@@ -239,6 +239,25 @@ private async void OnSettings()
 - `Height`가 없으면 `AcceptsReturn`이나 `TextWrapping`을 켠 상자는 줄 수만큼 자라고, `MinLines`/`MaxLines`가 그 범위를 정합니다. `Height`를 주면 그 높이 안에서 캐럿을 따라가고 마우스 휠로도 스크롤합니다.
 - 위·아래 화살표는 열 위치를 기억하며 줄을 옮깁니다. PageUp/PageDown, 줄 단위 Home/End, Ctrl+Home/End, 세 번 클릭(줄 선택)도 WPF처럼 동작합니다.
 
+### 가상화
+
+`ListBox`, `ListView`, `DataGrid`의 기본 `ItemsPanel`은 WPF처럼 `VirtualizingStackPanel`입니다. 화면에 보이는 행과 위아래 여유분에만 컨테이너를 만들고 스크롤해서 벗어난 행은 버리므로, 10만 행이어도 드는 비용은 화면에 보이는 행만큼입니다.
+
+```xml
+<ListBox ItemsSource="{Bind People}" VirtualizingPanel.VirtualizationMode="Recycling" />
+<DataGrid ItemsSource="{Bind Rows}" VirtualizingPanel.IsVirtualizing="False" />
+<TreeView ItemsSource="{Bind Roots}" VirtualizingPanel.IsVirtualizing="True" />
+<ItemsControl ItemsSource="{Bind Tags}">
+  <ItemsControl.ItemsPanel><VirtualizingStackPanel /></ItemsControl.ItemsPanel>
+</ItemsControl>
+```
+
+- `VirtualizationMode="Recycling"`은 벗어난 행의 컨테이너를 버리지 않고 새로 보이는 행에 다시 씁니다. `IsVirtualizing="False"`는 예전처럼 모든 행을 미리 만듭니다. WPF처럼 `VirtualizingStackPanel.IsVirtualizing`이라고 써도 됩니다.
+- `TreeView`는 WPF처럼 `IsVirtualizing="True"`를 줄 때만 가상화합니다. 그러면 펼친 단계마다 보이는 노드만 만들고, 선택된 노드와 그 조상은 화면 밖에서도 남습니다. 스크롤해서 사라졌다 돌아온 노드는 펼침 상태를 그대로 가지고 (`IsExpandedBinding`이 있으면 뷰모델에서, 없으면 아이템별로 기억합니다), `ExpandSubtree()`는 하위 노드를 화면에 나타날 때 펼칩니다.
+- 한 번 보인 행은 잰 높이를, 아직 안 보인 행은 그 평균을 씁니다 (트리 노드는 펼쳐져 있어도 머리글 높이로 셉니다). 행 높이가 같으면 스크롤 범위가 정확하고, 다르면 스크롤하면서 맞춰집니다. 위쪽 추정치가 고쳐질 때는 스크롤 위치를 같이 옮겨서 보고 있는 행이 움직이지 않습니다.
+- 선택, `ScrollIntoView`, 키보드 이동(Home/End 포함)은 컨테이너가 없는 행에도 동작합니다. 편집 중이거나 포커스를 가진 행은 화면 밖으로 나가도 남습니다.
+- `ContainerFromIndex`/`ContainerFromItem`은 컨테이너가 없는 행에 `null`을 돌려줍니다. `ListView`와 `DataGrid`의 `Auto` 열은 지금까지 보인 셀 중 가장 넓은 폭을 유지합니다.
+
 ### 레이아웃 동작
 
 - 매 프레임 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 패널이 자식을 측정(Measure)하고 배치(Arrange)합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다.
@@ -255,7 +274,7 @@ private async void OnSettings()
 
 - 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
 - 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
-- 가상화: `ListBox`, `ListView`, `DataGrid`, `TreeView`는 보이지 않는 행까지 모두 만듭니다. 수천 행이면 느려집니다
+- 가상화된 `TreeView`의 `ScrollIntoView`는 아직 만들어지지 않은 중첩 노드를 찾지 못합니다 (최상위 아이템과 이미 만들어진 노드만 됩니다). WPF도 같습니다
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
 - 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다

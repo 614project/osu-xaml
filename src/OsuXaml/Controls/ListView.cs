@@ -165,6 +165,7 @@ namespace OsuXaml.Controls
 
             // Before the rows update, so they arrange their cells with this frame's widths.
             bool unbounded = widthFromContent && !RelativeSizeAxes.HasFlag(Axes.X);
+            layout.RemembersWidths = IsVirtualizing;
             layout.Solve(unbounded ? float.PositiveInfinity : Panel.DrawWidth, desiredWidth);
         }
 
@@ -172,7 +173,7 @@ namespace OsuXaml.Controls
         {
             float max = headers.DesiredWidth(column);
 
-            foreach (var container in Containers)
+            foreach (var container in RealizedContainers)
             {
                 if (container is ListViewItem { RowPresenter: { } row })
                     max = Math.Max(max, row.DesiredWidth(column));
@@ -192,8 +193,9 @@ namespace OsuXaml.Controls
         private void onColumnsChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
             headers.RebuildCells();
+            layout.ForgetWidths();
 
-            foreach (var container in Containers)
+            foreach (var container in RealizedContainers)
                 (container as ListViewItem)?.RowPresenter?.RebuildCells();
 
             sorter.Apply();
