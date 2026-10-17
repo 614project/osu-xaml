@@ -245,7 +245,7 @@ namespace OsuXaml.Controls
         private protected virtual bool KeepContainerRealized(Drawable container) => false;
 
         /// <summary>Scrolls a virtualizing list until the item at <paramref name="index"/> is in view, creating its container now. False when not virtualizing.</summary>
-        private protected bool BringIndexIntoView(int index, Func<Drawable, Drawable> part = null)
+        internal bool BringIndexIntoView(int index, Func<Drawable, Drawable> part = null)
         {
             if (virtualizingPanel == null || index < 0 || index >= items.Count)
                 return false;
@@ -253,6 +253,27 @@ namespace OsuXaml.Controls
             virtualizingPanel.BringIndexIntoView(index, part);
             return true;
         }
+
+        /// <summary>The container of the item at <paramref name="index"/>, created now in a virtualizing list if it has none; it goes again once out of view.</summary>
+        internal Drawable RealizeIndex(int index)
+        {
+            if (index < 0 || index >= items.Count)
+                return null;
+
+            if (containers[index] == null)
+                virtualizingPanel?.Realize(index);
+
+            return containers[index];
+        }
+
+        /// <summary>
+        /// The length a virtualizing panel should assume for items it hasn't measured, going by <paramref name="container"/>
+        /// measured at <paramref name="length"/>. A tree node counts as its header, so one expanded node doesn't make every unseen node look as tall.
+        /// </summary>
+        internal virtual float TypicalLength(Drawable container, float length) => length;
+
+        /// <summary>Whether a virtualizing list is still scrolling an item into view.</summary>
+        internal bool IsBringingIntoView => virtualizingPanel?.IsBringingIntoView == true;
 
         /// <summary>Called after the items change, before <see cref="ItemsChanged"/>.</summary>
         protected virtual void OnItemsChanged()

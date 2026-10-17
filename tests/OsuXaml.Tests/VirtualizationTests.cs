@@ -9,10 +9,38 @@ using osu.Framework.Testing;
 using OsuXaml.Controls;
 using osuTK;
 using osuTK.Input;
+using Node = OsuXaml.Tests.ListsTestData.Node;
 using Person = OsuXaml.Tests.ListsTestData.Person;
 
 namespace OsuXaml.Tests
 {
+    /// <summary>Virtualization settings written the way a WPF developer would, checked through the generator.</summary>
+    [TestFixture]
+    public class VirtualizationGeneratorTests
+    {
+        [Test]
+        public void AttachedPropertiesOnListsAndTrees()
+        {
+            string source = ListsTestData.Compiles(@"
+<StackPanel>
+  <ListBox ItemsSource=""{Bind People}"" VirtualizingPanel.IsVirtualizing=""False"" Height=""200"" />
+  <ListView ItemsSource=""{Bind People}"" VirtualizingStackPanel.VirtualizationMode=""Recycling"" Height=""200"" />
+  <TreeView ItemsSource=""{Bind Roots}"" VirtualizingStackPanel.IsVirtualizing=""True"" Height=""200"" />
+  <ItemsControl ItemsSource=""{Bind People}"">
+    <ItemsControl.ItemsPanel>
+      <VirtualizingStackPanel Spacing=""4"" />
+    </ItemsControl.ItemsPanel>
+  </ItemsControl>
+</StackPanel>");
+
+            // VirtualizingStackPanel.X resolves to the setter it inherits from VirtualizingPanel, as in WPF.
+            Assert.That(source, Does.Contain("global::OsuXaml.Controls.VirtualizingPanel.SetIsVirtualizing("));
+            Assert.That(source, Does.Contain("global::OsuXaml.Controls.VirtualizingPanel.SetVirtualizationMode("));
+            Assert.That(source, Does.Contain("global::OsuXaml.Controls.VirtualizationMode.Recycling"));
+            Assert.That(source, Does.Contain("new global::OsuXaml.Controls.VirtualizingStackPanel"));
+        }
+    }
+
     /// <summary>UI virtualization: lists create containers only for the rows in view, and behave as if every row existed.</summary>
     [HeadlessTest]
     public partial class VirtualizationTests : ManualInputManagerTestScene
@@ -358,6 +386,192 @@ namespace OsuXaml.Tests
             Assert.That(cache.Count, Is.EqualTo(2));
             Assert.That(cache.LengthOf(0), Is.EqualTo(30));
             Assert.That(cache.IsKnown(1), Is.False);
+
+            // An expanded tree node is long, but suggests its header length for the others.
+            cache.Insert(2, 1);
+            cache.Set(1, 300, 30);
+            Assert.That(cache.Estimate, Is.EqualTo(30));
+            Assert.That(cache.Extent, Is.EqualTo(30 + 300 + 30 + 2 * 2));
         }
+
+        #region TreeView
+
+        private static readonly HierarchicalDataTemplate<Node> node_template = new HierarchicalDataTemplate<Node>(
+            (n, _) => new TextBlock { Text = n.Label },
+            (n, scope) => XamlBinding.ListCopy(scope, n.Children));
+
+        private static readonly ItemBinding<Node, bool> expanded_binding = new ItemBinding<Node, bool>("IsExpanded", n => n.IsExpanded, n => n.IsExpanded.Value);
+
+        /// <summary><paramref name="count"/> nodes labelled under <paramref name="prefix"/>, each with <paramref name="children"/>(its label) children.</summary>
+        private static List<Node> nodes(string prefix, int count, Func<string, IEnumerable<Node>> children = null)
+            => Enumerable.Range(0, count).Select(i =>
+            {
+                var node = new Node($"{prefix}{i}");
+                if (children != null)
+                    node.Children.AddRange(children(node.Label));
+                return node;
+            }).ToList();
+
+        private static TreeView virtualizingTree(IEnumerable<Node> roots, VirtualizationMode mode = VirtualizationMode.Standard, bool bindExpanded = false)
+        {
+            var tree = new TreeView
+            {
+                Size = new Vector2(260, 300),
+                ItemTemplate = node_template,
+                IsExpandedBinding = bindExpanded ? expanded_binding : null,
+                ItemsSource = new BindableList<Node>(roots),
+            };
+
+            VirtualizingPanel.SetIsVirtualizing(tree, true);
+            VirtualizingPanel.SetVirtualizationMode(tree, mode);
+            return tree;
+        }
+
+        private static TreeViewItem nodeOf(TreeView tree, Node item) => tree.ContainerFromDataItem(item);
+
+        private static int nodeCount(TreeView tree) => tree.VisibleItems.Count();
+
+        private static bool headerInView(TreeView tree, Node item)
+        {
+            var header = nodeOf(tree, item)?.HeaderRow.ScreenSpaceDrawQuad;
+            var viewport = scroll(tree).ScreenSpaceDrawQuad;
+            return header != null && header.Value.TopLeft.Y >= viewport.TopLeft.Y - 1 && header.Value.BottomLeft.Y <= viewport.BottomLeft.Y + 1;
+        }
+
+        [Test]
+        public void TreeViewVirtualizesOnlyWhenAskedTo()
+        {
+            TreeView tree = null;
+
+            AddStep("create a plain tree of 300 roots", () => Child = tree = new TreeView
+            {
+                Size = new Vector2(260, 300),
+                ItemTemplate = node_template,
+                ItemsSource = new BindableList<Node>(nodes("Root ", 300)),
+            });
+            AddUntilStep("loaded", () => tree.IsLoaded);
+            AddAssert("every node exists", () => !tree.IsVirtualizing && nodeCount(tree) == 300);
+
+            AddStep("create with IsVirtualizing", () => Child = tree = virtualizingTree(nodes("Root ", 5000)));
+            AddUntilStep("first node realized", () => tree.ContainerFromIndex(0) != null);
+            AddAssert("only a screenful", () => tree.IsVirtualizing && nodeCount(tree) < 40 && tree.ContainerFromIndex(4000) == null);
+        }
+
+        [Test]
+        public void ExpandedLevelsVirtualizeToo()
+        {
+            TreeView tree = null;
+            List<Node> roots = null;
+
+            AddStep("create", () =>
+            {
+                roots = nodes("Root ", 1000);
+                roots[1].Children.AddRange(nodes("Root 1/", 10000));
+                Child = tree = virtualizingTree(roots);
+            });
+            AddUntilStep("realized", () => tree.ContainerFromIndex(1) != null);
+
+            AddStep("expand the second root", () => nodeOf(tree, roots[1]).IsExpanded.Value = true);
+            AddUntilStep("its first children show", () => headerInView(tree, roots[1].Children[3]));
+            AddAssert("only a screenful of its children", () => nodeCount(tree) < 60 && nodeOf(tree, roots[1].Children[5000]) == null);
+            AddAssert("the scroll extent counts unseen roots as headers", () => scroll(tree).ExtentHeight < 12000 * 30);
+
+            AddStep("scroll into the middle of the children", () => scroll(tree).ScrollToVerticalOffset(roots[1].Children.Count * 10, false));
+            AddUntilStep("the roots above are let go", () => tree.ContainerFromIndex(0) == null);
+            AddAssert("the expanded root stays, it holds the view", () => tree.ContainerFromIndex(1) == nodeOf(tree, roots[1]));
+            AddAssert("middle children realized", () => tree.VisibleItems.Any(n => n.DataItem is Node { Label: var label } && label.StartsWith("Root 1/4", StringComparison.Ordinal)));
+            AddAssert("still a screenful", () => nodeCount(tree) < 60);
+        }
+
+        [Test]
+        public void KeyboardWalksNodesThatDontExistYet()
+        {
+            TreeView tree = null;
+            List<Node> roots = null;
+
+            AddStep("create", () =>
+            {
+                roots = nodes("Root ", 3000, label => nodes(label + "/", 3));
+                roots[0].IsExpanded.Value = true;
+                roots[^1].IsExpanded.Value = true;
+                Child = tree = virtualizingTree(roots, bindExpanded: true);
+            });
+            AddUntilStep("realized", () => tree.ContainerFromIndex(0) != null);
+            AddStep("focus", () => GetContainingFocusManager()?.ChangeFocus(tree));
+
+            AddStep("End", () => InputManager.Key(Key.End));
+            AddAssert("the last child of the last root", () => tree.SelectedItem.Value == roots[^1].Children[2]);
+            AddUntilStep("scrolled to it", () => headerInView(tree, roots[^1].Children[2]));
+            AddAssert("the first root was let go", () => tree.ContainerFromIndex(0) == null);
+
+            AddStep("Up four times", () =>
+            {
+                for (int i = 0; i < 4; i++)
+                    InputManager.Key(Key.Up);
+            });
+            AddAssert("the root before the last", () => tree.SelectedItem.Value == roots[^2]);
+            AddUntilStep("in view", () => headerInView(tree, roots[^2]));
+
+            AddStep("Home, Down", () =>
+            {
+                InputManager.Key(Key.Home);
+                InputManager.Key(Key.Down);
+            });
+            AddAssert("into the first root's children", () => tree.SelectedItem.Value == roots[0].Children[0]);
+            AddUntilStep("in view", () => headerInView(tree, roots[0].Children[0]));
+
+            AddStep("scroll away", () => scroll(tree).ScrollToBottom(false));
+            AddUntilStep("the first roots are let go", () => tree.ContainerFromIndex(1) == null);
+            AddAssert("the selected node and its parent stay", () => tree.SelectedContainer == nodeOf(tree, roots[0].Children[0]) && tree.ContainerFromIndex(0) != null);
+
+            AddStep("Down", () => InputManager.Key(Key.Down));
+            AddAssert("the next child", () => tree.SelectedItem.Value == roots[0].Children[1]);
+            AddUntilStep("scrolled back to it", () => headerInView(tree, roots[0].Children[1]));
+
+            AddStep("ScrollIntoView a far root", () => tree.ScrollIntoView(roots[2000]));
+            AddUntilStep("in view", () => headerInView(tree, roots[2000]));
+        }
+
+        [Test]
+        public void NodesKeepTheirExpansionWhenTheyScrollBack([Values] VirtualizationMode mode)
+        {
+            TreeView tree = null;
+            List<Node> roots = null;
+
+            AddStep("create", () => Child = tree = virtualizingTree(roots = nodes("Root ", 2000, label => nodes(label + "/", 2)), mode));
+            AddUntilStep("realized", () => tree.ContainerFromIndex(2) != null);
+
+            AddStep("expand the third root", () => nodeOf(tree, roots[2]).IsExpanded.Value = true);
+            AddUntilStep("its children show", () => headerInView(tree, roots[2].Children[1]));
+
+            AddStep("scroll to the end", () => scroll(tree).ScrollToBottom(false));
+            AddUntilStep("the third root is let go", () => tree.ContainerFromIndex(2) == null && tree.ContainerFromIndex(1999) != null);
+            AddAssert("nodes shown at the end are collapsed", () => tree.VisibleItems.All(n => !n.IsExpanded.Value));
+
+            AddStep("scroll back", () => scroll(tree).ScrollToTop(false));
+            AddUntilStep("the third root is expanded again", () => nodeOf(tree, roots[2])?.IsExpanded.Value == true && headerInView(tree, roots[2].Children[1]));
+            AddAssert("the others are not", () => tree.VisibleItems.Where(n => n.Level == 0 && n.DataItem != roots[2]).All(n => !n.IsExpanded.Value));
+        }
+
+        [Test]
+        public void ExpandSubtreeExpandsNodesAsTheyAppear()
+        {
+            TreeView tree = null;
+            List<Node> roots = null;
+
+            AddStep("create 50 × 50 × 50 nodes", () => Child = tree = virtualizingTree(roots = nodes("R", 50, a => nodes(a + "/", 50, b => nodes(b + "/", 50)))));
+            AddUntilStep("realized", () => tree.ContainerFromIndex(0) != null);
+
+            AddStep("expand the first subtree", () => nodeOf(tree, roots[0]).ExpandSubtree());
+            AddUntilStep("its first grandchildren show", () => headerInView(tree, roots[0].Children[0].Children[2]));
+            AddAssert("only a screenful exists", () => nodeCount(tree) < 80);
+
+            AddStep("scroll down", () => scroll(tree).ScrollToVerticalOffset(60 * 25, false));
+            AddUntilStep("the next child is expanded as it appears", () => nodeOf(tree, roots[0].Children[1])?.IsExpanded.Value == true
+                                                                           && headerInView(tree, roots[0].Children[1].Children[20]));
+            AddAssert("other roots untouched", () => nodeOf(tree, roots[1]) == null || !nodeOf(tree, roots[1]).IsExpanded.Value);
+        }
+
+        #endregion
     }
 }

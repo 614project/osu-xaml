@@ -130,8 +130,9 @@ namespace OsuXaml.Controls
         }
 
         private Axes stretchedAxes;
+        private Vector2 sizeBeforeStretch;
 
-        /// <summary>Undoes a stretch this slot applied, when the alignment changes away from Stretch.</summary>
+        /// <summary>Undoes a stretch this slot applied, when the alignment changes away from Stretch or the content leaves.</summary>
         private void unstretch(Axes axis)
         {
             var ours = stretchedAxes & axis;
@@ -140,12 +141,23 @@ namespace OsuXaml.Controls
 
             stretchedAxes &= ~ours;
             Content.RelativeSizeAxes &= ~ours;
+
+            // The size it had, not the stretched one, which would count as an explicit size in the next slot (a recycled container's, say).
+            if (ours.HasFlag(Axes.X))
+                Content.Width = sizeBeforeStretch.X;
+            if (ours.HasFlag(Axes.Y))
+                Content.Height = sizeBeforeStretch.Y;
         }
 
         private void stretch(Axes axis)
         {
             if (Content.RelativeSizeAxes.HasFlag(axis))
                 return;
+
+            if (axis == Axes.X)
+                sizeBeforeStretch.X = Content.Width;
+            else
+                sizeBeforeStretch.Y = Content.Height;
 
             Content.RelativeSizeAxes |= axis;
             stretchedAxes |= axis;

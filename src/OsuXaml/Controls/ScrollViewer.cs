@@ -51,8 +51,8 @@ namespace OsuXaml.Controls
 
         public ScrollViewer()
         {
-            horizontal = new AxisScroller(Direction.Horizontal) { RelativeSizeAxes = Axes.X };
-            vertical = new AxisScroller(Direction.Vertical) { RelativeSizeAxes = Axes.Both };
+            horizontal = new AxisScroller(Direction.Horizontal, this) { RelativeSizeAxes = Axes.X };
+            vertical = new AxisScroller(Direction.Vertical, this) { RelativeSizeAxes = Axes.Both };
             vertical.Add(horizontal);
 
             InternalChild = vertical;
@@ -132,6 +132,8 @@ namespace OsuXaml.Controls
         /// <summary>Scrolls until <paramref name="descendant"/> is visible.</summary>
         public void ScrollIntoView(Drawable descendant, bool animated = true)
         {
+            ScrollRequests++;
+
             if (canScrollY)
                 vertical.ScrollIntoView(descendant, animated);
             if (canScrollX)
@@ -139,18 +141,34 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>Scrolls to the top.</summary>
-        public void ScrollToStart(bool animated = true) => vertical.ScrollToStart(animated);
+        public void ScrollToStart(bool animated = true) => ScrollToTop(animated);
 
         /// <summary>Scrolls to the bottom.</summary>
-        public void ScrollToEnd(bool animated = true) => vertical.ScrollToEnd(animated);
+        public void ScrollToEnd(bool animated = true) => ScrollToBottom(animated);
 
-        public void ScrollToTop(bool animated = true) => vertical.ScrollToStart(animated);
+        public void ScrollToTop(bool animated = true)
+        {
+            ScrollRequests++;
+            vertical.ScrollToStart(animated);
+        }
 
-        public void ScrollToBottom(bool animated = true) => vertical.ScrollToEnd(animated);
+        public void ScrollToBottom(bool animated = true)
+        {
+            ScrollRequests++;
+            vertical.ScrollToEnd(animated);
+        }
 
-        public void ScrollToLeftEnd(bool animated = true) => horizontal.ScrollToStart(animated);
+        public void ScrollToLeftEnd(bool animated = true)
+        {
+            ScrollRequests++;
+            horizontal.ScrollToStart(animated);
+        }
 
-        public void ScrollToRightEnd(bool animated = true) => horizontal.ScrollToEnd(animated);
+        public void ScrollToRightEnd(bool animated = true)
+        {
+            ScrollRequests++;
+            horizontal.ScrollToEnd(animated);
+        }
 
         /// <summary>Scrolls to the top-left corner.</summary>
         public void ScrollToHome(bool animated = true)
@@ -159,7 +177,11 @@ namespace OsuXaml.Controls
             ScrollToLeftEnd(animated);
         }
 
-        public void ScrollToVerticalOffset(double offset, bool animated = true) => vertical.ScrollTo(offset, animated);
+        public void ScrollToVerticalOffset(double offset, bool animated = true)
+        {
+            ScrollRequests++;
+            vertical.ScrollTo(offset, animated);
+        }
 
         /// <summary>
         /// Shifts the scroll position (and any scroll under way) at once, without animating: a virtualizing panel uses it
@@ -168,30 +190,29 @@ namespace OsuXaml.Controls
         internal void OffsetScroll(Vector2 delta)
         {
             if (canScrollY && delta.Y != 0)
-            {
                 vertical.OffsetScrollPosition(delta.Y);
-                offsetTotal.Y += delta.Y;
-            }
 
             if (canScrollX && delta.X != 0)
-            {
                 horizontal.OffsetScrollPosition(delta.X);
-                offsetTotal.X += delta.X;
-            }
         }
 
-        private Vector2d offsetTotal;
-
         /// <summary>
-        /// Where the scroll is heading, less every <see cref="OffsetScroll"/> so far: it changes only when something scrolls on
-        /// purpose (the user, or code), so a pending bring-into-view can tell that it should stop.
+        /// Counts the scrolls asked for, by the user (wheel, drag, scroll bar, keys) or by code through this viewer; not
+        /// <see cref="OffsetScroll"/>, nor the scrollers keeping within the content. A pending bring-into-view stops when it changes.
         /// </summary>
-        internal Vector2d IntendedTarget => new Vector2d(horizontal.Target - offsetTotal.X, vertical.Target - offsetTotal.Y);
+        internal int ScrollRequests { get; private set; }
+
+        /// <summary>Where the scroll is heading.</summary>
+        internal Vector2d ScrollTarget => new Vector2d(horizontal.Target, vertical.Target);
 
         /// <summary>Whether a scroll is still easing towards its target.</summary>
         internal bool IsScrollAnimating => !Precision.AlmostEquals(vertical.Current, vertical.Target) || !Precision.AlmostEquals(horizontal.Current, horizontal.Target);
 
-        public void ScrollToHorizontalOffset(double offset, bool animated = true) => horizontal.ScrollTo(offset, animated);
+        public void ScrollToHorizontalOffset(double offset, bool animated = true)
+        {
+            ScrollRequests++;
+            horizontal.ScrollTo(offset, animated);
+        }
 
         public Vector2 Measure(Vector2 availableSize)
         {
@@ -289,9 +310,19 @@ namespace OsuXaml.Controls
             /// <summary>Set on the horizontal scroller while the vertical one scrolls: plain wheel and paging keys belong to the vertical axis.</summary>
             public bool YieldsVerticalInput;
 
-            public AxisScroller(Direction direction)
+            private readonly ScrollViewer viewer;
+
+            public AxisScroller(Direction direction, ScrollViewer viewer)
                 : base(direction)
             {
+                this.viewer = viewer;
+            }
+
+            // Wheel, drag and scroll bar.
+            protected override void OnUserScroll(double value, bool animated = true, double? distanceDecay = null)
+            {
+                viewer.ScrollRequests++;
+                base.OnUserScroll(value, animated, distanceDecay);
             }
 
             public float ScrollbarOffset
@@ -318,14 +349,21 @@ namespace OsuXaml.Controls
 
             protected override bool OnKeyDown(KeyDownEvent e)
             {
-                if (!CanScroll || YieldsVerticalInput)
+                if (!CanScroll || YieldsVerticalInput || !base.OnKeyDown(e))
                     return false;
 
-                return base.OnKeyDown(e);
+                viewer.ScrollRequests++;
+                return true;
             }
 
             bool IKeyBindingHandler<PlatformAction>.OnPressed(KeyBindingPressEvent<PlatformAction> e)
-                => CanScroll && !YieldsVerticalInput && OnPressed(e);
+            {
+                if (!CanScroll || YieldsVerticalInput || !OnPressed(e))
+                    return false;
+
+                viewer.ScrollRequests++;
+                return true;
+            }
 
             void IKeyBindingHandler<PlatformAction>.OnReleased(KeyBindingReleaseEvent<PlatformAction> e)
             {

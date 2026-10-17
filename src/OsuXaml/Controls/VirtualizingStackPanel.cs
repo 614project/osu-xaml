@@ -22,16 +22,19 @@ namespace OsuXaml.Controls
     /// Base for items panels that create containers only for the items that can be seen, like WPF's VirtualizingPanel.
     /// Its attached properties go on the list: <c>&lt;ListBox VirtualizingPanel.IsVirtualizing="False"&gt;</c> creates every
     /// container up front, and <c>VirtualizingPanel.VirtualizationMode="Recycling"</c> reuses containers. Both are read when
-    /// the list loads.
+    /// the list loads. A TreeView, as in WPF, only virtualizes when <c>IsVirtualizing</c> is set to True on it.
     /// </summary>
     public abstract partial class VirtualizingPanel : Panel
     {
         private static readonly ConditionalWeakTable<Drawable, Settings> settings = new ConditionalWeakTable<Drawable, Settings>();
 
         /// <summary>Whether <paramref name="element"/> (a list, or its items panel) virtualizes. On unless turned off.</summary>
-        public static bool GetIsVirtualizing(Drawable element) => !settings.TryGetValue(element, out var s) || s.IsVirtualizing;
+        public static bool GetIsVirtualizing(Drawable element) => IsVirtualizingSet(element) ?? true;
 
         public static void SetIsVirtualizing(Drawable element, bool value) => settings.GetOrCreateValue(element).IsVirtualizing = value;
+
+        /// <summary>The value set with <see cref="SetIsVirtualizing"/>, or null when it was never set.</summary>
+        internal static bool? IsVirtualizingSet(Drawable element) => settings.TryGetValue(element, out var s) ? s.IsVirtualizing : null;
 
         public static VirtualizationMode GetVirtualizationMode(Drawable element) => settings.TryGetValue(element, out var s) ? s.Mode : VirtualizationMode.Standard;
 
@@ -59,9 +62,15 @@ namespace OsuXaml.Controls
         /// <summary>Creates the container for <paramref name="index"/> now if needed, and scrolls until it (or <paramref name="part"/> of it) is in view.</summary>
         internal abstract void BringIndexIntoView(int index, Func<Drawable, Drawable> part);
 
+        /// <summary>Creates the container for <paramref name="index"/> now if needed, without scrolling. It goes again once out of view.</summary>
+        internal abstract void Realize(int index);
+
+        /// <summary>Whether a <see cref="BringIndexIntoView"/> request is still settling.</summary>
+        internal abstract bool IsBringingIntoView { get; }
+
         private sealed class Settings
         {
-            public bool IsVirtualizing = true;
+            public bool? IsVirtualizing;
             public VirtualizationMode Mode;
         }
     }
@@ -96,7 +105,8 @@ namespace OsuXaml.Controls
         private int bringIntoView = -1;
         private Func<Drawable, Drawable> bringIntoViewPart;
         private int bringIntoViewFrames;
-        private Vector2d bringIntoViewTarget;
+        private int bringIntoViewStill;
+        private int bringIntoViewRequests;
 
         public Orientation Orientation { get; set; }
 
@@ -190,10 +200,19 @@ namespace OsuXaml.Controls
             bringIntoView = index;
             bringIntoViewPart = part;
             bringIntoViewFrames = 0;
+            bringIntoViewStill = 0;
 
             // Created now, so the caller can use the container straight away; arranging it and scrolling happen this frame.
             realize(index);
         }
+
+        internal override void Realize(int index)
+        {
+            if (Owner != null && index >= 0 && index < sizes.Count)
+                realize(index);
+        }
+
+        internal override bool IsBringingIntoView => bringIntoView >= 0;
 
         protected override Vector2 MeasureOverride(Vector2 available)
         {
@@ -239,7 +258,8 @@ namespace OsuXaml.Controls
                 }
 
                 var desired = slot.Measure(constraint);
-                sizes.Set(index, Axis(desired, Orientation));
+                float length = Axis(desired, Orientation);
+                sizes.Set(index, length, Owner.TypicalLength(slot.Content, length));
                 widestItem = Math.Max(widestItem, Cross(desired, Orientation));
             }
 
@@ -396,17 +416,22 @@ namespace OsuXaml.Controls
             }
 
             // Someone else scrolled since last frame: they win.
-            if (bringIntoViewFrames > 0 && (bringIntoViewTarget - viewer.IntendedTarget).Length > 1)
+            if (bringIntoViewFrames > 0 && viewer.ScrollRequests != bringIntoViewRequests)
             {
                 bringIntoView = -1;
                 return;
             }
 
-            // The row was placed by estimate; as rows around it are measured it may move, so this repeats until the scroll settles.
+            // The row was placed by estimate; as rows around it are measured (and, in a tree, the nodes around it come into view
+            // and lay out) it may move, so this repeats until the scroll has stayed put for a couple of frames.
+            var target = viewer.ScrollTarget;
             viewer.ScrollIntoView(bringIntoViewPart?.Invoke(container) ?? container);
-            bringIntoViewTarget = viewer.IntendedTarget;
+            bringIntoViewRequests = viewer.ScrollRequests;
 
-            if ((++bringIntoViewFrames >= 2 && !viewer.IsScrollAnimating) || bringIntoViewFrames >= max_bring_into_view_frames)
+            bool still = (viewer.ScrollTarget - target).Length < 0.5 && !viewer.IsScrollAnimating;
+            bringIntoViewStill = still ? bringIntoViewStill + 1 : 0;
+
+            if (bringIntoViewStill >= 2 || ++bringIntoViewFrames >= max_bring_into_view_frames)
                 bringIntoView = -1;
         }
 
@@ -432,8 +457,9 @@ namespace OsuXaml.Controls
 
     /// <summary>
     /// The length of every item along a virtualizing panel's axis: measured lengths for items that have been shown, and the
-    /// average of those for the rest. Offsets come from Fenwick trees (rebuilt after inserts and removals), so finding the
-    /// items at a scroll position costs O(log² n) however many items there are.
+    /// average of those for the rest (each measured item can say what it suggests for the others: an expanded tree node counts
+    /// as its header). Offsets come from Fenwick trees (rebuilt after inserts and removals), so finding the items at a scroll
+    /// position costs O(log² n) however many items there are.
     /// </summary>
     internal sealed class ItemSizeCache
     {
@@ -446,6 +472,9 @@ namespace OsuXaml.Controls
         // Per item: NaN until measured, Collapsed, or the measured length.
         private readonly List<float> lengths = new List<float>();
 
+        // Per measured item: the length it suggests for the items not measured yet; NaN otherwise.
+        private readonly List<float> samples = new List<float>();
+
         // 1-based Fenwick trees over the measured lengths, the number measured and the number collapsed.
         private double[] lengthTree = Array.Empty<double>();
         private int[] measuredTree = Array.Empty<int>();
@@ -453,6 +482,7 @@ namespace OsuXaml.Controls
         private bool treesValid;
 
         private double measuredTotal;
+        private double sampleTotal;
         private int measuredCount;
         private int collapsedCount;
 
@@ -461,8 +491,8 @@ namespace OsuXaml.Controls
 
         public int Count => lengths.Count;
 
-        /// <summary>The length assumed for an item that hasn't been measured: the average of those that have.</summary>
-        public float Estimate => measuredCount > 0 ? (float)(measuredTotal / measuredCount) : DefaultEstimate;
+        /// <summary>The length assumed for an item that hasn't been measured: the average of what the measured ones suggest.</summary>
+        public float Estimate => measuredCount > 0 ? (float)(sampleTotal / measuredCount) : DefaultEstimate;
 
         /// <summary>The length of <paramref name="index"/>: measured, estimated, or 0 when collapsed.</summary>
         public float LengthOf(int index)
@@ -484,21 +514,31 @@ namespace OsuXaml.Controls
             }
         }
 
-        /// <summary>Records a measured length, or <see cref="Collapsed"/>.</summary>
-        public void Set(int index, float length)
+        /// <summary>
+        /// Records a measured length, or <see cref="Collapsed"/>. <paramref name="sample"/> is the length it suggests for items
+        /// not measured yet: the length itself unless given.
+        /// </summary>
+        public void Set(int index, float length, float sample = float.NaN)
         {
             if (length < 0)
                 length = Collapsed;
 
+            if (length < 0)
+                sample = float.NaN;
+            else if (float.IsNaN(sample))
+                sample = length;
+
             float old = lengths[index];
-            if (old.Equals(length))
+            float oldSample = samples[index];
+            if (old.Equals(length) && oldSample.Equals(sample))
                 return;
 
             lengths[index] = length;
-            count(old, -1);
-            count(length, 1);
+            samples[index] = sample;
+            count(old, oldSample, -1);
+            count(length, sample, 1);
 
-            if (treesValid)
+            if (treesValid && !old.Equals(length))
             {
                 double deltaLength = (length >= 0 ? length : 0) - (old >= 0 ? old : 0);
                 int deltaMeasured = (length >= 0 ? 1 : 0) - (old >= 0 ? 1 : 0);
@@ -516,23 +556,28 @@ namespace OsuXaml.Controls
         public void Insert(int index, int count)
         {
             lengths.InsertRange(index, Enumerable.Repeat(float.NaN, count));
+            samples.InsertRange(index, Enumerable.Repeat(float.NaN, count));
             treesValid = false;
         }
 
         public void Remove(int index, int count)
         {
             for (int i = index; i < index + count; i++)
-                this.count(lengths[i], -1);
+                this.count(lengths[i], samples[i], -1);
 
             lengths.RemoveRange(index, count);
+            samples.RemoveRange(index, count);
             treesValid = false;
         }
 
         public void Move(int from, int to)
         {
             float length = lengths[from];
+            float sample = samples[from];
             lengths.RemoveAt(from);
+            samples.RemoveAt(from);
             lengths.Insert(to, length);
+            samples.Insert(to, sample);
             treesValid = false;
         }
 
@@ -540,10 +585,15 @@ namespace OsuXaml.Controls
         public void Remap(IReadOnlyList<int> previousIndex)
         {
             var old = lengths.ToArray();
+            var oldSamples = samples.ToArray();
             lengths.Clear();
+            samples.Clear();
 
             foreach (int i in previousIndex)
+            {
                 lengths.Add(i >= 0 ? old[i] : float.NaN);
+                samples.Add(i >= 0 ? oldSamples[i] : float.NaN);
+            }
 
             treesValid = false;
             ensureTrees();
@@ -589,11 +639,12 @@ namespace OsuXaml.Controls
             return low;
         }
 
-        private void count(float length, int sign)
+        private void count(float length, float sample, int sign)
         {
             if (length >= 0)
             {
                 measuredTotal += sign * length;
+                sampleTotal += sign * sample;
                 measuredCount += sign;
             }
             else if (length < 0)
@@ -623,6 +674,7 @@ namespace OsuXaml.Controls
 
             // Recounted from scratch, so rounding from many small updates doesn't build up.
             measuredTotal = 0;
+            sampleTotal = 0;
             measuredCount = 0;
             collapsedCount = 0;
 
@@ -638,7 +690,7 @@ namespace OsuXaml.Controls
                 else if (length < 0)
                     collapsedTree[i]++;
 
-                count(length, 1);
+                count(length, samples[i - 1], 1);
 
                 int parent = i + (i & -i);
 
