@@ -13,7 +13,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml/Controls` | WPF식 컨트롤 (패널, 목록, 메뉴, 탭, 입력, 날짜 등. 아래 [목록](#wpf식-컨트롤)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
-| `tests/OsuXaml.Tests` | 생성기 테스트 10개, 레이아웃 기하 테스트 6개, 헤드리스 앱 테스트 4개 |
+| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 360개 |
 
 ## 실행
 
