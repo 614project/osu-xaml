@@ -41,25 +41,9 @@ namespace OsuXaml.Controls
         public static double ShowDelay = 250;
 
         private ScheduledDelegate pendingOpen;
-        private MenuItem openItem;
-
-        // Where keyboard focus was when this outermost menu opened; it goes back there when the menu closes.
-        private Drawable focusBeforeOpen;
-        private bool focusRetryPending;
 
         /// <summary>The child whose submenu is open, if any.</summary>
-        public MenuItem OpenItem
-        {
-            get => openItem;
-            private set
-            {
-                if (openItem == value)
-                    return;
-
-                openItem = value;
-                OnOpenItemChanged();
-            }
-        }
+        public MenuItem OpenItem { get; private set; }
 
         /// <summary>The child the mouse or keyboard points at, if any.</summary>
         public MenuItem HighlightedItem { get; private set; }
@@ -93,64 +77,6 @@ namespace OsuXaml.Controls
 
         /// <summary>Closes this menu and everything open below it.</summary>
         protected abstract void CloseCore();
-
-        /// <summary>Whether this outermost menu is showing. While it is, it holds keyboard focus.</summary>
-        internal virtual bool IsMenuShowing => false;
-
-        public override bool AcceptsFocus => IsMenuShowing;
-
-        /// <summary>Called after <see cref="OpenItem"/> changes.</summary>
-        internal virtual void OnOpenItemChanged()
-        {
-        }
-
-        /// <summary>
-        /// Moves keyboard focus to this menu while it is open, as WPF menus do, so arrows, Enter, Escape and access keys
-        /// reach the menu instead of the focused control (a text box would take them first).
-        /// </summary>
-        internal void TakeFocus()
-        {
-            if (HasFocus || !IsMenuShowing)
-                return;
-
-            var input = GetContainingInputManager();
-            if (input == null)
-                return;
-
-            focusBeforeOpen = input.FocusedDrawable;
-            GetContainingFocusManager()?.ChangeFocus(this);
-
-            // A context menu that has just joined the popup layer can't take focus before its first update.
-            if (!HasFocus && !focusRetryPending)
-            {
-                focusRetryPending = true;
-                Schedule(() =>
-                {
-                    focusRetryPending = false;
-                    TakeFocus();
-                });
-            }
-        }
-
-        /// <summary>Gives keyboard focus back to the control that had it when the menu opened.</summary>
-        internal void ReturnFocus()
-        {
-            var previous = focusBeforeOpen;
-            focusBeforeOpen = null;
-
-            if (!HasFocus)
-                return;
-
-            var focusManager = GetContainingFocusManager();
-            if (focusManager == null)
-                return;
-
-            focusManager.ChangeFocus(previous);
-
-            // The control went away or can't take focus any more.
-            if (HasFocus)
-                focusManager.ChangeFocus(null);
-        }
 
         protected override bool IsItemItsOwnContainer(object item) => item is Drawable;
 
@@ -415,16 +341,6 @@ namespace OsuXaml.Controls
         internal override MenuBase ParentLevel => null;
 
         internal override bool HostsSubmenuRows => false;
-
-        internal override bool IsMenuShowing => OpenItem != null;
-
-        internal override void OnOpenItemChanged()
-        {
-            if (OpenItem != null)
-                TakeFocus();
-            else
-                ReturnFocus();
-        }
 
         protected override Panel CreateDefaultItemsPanel() => new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
 
@@ -1016,10 +932,5 @@ namespace OsuXaml.Controls
             desired.Y = Math.Min(desired.Y, MaxHeight);
             return desired;
         }
-
-        // A click on the panel's padding or a separator leaves keyboard focus with the open menu (or drop-down's owner).
-        public override bool ChangeFocusOnClick => false;
-
-        protected override bool OnClick(ClickEvent e) => true;
     }
 }

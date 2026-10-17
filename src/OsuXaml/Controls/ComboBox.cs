@@ -152,7 +152,7 @@ namespace OsuXaml.Controls
 
                 if (value)
                 {
-                    selectionClip.Add(textBox = new EditableTextBox(this) { RelativeSizeAxes = Axes.Both });
+                    selectionClip.Add(textBox = new EditableTextBox { RelativeSizeAxes = Axes.Both });
                     textBox.Current.Value = Text.Value;
                     textBox.Current.ValueChanged += e =>
                     {
@@ -474,11 +474,6 @@ namespace OsuXaml.Controls
             if (!isEnabled || !(HasFocus || textBox?.HasFocus == true))
                 return base.OnKeyDown(e);
 
-            return handleKey(e) || base.OnKeyDown(e);
-        }
-
-        private bool handleKey(KeyDownEvent e)
-        {
             bool open = IsDropDownOpen.Value;
 
             switch (e.Key)
@@ -539,7 +534,7 @@ namespace OsuXaml.Controls
                     return false;
             }
 
-            return false;
+            return base.OnKeyDown(e);
         }
 
         private int navigate(int current, Key key)
@@ -790,12 +785,10 @@ namespace OsuXaml.Controls
         /// <summary>A borderless text box for <see cref="IsEditable"/> that re-lays out its text on resize without reporting edits.</summary>
         private partial class EditableTextBox : BasicTextBox
         {
-            private readonly ComboBox owner;
             private float laidOutWidth = -1;
 
-            public EditableTextBox(ComboBox owner)
+            public EditableTextBox()
             {
-                this.owner = owner;
                 BackgroundUnfocused = Colour4.Transparent;
                 BackgroundFocused = Colour4.Transparent;
                 BackgroundCommit = Colour4.Transparent;
@@ -803,9 +796,6 @@ namespace OsuXaml.Controls
 
             /// <summary>True while the text is re-applied for layout, so the owner ignores the change.</summary>
             public bool Relayouting { get; private set; }
-
-            // The focused text box sees keys first and would take Enter (commit) and Escape (unfocus); the combo box's keys win.
-            protected override bool OnKeyDown(KeyDownEvent e) => (owner.isEnabled && owner.handleKey(e)) || base.OnKeyDown(e);
 
             protected override void Update()
             {

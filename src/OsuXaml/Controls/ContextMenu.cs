@@ -97,8 +97,6 @@ namespace OsuXaml.Controls
 
         internal override MenuBase ParentLevel => null;
 
-        internal override bool IsMenuShowing => IsOpen.Value;
-
         /// <summary>Opens the menu for <paramref name="target"/>, as right-clicking it does.</summary>
         internal void OpenFor(PopupLayer layer, Drawable target)
         {
@@ -138,13 +136,11 @@ namespace OsuXaml.Controls
                     hostLayer?.HostContextMenu(this);
                 }
 
-                TakeFocus();
                 return;
             }
 
             SetOpenItem(null);
             SetHighlighted(null);
-            ReturnFocus();
             hostLayer?.ReleaseContextMenu(this);
         }
     }
