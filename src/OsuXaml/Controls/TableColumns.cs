@@ -216,6 +216,12 @@ namespace OsuXaml.Controls
         protected abstract Drawable CreateCell(TableColumn column);
 
         /// <summary>
+        /// Whether cells reach past their right edge on purpose (a header's resize grip straddles it): cells then stack
+        /// left over right, so the overhang stays above the next cell, and aren't clipped, so they must clip their own content.
+        /// </summary>
+        private protected virtual bool CellsOverhangRight => false;
+
+        /// <summary>
         /// Called before the cells are thrown away: when the columns change, or with <paramref name="disposing"/> set when the row goes away.
         /// </summary>
         protected virtual void ClearCells(bool disposing)
@@ -261,6 +267,10 @@ namespace OsuXaml.Controls
                     props.VerticalAlignment = VerticalAlignment.Center;
 
                 var slot = new Slot(cell);
+
+                if (CellsOverhangRight)
+                    slot.Depth = cells.Count;
+
                 cells.Add(slot);
                 AddInternal(slot);
             }
@@ -327,7 +337,7 @@ namespace OsuXaml.Controls
                 slot.Arrange(new Vector2(offsets[i] + padding.Left, padding.Top), new Vector2(width, Math.Max(0, DrawHeight - padding.TotalVertical)));
 
                 // Clip only cells that overflow their column; masking every cell would cost draw batching for nothing.
-                slot.Masking = slot.Measure(new Vector2(float.PositiveInfinity)).X > width + 0.5f;
+                slot.Masking = !CellsOverhangRight && slot.Measure(new Vector2(float.PositiveInfinity)).X > width + 0.5f;
 
                 lines[i].X = offsets[i] + widths[i];
             }
@@ -388,6 +398,9 @@ namespace OsuXaml.Controls
         public IEnumerable<TableColumnHeader> Headers => Cells.OfType<TableColumnHeader>();
 
         protected override Drawable CreateCell(TableColumn column) => new TableColumnHeader(column, this);
+
+        // Each header's resize grip straddles its right edge; its content is clipped by its own chrome.
+        private protected override bool CellsOverhangRight => true;
 
         protected override void ClearCells(bool disposing)
         {
@@ -787,7 +800,9 @@ namespace OsuXaml.Controls
                     other.SortDirection = null;
             }
 
-            column.SortDirection = direction;
+            if (column != null)
+                column.SortDirection = direction;
+
             Apply();
         }
 

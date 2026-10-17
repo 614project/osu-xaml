@@ -315,11 +315,14 @@ namespace OsuXaml.Controls
         private void removeAt(int index)
         {
             var container = containers[index];
-            ClearContainer(container, items[index]);
+            object item = items[index];
+            ClearContainer(container, item);
 
             items.RemoveAt(index);
             containers.RemoveAt(index);
-            itemsPanel.Remove(container, true);
+
+            // A drawable item belongs to whoever added it (it may be added again), so only generated containers are disposed.
+            itemsPanel.Remove(container, !ReferenceEquals(container, item));
         }
 
         private void move(int from, int to)
@@ -391,6 +394,10 @@ namespace OsuXaml.Controls
     public partial class Selector : ItemsControl
     {
         private bool syncing;
+        private int selectionDepth;
+        private object raisedItem;
+        private int selectionVersion;
+        private int raisedVersion;
 
         public Selector()
         {
@@ -437,15 +444,41 @@ namespace OsuXaml.Controls
         /// <summary>Re-applies <see cref="ISelectableItem.IsSelected"/> to every container and raises the events.</summary>
         protected void SelectionHasChanged()
         {
-            for (int i = 0; i < Containers.Count; i++)
+            selectionDepth++;
+
+            try
             {
-                if (Containers[i] is ISelectableItem selectable)
-                    selectable.IsSelected = IsSelected(Items[i]);
+                for (int i = 0; i < Containers.Count; i++)
+                {
+                    if (Containers[i] is ISelectableItem selectable)
+                        selectable.IsSelected = IsSelected(Items[i]);
+                }
+
+                OnSelectionChanged();
+            }
+            finally
+            {
+                selectionDepth--;
             }
 
-            OnSelectionChanged();
+            // Keeping SelectedItem, SelectedIndex (and SelectedItems) in step re-enters here, and item changes that leave the
+            // selection alone end here too; the event reports the settled selection once, and only when it really changed.
+            if (selectionDepth > 0 || IsUpdatingSelection)
+                return;
+
+            if (Equals(raisedItem, SelectedItem.Value) && raisedVersion == selectionVersion)
+                return;
+
+            raisedItem = SelectedItem.Value;
+            raisedVersion = selectionVersion;
             SelectionChanged?.Invoke();
         }
+
+        /// <summary>Multi-select controls call this when selection state other than <see cref="SelectedItem"/> changes.</summary>
+        protected void SelectionStateChanged() => selectionVersion++;
+
+        /// <summary>Whether a multi-step selection update is under way; <see cref="SelectionChanged"/> waits for it to finish.</summary>
+        protected virtual bool IsUpdatingSelection => false;
 
         protected override void OnItemsChanged()
         {
@@ -462,7 +495,8 @@ namespace OsuXaml.Controls
             int index = IndexOf(SelectedItem.Value);
 
             // Before the items exist (e.g. SelectedItem bound before ItemsSource) the item is kept and resolved later.
-            if (index >= 0 || SelectedItem.Value == null)
+            // Once they do, an item the list doesn't have is still kept, but the index no longer claims another item.
+            if (index >= 0 || SelectedItem.Value == null || itemsKnown)
                 SelectedIndex.Value = index;
 
             syncing = false;
@@ -479,12 +513,15 @@ namespace OsuXaml.Controls
 
             if (index >= 0 && index < Items.Count)
                 SelectedItem.Value = Items[index];
-            else if (index < 0)
+            else if (index < 0 || itemsKnown)
                 SelectedItem.Value = null;
 
             syncing = false;
             SelectionHasChanged();
         }
+
+        /// <summary>Whether the items have been created, so an item or index they don't have really isn't there.</summary>
+        private bool itemsKnown => LoadState >= LoadState.Ready;
 
         /// <summary>Keeps the selection valid after the items change.</summary>
         private void reconcile()

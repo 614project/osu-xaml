@@ -28,7 +28,9 @@ namespace OsuXaml.Controls
     {
         private readonly Border chrome;
         private ScrollViewer scroll;
-        private int anchor = -1;
+        // The item Shift+click ranges start from; an item rather than an index, so it survives inserts, removals and sorting.
+        private object anchor;
+        private bool hasAnchor;
         private bool updatingSelectedItems;
 
         public ListBox()
@@ -42,8 +44,10 @@ namespace OsuXaml.Controls
 
             SelectedItems.BindCollectionChanged((_, _) =>
             {
+                SelectionStateChanged();
+
                 if (!updatingSelectedItems)
-                    SelectionHasChanged();
+                    selectedItemsChanged();
             });
         }
 
@@ -84,12 +88,21 @@ namespace OsuXaml.Controls
 
         public override bool AcceptsFocus => true;
 
+        protected override bool IsUpdatingSelection => updatingSelectedItems;
+
         /// <summary>Scrolls until the item's container is visible.</summary>
         public void ScrollIntoView(object item)
         {
             var container = ContainerFromItem(item);
-            if (container != null)
-                scroll?.ScrollIntoView(container);
+            if (container == null || scroll == null)
+                return;
+
+            // A container added this frame has no position until the panel arranges it, so scroll once layout has run.
+            ScheduleAfterChildren(() =>
+            {
+                if (container.Parent != null)
+                    scroll.ScrollIntoView(container);
+            });
         }
 
         public void SelectAll()
@@ -145,19 +158,19 @@ namespace OsuXaml.Controls
 
                 case SelectionMode.Extended when e?.ControlPressed == true:
                     toggle(item);
-                    anchor = index;
+                    setAnchor(item);
                     break;
 
-                case SelectionMode.Extended when e?.ShiftPressed == true && anchor >= 0 && anchor < Items.Count:
+                case SelectionMode.Extended when e?.ShiftPressed == true && hasAnchor && IndexOf(anchor) >= 0:
                 {
-                    int from = System.Math.Min(anchor, index), to = System.Math.Max(anchor, index);
-                    setSelectedItems(Items.Skip(from).Take(to - from + 1).ToArray());
-                    SelectedItem.Value = item;
+                    int anchorIndex = IndexOf(anchor);
+                    int from = System.Math.Min(anchorIndex, index), to = System.Math.Max(anchorIndex, index);
+                    setSelectedItems(Items.Skip(from).Take(to - from + 1).ToArray(), item);
                     break;
                 }
 
                 default:
-                    anchor = index;
+                    setAnchor(item);
                     base.SelectContainer(container, e);
                     break;
             }
@@ -232,10 +245,33 @@ namespace OsuXaml.Controls
                     return base.OnKeyDown(e);
             }
 
-            anchor = index;
+            // SelectedIndex may still be past the end (set before the items it names exist).
+            index = System.Math.Clamp(index, 0, Items.Count - 1);
+
+            setAnchor(Items[index]);
             SelectedIndex.Value = index;
             ScrollIntoView(Items[index]);
             return true;
+        }
+
+        /// <summary>SelectedItems was changed from outside: SelectedItem follows it (the first selected item, as in WPF).</summary>
+        private void selectedItemsChanged()
+        {
+            object current = SelectedItem.Value;
+            object item = SelectionMode == SelectionMode.Single ? SelectedItems.LastOrDefault()
+                : SelectedItems.Contains(current) ? current : SelectedItems.FirstOrDefault();
+
+            updatingSelectedItems = true;
+            SelectedItem.Value = item;
+            updatingSelectedItems = false;
+
+            SelectionHasChanged();
+        }
+
+        private void setAnchor(object item)
+        {
+            anchor = item;
+            hasAnchor = true;
         }
 
         private void toggle(object item)
@@ -248,13 +284,15 @@ namespace OsuXaml.Controls
             setSelectedItems(selected.ToArray());
         }
 
-        private void setSelectedItems(params object[] selected)
+        private void setSelectedItems(params object[] selected) => setSelectedItems(selected, SelectedItem.Value);
+
+        /// <summary>Selects <paramref name="selected"/> in one update; SelectedItem becomes <paramref name="current"/> when it is among them.</summary>
+        private void setSelectedItems(object[] selected, object current)
         {
             updatingSelectedItems = true;
             SelectedItems.Clear();
             SelectedItems.AddRange(selected);
 
-            object current = SelectedItem.Value;
             SelectedItem.Value = selected.Contains(current) ? current : selected.LastOrDefault();
             updatingSelectedItems = false;
 

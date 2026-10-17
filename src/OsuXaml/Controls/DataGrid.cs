@@ -167,11 +167,12 @@ namespace OsuXaml.Controls
         /// <summary>Shown while the cell is edited (double-click or F2). Without it the cell isn't editable.</summary>
         public DataTemplate CellEditingTemplate { get; set; }
 
+        // A null item shows an empty cell that can't be edited, rather than running the templates on null.
         protected internal override Drawable GenerateElement(DataGridCell cell, object item, BindingScope scope)
-            => CellTemplate != null && CellTemplate.CanBuild(item) ? CellTemplate.Build(item, scope) : new TextBlock { Text = item?.ToString() ?? string.Empty };
+            => CellTemplate != null && item != null && CellTemplate.CanBuild(item) ? CellTemplate.Build(item, scope) : new TextBlock { Text = item?.ToString() ?? string.Empty };
 
         protected internal override Drawable GenerateEditingElement(DataGridCell cell, object item, BindingScope scope)
-            => CellEditingTemplate != null && CellEditingTemplate.CanBuild(item) ? CellEditingTemplate.Build(item, scope) : null;
+            => CellEditingTemplate != null && item != null && CellEditingTemplate.CanBuild(item) ? CellEditingTemplate.Build(item, scope) : null;
     }
 
     /// <summary>
@@ -387,6 +388,15 @@ namespace OsuXaml.Controls
             row.IsSelected = IsSelected(item);
         }
 
+        protected override void ClearContainer(Drawable container, object item)
+        {
+            // The row is about to be disposed, so an edit in it is thrown away rather than left pointing at a dead cell.
+            if (editingCell != null && editingCell.Row == container)
+                editingCell.CancelEdit();
+
+            base.ClearContainer(container, item);
+        }
+
         protected override void OnItemsChanged()
         {
             base.OnItemsChanged();
@@ -484,6 +494,10 @@ namespace OsuXaml.Controls
 
             if (layout == null)
                 return;
+
+            // Every cell is about to be recreated, so the edit finishes first, as when moving to another row.
+            if (editingCell != null && !editingCell.CommitEdit())
+                editingCell.CancelEdit();
 
             headers.RebuildCells();
 

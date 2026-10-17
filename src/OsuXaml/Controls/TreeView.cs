@@ -101,8 +101,15 @@ namespace OsuXaml.Controls
         public void ScrollIntoView(object item)
         {
             var container = item as TreeViewItem ?? ContainerFromDataItem(item);
-            if (container != null)
-                scroll?.ScrollIntoView(container.HeaderRow);
+            if (container == null || scroll == null)
+                return;
+
+            // A node added this frame has no position until its panel arranges it, so scroll once layout has run.
+            ScheduleAfterChildren(() =>
+            {
+                if (container.Parent != null)
+                    scroll.ScrollIntoView(container.HeaderRow);
+            });
         }
 
         protected override Drawable CreateItemsHost(Panel panel)
@@ -275,6 +282,7 @@ namespace OsuXaml.Controls
         private Panel childPanel;
         private float expansion;
         private int level;
+        private bool expandSubtreeOnLoad;
 
         public TreeViewItem()
         {
@@ -346,6 +354,15 @@ namespace OsuXaml.Controls
         public void ExpandSubtree()
         {
             IsExpanded.Value = true;
+
+            // Create the children now: a child created by this node's own expansion only creates its children when it loads.
+            realizeChildren();
+
+            if (LoadState < LoadState.Ready)
+            {
+                expandSubtreeOnLoad = true;
+                return;
+            }
 
             foreach (var child in ChildItems)
                 child.ExpandSubtree();
@@ -521,6 +538,14 @@ namespace OsuXaml.Controls
             headerRow.SetExpanded(IsExpanded.Value, false);
             headerRow.UpdateState();
             updateExpander();
+
+            if (expandSubtreeOnLoad)
+            {
+                expandSubtreeOnLoad = false;
+
+                foreach (var child in ChildItems)
+                    child.ExpandSubtree();
+            }
         }
 
         private void onExpandedChanged(bool expanded)
