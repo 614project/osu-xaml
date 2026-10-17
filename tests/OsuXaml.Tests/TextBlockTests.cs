@@ -162,6 +162,124 @@ namespace OsuXaml.Tests
             AddUntilStep("several lines", () => text.DrawHeight > line.DrawHeight * 2 && text.DrawWidth == 100);
         }
 
+        [Test]
+        public void LineBreaksInTheTextStartNewLines()
+        {
+            TextBlock one = null, two = null, crlf = null, trailing = null;
+
+            AddStep("create", () =>
+            {
+                var panel = new StackPanel();
+                panel.Add(one = new TextBlock { Text = "alpha" });
+                panel.Add(two = new TextBlock { Text = "alpha\nbeta" });
+                panel.Add(crlf = new TextBlock { Text = "alpha\r\nbeta" });
+                panel.Add(trailing = new TextBlock { Text = "alpha\n" });
+                Child = panel;
+            });
+
+            AddUntilStep("laid out", () => two.DrawHeight > 0 && one.DrawHeight > 0);
+            AddAssert("two lines, as wide as the longer one", () => Precision(two.DrawHeight, one.DrawHeight * 2) && Precision(two.DrawWidth, one.DrawWidth));
+            AddAssert("\\r\\n is one break", () => Precision(crlf.DrawHeight, two.DrawHeight) && Precision(crlf.DrawWidth, two.DrawWidth));
+            AddAssert("a closing break adds an empty line", () => Precision(trailing.DrawHeight, one.DrawHeight * 2));
+        }
+
+        [Test]
+        public void InlinesStyleTheirTextAndSpellIt()
+        {
+            TextBlock plain = null, styled = null;
+            Run run = null;
+            Bold bold = null;
+
+            AddStep("create", () =>
+            {
+                var panel = new StackPanel();
+                panel.Add(plain = new TextBlock { Text = "plain bold" });
+
+                styled = new TextBlock();
+                styled.AddText("plain ");
+                styled.Add(bold = new Bold());
+                bold.Add(run = new Run("bold"));
+                panel.Add(styled);
+
+                Child = panel;
+            });
+
+            AddUntilStep("laid out", () => styled.DrawWidth > 0 && plain.DrawWidth > 0);
+            AddAssert("Text spells the inlines", () => styled.Text.ToString() == "plain bold");
+            AddAssert("bold glyphs come from the bold font", () => fontOf(styled, 0).EndsWith("-Regular") && fontOf(styled, 9).EndsWith("-Bold"));
+            AddAssert("same line height", () => Precision(styled.DrawHeight, plain.DrawHeight));
+
+            AddStep("unbold", () => bold.FontWeight = FontWeight.Regular);
+            AddUntilStep("regular, as wide as plain text", () => fontOf(styled, 9).EndsWith("-Regular") && Precision(styled.DrawWidth, plain.DrawWidth));
+
+            AddStep("change the run", () => run.Text = "bold and more");
+            AddUntilStep("Text follows", () => styled.Text.ToString() == "plain bold and more" && styled.DrawWidth > plain.DrawWidth + 20);
+
+            AddStep("set Text instead", () => styled.Text = "other");
+            AddUntilStep("shows the new text", () => styled.DrawWidth < plain.DrawWidth);
+        }
+
+        [Test]
+        public void LinesAreAsTallAsTheirLargestFont()
+        {
+            TextBlock text = null;
+
+            AddStep("create", () =>
+            {
+                text = new TextBlock();
+                text.Add(new Run("Title") { FontSize = 32 });
+                text.Add(new LineBreak());
+                text.AddText("small print");
+                text.Add(new LineBreak());
+                var panel = new StackPanel();
+                panel.Add(text);
+                Child = panel;
+            });
+
+            AddUntilStep("laid out", () => text.DrawHeight > 0);
+            AddAssert("32 + 16 + an empty 16 line", () => Precision(text.DrawHeight, 32 + 16 + 16));
+            AddAssert("Text has the breaks", () => text.Text.ToString() == "Title\nsmall print\n");
+        }
+
+        [Test]
+        public void TrimsEachLine()
+        {
+            TextBlock trimmed = null, line = null;
+
+            AddStep("create", () =>
+            {
+                var panel = new StackPanel { Width = 120 };
+                panel.Add(line = new TextBlock { Text = "x" });
+                panel.Add(trimmed = new TextBlock { Text = long_text + "\nshort\n" + long_text, TextTrimming = TextTrimming.CharacterEllipsis });
+                Child = panel;
+            });
+
+            AddUntilStep("truncated to the width", () => trimmed.IsTruncated && trimmed.DrawWidth <= 120);
+            AddAssert("still three lines", () => Precision(trimmed.DrawHeight, line.DrawHeight * 3));
+        }
+
+        [Test]
+        public void ColoursAndDecorationsDraw()
+        {
+            TextBlock text = null;
+
+            AddStep("create", () =>
+            {
+                text = new TextBlock { TextDecorations = TextDecorations.Strikethrough, Shadow = true };
+                text.Add(new Run("red ") { Foreground = Colour4.Red });
+                text.Add(new Underline { Inlines = { new Italic { Inlines = { "underlined italic" } } } });
+                text.Add(new LineBreak());
+                text.Add(new Span { Foreground = Colour4.Green, TextDecorations = TextDecorations.Underline, Inlines = { "green" } });
+                Child = text;
+            });
+
+            // The draw node builds colours and lines from the layout every frame; a few frames shows it holds together.
+            AddWaitStep("draw a few frames", 5);
+            AddAssert("laid out on two lines", () => text.DrawHeight > 30 && text.Text.ToString() == "red underlined italic\ngreen");
+        }
+
         private static bool Precision(float a, float b) => System.Math.Abs(a - b) < 1;
+
+        private static string fontOf(TextBlock text, int glyph) => text.LaidOut.GlyphStyles[glyph].Font.FontName;
     }
 }

@@ -521,7 +521,7 @@ namespace OsuXaml.Generator
                     return;
                 }
 
-                text = string.Concat(value.Element.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
+                text = textContent(value.Element);
             }
 
             if (text == null)

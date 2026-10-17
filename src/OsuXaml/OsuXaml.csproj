@@ -6,4 +6,7 @@
   <ItemGroup>
     <PackageReference Include="ppy.osu.Framework" Version="$(OsuFrameworkVersion)" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OsuXaml.Tests" />
+  </ItemGroup>
 </Project>

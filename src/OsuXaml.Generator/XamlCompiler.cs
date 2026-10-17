@@ -6,6 +6,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
 namespace OsuXaml.Generator
@@ -145,7 +146,7 @@ namespace OsuXaml.Generator
 
             try
             {
-                doc = XDocument.Parse(text, LoadOptions.SetLineInfo);
+                doc = XDocument.Parse(text, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace);
             }
             catch (XmlException e)
             {
@@ -218,7 +219,7 @@ namespace OsuXaml.Generator
 
                 try
                 {
-                    var doc = XDocument.Parse(dictionaryText, LoadOptions.SetLineInfo);
+                    var doc = XDocument.Parse(dictionaryText, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace);
 
                     if (doc.Root.Name.LocalName != "ResourceDictionary" || directive(doc.Root, "Class") != null)
                         continue;
@@ -368,7 +369,7 @@ namespace OsuXaml.Generator
 
             foreach (var attribute in element.Attributes())
             {
-                if (attribute.IsNamespaceDeclaration || directive_namespaces.Contains(attribute.Name.NamespaceName))
+                if (attribute.IsNamespaceDeclaration || directive_namespaces.Contains(attribute.Name.NamespaceName) || attribute.Name.Namespace == XNamespace.Xml)
                     continue;
 
                 string member = attribute.Name.LocalName;
@@ -405,6 +406,8 @@ namespace OsuXaml.Generator
 
             emitImplicitItemTemplate(v, type, element, scope, new HashSet<string>(local.Concat(styled)));
 
+            bool mixed = takesMixedContent(element, type);
+
             foreach (var child in element.Elements())
             {
                 string childName = child.Name.LocalName;
@@ -438,17 +441,29 @@ namespace OsuXaml.Generator
 
                 hasContent = true;
 
+                if (mixed)
+                    continue;
+
                 var (c, childType) = emitValueElement(child, scope);
                 if (c != null)
                     emitAddChild(v, type, childType, c, child, isRoot);
             }
 
-            string content = string.Concat(element.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
-
-            if (content.Length > 0)
+            if (mixed)
             {
-                hasContent = true;
-                emitContent(v, type, content, element, scope);
+                if (emitMixedContent(v, type, element, scope, isRoot))
+                    hasContent = true;
+            }
+            else
+            {
+                string content = textContent(element);
+
+                // Spaces kept by xml:space="preserve" between child elements aren't content.
+                if (content.Trim().Length > 0 || (content.Length > 0 && !element.HasElements))
+                {
+                    hasContent = true;
+                    emitContent(v, type, content, element, scope);
+                }
             }
 
             // <ContentPresenter /> in a ControlTemplate shows the templated control's content.
@@ -518,7 +533,7 @@ namespace OsuXaml.Generator
 
             foreach (var a in element.Attributes())
             {
-                if (!a.IsNamespaceDeclaration && !directive_namespaces.Contains(a.Name.NamespaceName))
+                if (!a.IsNamespaceDeclaration && !directive_namespaces.Contains(a.Name.NamespaceName) && a.Name.Namespace != XNamespace.Xml)
                     set.Add(a.Name.LocalName);
             }
 
@@ -585,6 +600,143 @@ namespace OsuXaml.Generator
             }
 
             emitAssignment(v, type, textMember, content, element, element, element, scope);
+        }
+
+        /// <summary>
+        /// Whether text inside the element is mixed with its child elements, as in <c>&lt;TextBlock&gt;Hello &lt;Bold&gt;world&lt;/Bold&gt;&lt;/TextBlock&gt;</c>.
+        /// Types that take it have <c>AddText(string)</c>; text alone still sets their Text or Content when they have one.
+        /// </summary>
+        private bool takesMixedContent(XElement element, INamedTypeSymbol type)
+        {
+            if (!findMethods(type, "AddText").Any(m => !m.IsStatic && m.Parameters.Length == 1 && m.Parameters[0].Type.SpecialType == SpecialType.System_String))
+                return false;
+
+            return element.Elements().Any(e => e.Name.LocalName.IndexOf('.') < 0) || (findMember(type, "Text") ?? findMember(type, "Content")) == null;
+        }
+
+        /// <summary>
+        /// Adds text and child elements in document order, through AddText and Add. Whitespace is treated as WPF does: runs of it become
+        /// one space, and it's dropped just inside the element's tags and next to elements marked [TrimSurroundingWhitespace] (LineBreak).
+        /// </summary>
+        /// <returns>Whether anything was added.</returns>
+        private bool emitMixedContent(string v, INamedTypeSymbol type, XElement element, Scope scope, bool isRoot)
+        {
+            bool added = false;
+
+            foreach (var item in mixedItems(element))
+            {
+                if (item is string text)
+                    line($"{v}.AddText({SymbolDisplay.FormatLiteral(text, true)});");
+                else
+                {
+                    var child = (XElement)item;
+                    var (c, childType) = emitValueElement(child, scope);
+                    if (c != null)
+                        emitAddChild(v, type, childType, c, child, isRoot);
+                }
+
+                added = true;
+            }
+
+            return added;
+        }
+
+        /// <summary>An element's text (with WPF's whitespace rules applied, empty runs left out) and child elements, in order.</summary>
+        private List<object> mixedItems(XElement element)
+        {
+            // Text (adjacent text nodes joined, across comments) and child elements, in order.
+            var items = new List<object>();
+
+            foreach (var node in element.Nodes())
+            {
+                if (node is XText text)
+                {
+                    if (items.Count > 0 && items[items.Count - 1] is string previous)
+                        items[items.Count - 1] = previous + text.Value;
+                    else
+                        items.Add(text.Value);
+                }
+                else if (node is XElement child && child.Name.LocalName.IndexOf('.') < 0)
+                    items.Add(child);
+            }
+
+            if (!preservesSpace(element))
+            {
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (!(items[i] is string text))
+                        continue;
+
+                    text = collapseWhitespace(text);
+
+                    if (i == 0 || trimsSurroundingWhitespace(items[i - 1] as XElement))
+                        text = text.TrimStart(' ');
+                    if (i == items.Count - 1 || trimsSurroundingWhitespace(items[i + 1] as XElement))
+                        text = text.TrimEnd(' ');
+
+                    items[i] = text;
+                }
+            }
+
+            items.RemoveAll(item => item is string text && text.Length == 0);
+            return items;
+        }
+
+        /// <summary>The text directly inside an element. Unless xml:space="preserve" applies, runs of whitespace become one space and the ends are trimmed, as in WPF.</summary>
+        private static string textContent(XElement element)
+        {
+            string text = string.Concat(element.Nodes().OfType<XText>().Select(t => t.Value));
+            return preservesSpace(element) ? text : collapseWhitespace(text).Trim(' ');
+        }
+
+        private static bool preservesSpace(XElement element)
+        {
+            for (var e = element; e != null; e = e.Parent)
+            {
+                var space = e.Attribute(XNamespace.Xml + "space");
+                if (space != null)
+                    return space.Value == "preserve";
+            }
+
+            return false;
+        }
+
+        private static string collapseWhitespace(string text)
+        {
+            var builder = new StringBuilder(text.Length);
+            bool space = false;
+
+            foreach (char c in text)
+            {
+                if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+                {
+                    if (!space)
+                        builder.Append(' ');
+                    space = true;
+                }
+                else
+                {
+                    builder.Append(c);
+                    space = false;
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        /// <summary>Whether the element's type (resolved quietly) carries [TrimSurroundingWhitespace], like LineBreak.</summary>
+        private bool trimsSurroundingWhitespace(XElement element)
+        {
+            if (element == null || directive_namespaces.Contains(element.Name.NamespaceName))
+                return false;
+
+            for (var type = resolveType(element.Name.NamespaceName, element.Name.LocalName); type != null; type = type.BaseType)
+            {
+                if (type.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "OsuXaml.TrimSurroundingWhitespaceAttribute"))
+                    return true;
+            }
+
+            return false;
         }
 
         #endregion
@@ -687,7 +839,7 @@ namespace OsuXaml.Generator
             }
 
             var children = value.Element.Elements().ToList();
-            string text = string.Concat(value.Element.Nodes().OfType<XText>().Select(t => t.Value)).Trim();
+            string text = textContent(value.Element);
             var target = memberType(member);
 
             // <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>: the wrapper is optional.
@@ -756,11 +908,23 @@ namespace OsuXaml.Generator
             return type == null || implicitly(type, bindableClassValueType(target) ?? target) || isTemplateType(target);
         }
 
-        /// <summary>A read-only collection property filled from a property element: <c>&lt;GridView.Columns&gt;</c>.</summary>
+        /// <summary>
+        /// A read-only collection property filled from a property element: <c>&lt;GridView.Columns&gt;</c>. A collection with
+        /// Add(string) takes the text between the elements too, in order (<c>&lt;TextBlock.Inlines&gt;</c>).
+        /// </summary>
         private void emitCollection(string v, INamedTypeSymbol type, IPropertySymbol collection, PropertyValue value, Scope scope)
         {
-            foreach (var child in value.Element.Elements())
+            bool takesText = findMethods(collection.Type, "Add").Any(m => !m.IsStatic && m.Parameters.Length == 1 && m.Parameters[0].Type.SpecialType == SpecialType.System_String);
+
+            foreach (var item in takesText ? mixedItems(value.Element) : value.Element.Elements().Cast<object>())
             {
+                if (item is string text)
+                {
+                    line($"{v}.{collection.Name}.Add({SymbolDisplay.FormatLiteral(text, true)});");
+                    continue;
+                }
+
+                var child = (XElement)item;
                 var (c, childType) = emitValueElement(child, scope);
                 if (c == null)
                     continue;
