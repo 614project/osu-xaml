@@ -63,6 +63,32 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void WrapsBetweenWords()
+        {
+            TextBlock twoWords = null, partOfThird = null, wrapped = null;
+
+            AddStep("create", () =>
+            {
+                var panel = new StackPanel();
+                panel.Add(twoWords = new TextBlock { Text = "alpha beta" });
+                panel.Add(partOfThird = new TextBlock { Text = "alpha beta ga" });
+                Child = panel;
+            });
+            AddUntilStep("measured", () => partOfThird.DrawWidth > twoWords.DrawWidth + 10);
+
+            AddStep("wrap at the width of \"alpha beta ga\"", () =>
+            {
+                var panel = new StackPanel { Width = partOfThird.DrawWidth };
+                panel.Add(wrapped = new TextBlock { Text = "alpha beta gamma", TextWrapping = TextWrapping.Wrap });
+                Child = panel;
+            });
+
+            // Breaking at the edge would leave "alpha beta ga" on the first line; WPF moves the whole of "gamma" down.
+            AddUntilStep("two lines", () => wrapped.IsLoaded && wrapped.DrawHeight > twoWords.DrawHeight * 1.5f);
+            AddAssert("first line ends after \"beta\"", () => wrapped.DrawWidth < partOfThird.DrawWidth - 5);
+        }
+
+        [Test]
         public void TrimsWithAnEllipsis()
         {
             TextBlock trimmed = null;

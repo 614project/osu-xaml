@@ -7,6 +7,7 @@ using osu.Framework.Graphics.Sprites;
 using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Input.Events;
 using osu.Framework.Localisation;
+using osu.Framework.Text;
 using osuTK;
 using osuTK.Graphics;
 using osuTK.Input;
@@ -53,13 +54,16 @@ namespace OsuXaml.Controls
         // The size last reported to the layout; NaN until the first measure, so sizes set in XAML always apply.
         private Vector2 measured = new Vector2(float.NaN);
 
+        // A width set in XAML or code (not the layout handing back the measured width), which also limits wrapping.
+        private float? explicitWidth;
+
         public TextBlock()
         {
             Font = FrameworkFont.Regular.With(size: 16);
             Colour = Theme.Text;
         }
 
-        /// <summary>Wraps long text onto more lines. Line breaks inside the text are not supported.</summary>
+        /// <summary>Wraps long text onto more lines, between words where it can. Line breaks inside the text are not supported.</summary>
         public TextWrapping TextWrapping
         {
             get => textWrapping;
@@ -105,6 +109,23 @@ namespace OsuXaml.Controls
                 RelativeSizeAxes.HasFlag(Axes.Y) ? 0 : DrawHeight);
         }
 
+        // osu!framework's multi-line text breaks wherever a character crosses the edge, splitting words; WPF breaks between words.
+        protected override TextBuilder CreateTextBuilder(ITexturedGlyphLookupStore store)
+        {
+            var builder = base.CreateTextBuilder(store);
+
+            if (builder is not MultilineTextBuilder)
+                return builder;
+
+            float maxWidth = RelativeSizeAxes.HasFlag(Axes.X) ? Math.Min(MaxWidth, DrawWidth) - Padding.Right
+                : explicitWidth is float width ? Math.Min(MaxWidth, width) - Padding.Right
+                : MaxWidth;
+
+            // The base builder's character list is the one this text draws from, so the replacement writes into it.
+            return new WordWrappingTextBuilder(store, Font, maxWidth, Text.ToString(), UseFullGlyphHeight, new Vector2(Padding.Left, Padding.Top), Spacing,
+                builder.Characters, FixedWidthExcludeCharacters, FallbackCharacter, FixedWidthReferenceCharacter);
+        }
+
         // A slot hands layout elements the size they measured as a fixed size. Text measures itself, and a fixed
         // width or height would stop it following its text, so that hand-back is ignored.
         public override float Width
@@ -113,7 +134,10 @@ namespace OsuXaml.Controls
             set
             {
                 if (value != measured.X)
+                {
                     base.Width = value;
+                    explicitWidth = value;
+                }
             }
         }
 
@@ -143,6 +167,72 @@ namespace OsuXaml.Controls
         {
             get => Colour;
             set => Colour = value;
+        }
+    }
+
+    /// <summary>
+    /// Lays text out in lines that break between words: when a word crosses the edge, the part of it already on the line
+    /// moves down with it, and spaces may hang past the edge. A word longer than a whole line is broken where it crosses.
+    /// </summary>
+    internal class WordWrappingTextBuilder : TextBuilder
+    {
+        private readonly string text;
+
+        public WordWrappingTextBuilder(ITexturedGlyphLookupStore store, FontUsage font, float maxWidth, string text, bool useFontSizeAsHeight, Vector2 startOffset,
+                                       Vector2 spacing, System.Collections.Generic.List<TextBuilderGlyph> characters, char[] neverFixedWidthCharacters,
+                                       char fallbackCharacter, char fixedWidthReferenceCharacter)
+            : base(store, font, maxWidth, useFontSizeAsHeight, startOffset, spacing, characters, neverFixedWidthCharacters, fallbackCharacter, fixedWidthReferenceCharacter)
+        {
+            this.text = text ?? string.Empty;
+        }
+
+        protected override void OnWidthExceeded()
+        {
+            int count = Characters.Count;
+
+            if (count == 0)
+                return;
+
+            // Every character normally adds one glyph, so the glyph count says which character is arriving. If a character
+            // had no glyph the count no longer lines up, and the arriving character is treated as part of a word.
+            bool aligned = count < text.Length && Characters[count - 1].Character == text[count - 1];
+            if (aligned && char.IsWhiteSpace(text[count]))
+                return;
+
+            int lineStart = count - 1;
+            while (lineStart > 0 && !Characters[lineStart].OnNewLine)
+                lineStart--;
+
+            int lastSpace = -1;
+
+            for (int i = count - 1; i >= lineStart; i--)
+            {
+                if (char.IsWhiteSpace(Characters[i].Character))
+                {
+                    lastSpace = i;
+                    break;
+                }
+            }
+
+            // A word that starts here, or one longer than the line, simply continues on the next line.
+            if (lastSpace == count - 1 || lastSpace < 0)
+            {
+                AddNewLine();
+                return;
+            }
+
+            var moved = new char[count - 1 - lastSpace];
+
+            for (int i = moved.Length - 1; i >= 0; i--)
+            {
+                moved[i] = Characters[Characters.Count - 1].Character;
+                RemoveLastCharacter();
+            }
+
+            AddNewLine();
+
+            foreach (char c in moved)
+                AddCharacter(c);
         }
     }
 
