@@ -101,10 +101,21 @@ namespace OsuXaml.Controls
         public float[] Offsets = Array.Empty<float>();
         public float Total;
 
+        // The widest content each column has shown, and the Width setting it was seen under.
+        private float[] widest = Array.Empty<float>();
+        private GridLength[] widestFor = Array.Empty<GridLength>();
+
         public ColumnLayout(IReadOnlyList<TableColumn> columns)
         {
             Columns = columns;
         }
+
+        /// <summary>
+        /// Whether content-sized columns keep the widest content they have shown. A virtualizing table measures only the
+        /// rows in view, so without this a column would change width as rows scroll in and out (WPF's DataGrid behaves the same).
+        /// Setting a column's Width (e.g. double-clicking its header edge) measures it afresh.
+        /// </summary>
+        public bool RemembersWidths { get; set; }
 
         /// <summary>
         /// Pixel columns take their width, Auto columns their widest cell, and star columns share what is left.
@@ -118,7 +129,23 @@ namespace OsuXaml.Controls
             {
                 Widths = new float[count];
                 Offsets = new float[count];
+                widest = new float[count];
+                widestFor = new GridLength[count];
             }
+
+            // A new Width setting (e.g. double-clicking a header edge) measures its column afresh.
+            for (int i = 0; i < count; i++)
+            {
+                var setting = Columns[i].Width;
+
+                if (widestFor[i].Type != setting.Type || widestFor[i].Value != setting.Value)
+                {
+                    widestFor[i] = setting;
+                    widest[i] = 0;
+                }
+            }
+
+            float content(int i) => RemembersWidths ? widest[i] = Math.Max(widest[i], desired(i)) : desired(i);
 
             float used = 0, totalWeight = 0;
 
@@ -135,7 +162,7 @@ namespace OsuXaml.Controls
                     continue;
                 }
                 else
-                    Widths[i] = clamp(column, width.Type == GridUnitType.Pixel ? width.Value : desired(i));
+                    Widths[i] = clamp(column, width.Type == GridUnitType.Pixel ? width.Value : content(i));
 
                 used += Widths[i];
             }
@@ -150,7 +177,7 @@ namespace OsuXaml.Controls
                     {
                         var width = Columns[i].Width;
                         if (Columns[i].IsVisible && width.Type == GridUnitType.Star && width.Value > 0)
-                            unit = Math.Max(unit, desired(i) / width.Value);
+                            unit = Math.Max(unit, content(i) / width.Value);
                     }
                 }
                 else
@@ -172,6 +199,9 @@ namespace OsuXaml.Controls
                 Columns[i].ActualWidth = Widths[i];
             }
         }
+
+        /// <summary>Forgets the widths content-sized columns have seen, after the columns change.</summary>
+        public void ForgetWidths() => Array.Clear(widest);
 
         private static float clamp(TableColumn column, float width) => Math.Clamp(width, Math.Min(column.MinWidth, column.MaxWidth), column.MaxWidth);
     }
@@ -589,8 +619,8 @@ namespace OsuXaml.Controls
 
     /// <summary>
     /// A sorted, observable view over an items source, so sorting a table never reorders the view model's list.
-    /// Without a sort it mirrors the source. Changes to an observable source are applied in place, and re-sorting
-    /// moves items rather than resetting, so the table keeps its rows (and their selection and editing state).
+    /// Without a sort it mirrors the source. Changes to an observable source are applied in place; re-sorting raises
+    /// a reset, which the table answers by moving its existing rows, so they keep their selection and editing state.
     /// </summary>
     internal sealed class SortedItemsView : IEnumerable, INotifyCollectionChanged, IDisposable
     {
@@ -620,19 +650,14 @@ namespace OsuXaml.Controls
             comparison = by;
             var target = ordered(source.Cast<object>());
 
-            for (int i = 0; i < target.Count && i < items.Count; i++)
-            {
-                object wanted = target[i];
-                int from = items.FindIndex(i, x => Equals(x, wanted));
+            if (target.SequenceEqual(items, ReferenceEqualityComparer.Instance))
+                return;
 
-                if (from < 0 || from == i)
-                    continue;
-
-                object item = items[from];
-                items.RemoveAt(from);
-                items.Insert(i, item);
-                raise(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Move, item, i, from));
-            }
+            // One reset rather than a move per item, which would be quadratic in a long list; the table matches its rows
+            // to the items by reference, so every row survives with its selection and edit.
+            items.Clear();
+            items.AddRange(target);
+            raise(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
         }
 
         private List<object> ordered(IEnumerable<object> sequence)

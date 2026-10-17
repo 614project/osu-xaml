@@ -180,8 +180,9 @@ namespace OsuXaml.Controls
     /// &lt;DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" /&gt;</c>. It has a header row that stays above the
     /// scrolling rows, grid lines, alternating row backgrounds, ListBox selection (SelectedItem, SelectedIndex, SelectionMode,
     /// keyboard navigation), in-place editing, column resizing by dragging header edges, and sorting by clicking a header
-    /// (the view model's list keeps its order). Columns are always declared: AutoGenerateColumns is accepted but
-    /// does nothing, because generating columns would need reflection.
+    /// (the view model's list keeps its order). Rows are virtualized like a ListBox's: only the rows in view (and a row
+    /// being edited) exist, and Auto columns keep the widest cell they have shown. Columns are always declared:
+    /// AutoGenerateColumns is accepted but does nothing, because generating columns would need reflection.
     /// </summary>
     public partial class DataGrid : ListBox
     {
@@ -327,9 +328,12 @@ namespace OsuXaml.Controls
         public DataGridCell CellFor(object item, DataGridColumn column)
             => RowFromItem(item)?.CellsPresenter?.CellAt(Columns.IndexOf(column)) as DataGridCell;
 
-        /// <summary>Edits the first editable cell of the selected row, as F2 does.</summary>
+        /// <summary>Edits the first editable cell of the selected row, as F2 does, scrolling it into view first.</summary>
         public bool BeginEdit()
         {
+            if (SelectedItem.Value != null && RowFromItem(SelectedItem.Value) == null)
+                ScrollIntoView(SelectedItem.Value);
+
             var row = RowFromItem(SelectedItem.Value);
             return row?.CellsPresenter != null && row.CellsPresenter.DataGridCells.Any(c => c.BeginEdit());
         }
@@ -388,9 +392,17 @@ namespace OsuXaml.Controls
             row.IsSelected = IsSelected(item);
         }
 
+        protected override void OnContainerRealized(Drawable container, int index)
+        {
+            base.OnContainerRealized(container, index);
+
+            if (container is DataGridRow row)
+                styleRow(row, index);
+        }
+
         protected override void ClearContainer(Drawable container, object item)
         {
-            // The row is about to be disposed, so an edit in it is thrown away rather than left pointing at a dead cell.
+            // The row is about to be disposed or reused, so an edit in it is thrown away rather than left pointing at a dead cell.
             if (editingCell != null && editingCell.Row == container)
                 editingCell.CancelEdit();
 
@@ -422,9 +434,13 @@ namespace OsuXaml.Controls
         {
             base.Update();
 
+            if (layout == null)
+                return;
+
             // Before the rows update, so they arrange their cells with this frame's widths.
             bool unbounded = widthFromContent && !RelativeSizeAxes.HasFlag(Axes.X);
-            layout?.Solve(unbounded ? float.PositiveInfinity : Panel.DrawWidth, desiredWidth);
+            layout.RemembersWidths = IsVirtualizing;
+            layout.Solve(unbounded ? float.PositiveInfinity : Panel.DrawWidth, desiredWidth);
         }
 
         protected override bool OnKeyDown(KeyDownEvent e)
@@ -460,7 +476,7 @@ namespace OsuXaml.Controls
         {
             float max = headers.DesiredWidth(column);
 
-            foreach (var container in Containers)
+            foreach (var container in RealizedContainers)
             {
                 if (container is DataGridRow { CellsPresenter: { } row })
                     max = Math.Max(max, row.DesiredWidth(column));
@@ -500,8 +516,9 @@ namespace OsuXaml.Controls
                 editingCell.CancelEdit();
 
             headers.RebuildCells();
+            layout.ForgetWidths();
 
-            foreach (var container in Containers)
+            foreach (var container in RealizedContainers)
                 (container as DataGridRow)?.CellsPresenter?.RebuildCells();
 
             sorter.Apply();
@@ -519,34 +536,37 @@ namespace OsuXaml.Controls
 
         private void updateRows()
         {
-            bool horizontal = gridLinesVisibility == DataGridGridLinesVisibility.All || gridLinesVisibility == DataGridGridLinesVisibility.Horizontal;
-            bool vertical = gridLinesVisibility == DataGridGridLinesVisibility.All || gridLinesVisibility == DataGridGridLinesVisibility.Vertical;
-
-            for (int i = 0; i < Containers.Count; i++)
+            foreach (int index in RealizedIndices)
             {
-                if (!(Containers[i] is DataGridRow row))
-                    continue;
-
-                row.AlternationIndex = i % 2;
-
-                if (row.AlternationIndex == 1 && hasAlternatingRowBackground)
-                    row.Background = alternatingRowBackground;
-                else if (hasRowBackground)
-                    row.Background = rowBackground;
-                else
-                    row.Background = Colour4.Transparent;
-
-                row.SetHorizontalLine(horizontal, horizontalGridLinesBrush);
-
-                if (row.CellsPresenter != null)
-                {
-                    row.CellsPresenter.ShowVerticalLines = vertical;
-                    row.CellsPresenter.LineColour = verticalGridLinesBrush;
-                    row.CellsPresenter.RowHeight = rowHeight;
-                }
+                if (Containers[index] is DataGridRow row)
+                    styleRow(row, index);
             }
 
             updateHeaders();
+        }
+
+        private void styleRow(DataGridRow row, int index)
+        {
+            bool horizontal = gridLinesVisibility == DataGridGridLinesVisibility.All || gridLinesVisibility == DataGridGridLinesVisibility.Horizontal;
+            bool vertical = gridLinesVisibility == DataGridGridLinesVisibility.All || gridLinesVisibility == DataGridGridLinesVisibility.Vertical;
+
+            row.AlternationIndex = index % 2;
+
+            if (row.AlternationIndex == 1 && hasAlternatingRowBackground)
+                row.Background = alternatingRowBackground;
+            else if (hasRowBackground)
+                row.Background = rowBackground;
+            else
+                row.Background = Colour4.Transparent;
+
+            row.SetHorizontalLine(horizontal, horizontalGridLinesBrush);
+
+            if (row.CellsPresenter != null)
+            {
+                row.CellsPresenter.ShowVerticalLines = vertical;
+                row.CellsPresenter.LineColour = verticalGridLinesBrush;
+                row.CellsPresenter.RowHeight = rowHeight;
+            }
         }
 
         protected override void Dispose(bool isDisposing)

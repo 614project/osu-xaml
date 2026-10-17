@@ -16,19 +16,28 @@ namespace OsuXaml.Controls
     /// Shows a list of items, like WPF's ItemsControl. Items come from <see cref="ItemsSource"/> (any IEnumerable;
     /// observable ones such as BindableList stay in sync) or from child elements in XAML. Each item gets a container
     /// (<see cref="CreateContainer"/>) that presents it through <see cref="ItemTemplate"/>, and the containers are laid
-    /// out by <see cref="ItemsPanel"/> (a vertical StackPanel by default).
+    /// out by <see cref="ItemsPanel"/> (a vertical StackPanel by default). With a <see cref="VirtualizingPanel"/> as the
+    /// items panel, containers exist only for the items that panel shows; <see cref="ContainerFromIndex"/> returns null for the rest.
     /// </summary>
     public partial class ItemsControl : CompositeDrawable, ILayoutElement
     {
         private readonly List<object> localItems = new List<object>();
         private readonly List<object> items = new List<object>();
+
+        // One entry per item: its container, or null while a virtualizing panel hasn't realized it.
         private readonly List<Drawable> containers = new List<Drawable>();
+
+        // Containers a recycling list let go of, ready to show another item.
+        private readonly Stack<Drawable> recycled = new Stack<Drawable>();
 
         private IEnumerable itemsSource;
         private IEnumerable itemsView;
         private INotifyCollectionChanged observed;
         private DataTemplate itemTemplate;
         private Panel itemsPanel;
+        private VirtualizingPanel virtualizingPanel;
+        private bool recycling;
+        private bool releasing;
         private Drawable host;
         private bool built;
 
@@ -74,7 +83,10 @@ namespace OsuXaml.Controls
                     return;
 
                 for (int i = 0; i < containers.Count; i++)
-                    PrepareContainer(containers[i], items[i]);
+                {
+                    if (containers[i] != null)
+                        PrepareContainer(containers[i], items[i]);
+                }
             }
         }
 
@@ -101,6 +113,12 @@ namespace OsuXaml.Controls
             }
         }
 
+        /// <summary>
+        /// Whether containers are created only for the items in view: the items panel is a <see cref="VirtualizingPanel"/>
+        /// and <see cref="VirtualizingPanel.GetIsVirtualizing"/> wasn't turned off. Known once the control loads.
+        /// </summary>
+        public bool IsVirtualizing => virtualizingPanel != null;
+
         /// <summary>Raised after the items change.</summary>
         public event Action ItemsChanged;
 
@@ -114,7 +132,7 @@ namespace OsuXaml.Controls
 
             if (built)
             {
-                insertItem(items.Count, item);
+                insertItems(items.Count, new[] { item });
                 ItemsHaveChanged();
             }
         }
@@ -130,22 +148,23 @@ namespace OsuXaml.Controls
 
             if (built)
             {
-                removeAt(items.IndexOf(item));
+                removeRange(items.IndexOf(item), 1);
                 ItemsHaveChanged();
             }
 
             return true;
         }
 
+        /// <summary>The container of the item at <paramref name="index"/>, or null when there is none (out of range, or not realized).</summary>
         public Drawable ContainerFromIndex(int index) => index >= 0 && index < containers.Count ? containers[index] : null;
 
         public Drawable ContainerFromItem(object item) => ContainerFromIndex(IndexOf(item));
 
-        public int IndexFromContainer(Drawable container) => containers.IndexOf(container);
+        public int IndexFromContainer(Drawable container) => container == null ? -1 : containers.IndexOf(container);
 
         public object ItemFromContainer(Drawable container)
         {
-            int index = containers.IndexOf(container);
+            int index = IndexFromContainer(container);
             return index < 0 ? null : items[index];
         }
 
@@ -160,8 +179,14 @@ namespace OsuXaml.Controls
             return -1;
         }
 
-        /// <summary>The containers currently shown, in item order.</summary>
+        /// <summary>One entry per item, in item order: its container, or null where a virtualizing panel hasn't realized one.</summary>
         protected IReadOnlyList<Drawable> Containers => containers;
+
+        /// <summary>The indices of the items that have a container, in order. Every item unless the control virtualizes.</summary>
+        protected IEnumerable<int> RealizedIndices => virtualizingPanel?.RealizedIndices ?? Enumerable.Range(0, containers.Count);
+
+        /// <summary>The containers that exist, in item order.</summary>
+        protected IEnumerable<Drawable> RealizedContainers => RealizedIndices.Select(i => containers[i]).Where(c => c != null);
 
         /// <summary>The panel the containers are in, once loaded.</summary>
         protected Panel Panel => itemsPanel;
@@ -184,7 +209,10 @@ namespace OsuXaml.Controls
         /// <summary>Creates the container that presents one data item.</summary>
         protected virtual Drawable CreateContainer() => new ContentPresenter();
 
-        /// <summary>Points a container at its item. Called again when <see cref="ItemTemplate"/> changes.</summary>
+        /// <summary>
+        /// Points a container at its item. Called again when <see cref="ItemTemplate"/> changes, and, in a recycling list,
+        /// for a container that showed another item before.
+        /// </summary>
         protected virtual void PrepareContainer(Drawable container, object item)
         {
             if (ReferenceEquals(container, item) || !(container is ContentControl content))
@@ -194,9 +222,36 @@ namespace OsuXaml.Controls
             content.Content = item;
         }
 
-        /// <summary>Called when a container is about to be removed.</summary>
+        /// <summary>
+        /// Called after a container is prepared and added to the panel for the item at <paramref name="index"/>: when the item
+        /// is added, or, in a virtualizing list, each time it scrolls into view.
+        /// </summary>
+        protected virtual void OnContainerRealized(Drawable container, int index)
+        {
+        }
+
+        /// <summary>
+        /// Called when a container is about to stop showing its item: the item was removed, or (see <see cref="IsReleasingContainer"/>)
+        /// it scrolled out of a virtualizing list's view.
+        /// </summary>
         protected virtual void ClearContainer(Drawable container, object item)
         {
+        }
+
+        /// <summary>Set during <see cref="ClearContainer"/> when the item stays and only its container goes, because it scrolled out of view.</summary>
+        private protected bool IsReleasingContainer => releasing;
+
+        /// <summary>Whether a virtualizing panel must keep <paramref name="container"/> even when it is out of view.</summary>
+        private protected virtual bool KeepContainerRealized(Drawable container) => false;
+
+        /// <summary>Scrolls a virtualizing list until the item at <paramref name="index"/> is in view, creating its container now. False when not virtualizing.</summary>
+        private protected bool BringIndexIntoView(int index, Func<Drawable, Drawable> part = null)
+        {
+            if (virtualizingPanel == null || index < 0 || index >= items.Count)
+                return false;
+
+            virtualizingPanel.BringIndexIntoView(index, part);
+            return true;
         }
 
         /// <summary>Called after the items change, before <see cref="ItemsChanged"/>.</summary>
@@ -216,6 +271,14 @@ namespace OsuXaml.Controls
             itemsPanel ??= CreateDefaultItemsPanel();
             itemsPanel.RelativeSizeAxes = Axes.Both;
 
+            if (itemsPanel is VirtualizingPanel panel && VirtualizingPanel.GetIsVirtualizing(this) && VirtualizingPanel.GetIsVirtualizing(panel))
+            {
+                virtualizingPanel = panel;
+                virtualizingPanel.Attach(this);
+                recycling = VirtualizingPanel.GetVirtualizationMode(this) == VirtualizationMode.Recycling
+                            || VirtualizingPanel.GetVirtualizationMode(panel) == VirtualizationMode.Recycling;
+            }
+
             host = CreateItemsHost(itemsPanel);
 
             if (!ReferenceEquals(host, itemsPanel) || host.RelativeSizeAxes == Axes.None)
@@ -227,15 +290,121 @@ namespace OsuXaml.Controls
             rebuild();
         }
 
+        #region Containers for a virtualizing panel
+
+        internal int ItemCount => items.Count;
+
+        internal Drawable ContainerAt(int index) => containers[index];
+
+        internal bool KeepsContainerRealized(Drawable container) => KeepContainerRealized(container);
+
+        /// <summary>Creates (or recycles) the container for the item at <paramref name="index"/> and adds it to the panel.</summary>
+        internal Drawable RealizeContainer(int index)
+        {
+            object item = items[index];
+            var container = IsItemItsOwnContainer(item) ? (Drawable)item : recycled.Count > 0 ? recycled.Pop() : CreateContainer();
+
+            containers[index] = container;
+            PrepareContainer(container, item);
+            itemsPanel.Add(container);
+            OnContainerRealized(container, index);
+            return container;
+        }
+
+        /// <summary>Takes the container of an item that scrolled out of view away; the item stays.</summary>
+        internal void ReleaseContainer(int index)
+        {
+            var container = containers[index];
+            if (container == null)
+                return;
+
+            releasing = true;
+
+            try
+            {
+                ClearContainer(container, items[index]);
+            }
+            finally
+            {
+                releasing = false;
+            }
+
+            containers[index] = null;
+            discard(container, items[index]);
+        }
+
+        #endregion
+
+        /// <summary>
+        /// Shows the items of the source again. Items that stay keep their containers, so a reset (a re-sort, or a new list
+        /// holding the same objects) keeps their selection, edits and measured size; containers of items that left are cleared.
+        /// </summary>
         private void rebuild()
         {
-            while (items.Count > 0)
-                removeAt(items.Count - 1);
-
             IEnumerable source = itemsView ?? localItems;
+            var next = source.Cast<object>().ToList();
 
-            foreach (object item in source)
-                insertItem(items.Count, item);
+            var oldItems = items.ToArray();
+            var oldContainers = containers.ToArray();
+
+            // Matched by reference: a container shows one object, and an equal but different object needs its own.
+            var byItem = new Dictionary<object, Queue<int>>(ReferenceEqualityComparer.Instance);
+            var nulls = new Queue<int>();
+
+            for (int i = 0; i < oldItems.Length; i++)
+            {
+                if (oldItems[i] == null)
+                    nulls.Enqueue(i);
+                else
+                {
+                    if (!byItem.TryGetValue(oldItems[i], out var queue))
+                        byItem[oldItems[i]] = queue = new Queue<int>();
+
+                    queue.Enqueue(i);
+                }
+            }
+
+            var previousIndex = new int[next.Count];
+            var kept = new bool[oldItems.Length];
+
+            for (int j = 0; j < next.Count; j++)
+            {
+                object item = next[j];
+                var queue = item == null ? nulls : byItem.GetValueOrDefault(item);
+                previousIndex[j] = queue != null && queue.Count > 0 ? queue.Dequeue() : -1;
+
+                if (previousIndex[j] >= 0)
+                    kept[previousIndex[j]] = true;
+            }
+
+            for (int i = 0; i < oldItems.Length; i++)
+            {
+                if (!kept[i] && oldContainers[i] != null)
+                {
+                    ClearContainer(oldContainers[i], oldItems[i]);
+                    discard(oldContainers[i], oldItems[i]);
+                }
+            }
+
+            items.Clear();
+            items.AddRange(next);
+            containers.Clear();
+
+            foreach (int i in previousIndex)
+                containers.Add(i >= 0 ? oldContainers[i] : null);
+
+            if (virtualizingPanel != null)
+                virtualizingPanel.OnItemsReset(previousIndex);
+            else
+            {
+                for (int j = 0; j < containers.Count; j++)
+                {
+                    if (containers[j] == null)
+                        createContainer(j, false);
+                }
+
+                itemsPanel.ReorderChildren(containers);
+            }
 
             ItemsHaveChanged();
         }
@@ -248,30 +417,17 @@ namespace OsuXaml.Controls
             switch (e.Action)
             {
                 case NotifyCollectionChangedAction.Add:
-                {
-                    int index = e.NewStartingIndex < 0 ? items.Count : e.NewStartingIndex;
-
-                    foreach (object item in e.NewItems)
-                        insertItem(index++, item);
-
+                    insertItems(e.NewStartingIndex < 0 ? items.Count : e.NewStartingIndex, e.NewItems);
                     break;
-                }
 
                 case NotifyCollectionChangedAction.Remove:
                     removeItems(e.OldStartingIndex, e.OldItems);
                     break;
 
                 case NotifyCollectionChangedAction.Replace:
-                {
                     removeItems(e.OldStartingIndex, e.OldItems);
-
-                    int index = e.NewStartingIndex < 0 ? items.Count : e.NewStartingIndex;
-
-                    foreach (object item in e.NewItems)
-                        insertItem(index++, item);
-
+                    insertItems(e.NewStartingIndex < 0 ? items.Count : e.NewStartingIndex, e.NewItems);
                     break;
-                }
 
                 case NotifyCollectionChangedAction.Move when e.OldStartingIndex >= 0 && e.NewStartingIndex >= 0:
                     for (int i = 0; i < e.OldItems.Count; i++)
@@ -287,42 +443,92 @@ namespace OsuXaml.Controls
             ItemsHaveChanged();
         }
 
+        private void insertItems(int index, IList newItems)
+        {
+            index = Math.Clamp(index, 0, items.Count);
+
+            if (virtualizingPanel != null)
+            {
+                // Containers come later, for the items the panel shows.
+                items.InsertRange(index, newItems.Cast<object>());
+                containers.InsertRange(index, Enumerable.Repeat<Drawable>(null, newItems.Count));
+                virtualizingPanel.OnItemsInserted(index, newItems.Count);
+                return;
+            }
+
+            foreach (object item in newItems)
+            {
+                items.Insert(index, item);
+                containers.Insert(index, null);
+                createContainer(index++, true);
+            }
+        }
+
+        /// <summary>Creates the container of a list that doesn't virtualize; <paramref name="inPlace"/> inserts it at its index, otherwise it is appended for a later reorder.</summary>
+        private void createContainer(int index, bool inPlace)
+        {
+            object item = items[index];
+            var container = IsItemItsOwnContainer(item) ? (Drawable)item : CreateContainer();
+
+            containers[index] = container;
+            PrepareContainer(container, item);
+
+            if (inPlace)
+                itemsPanel.Insert(index, container);
+            else
+                itemsPanel.Add(container);
+
+            OnContainerRealized(container, index);
+        }
+
         private void removeItems(int start, IList oldItems)
         {
+            // Clear and RemoveRange report one run of items; removing it at once keeps clearing a long list linear.
+            if (start >= 0 && start + oldItems.Count <= items.Count && Enumerable.Range(0, oldItems.Count).All(i => Equals(items[start + i], oldItems[i])))
+            {
+                removeRange(start, oldItems.Count);
+                return;
+            }
+
             foreach (object item in oldItems)
             {
                 // RemoveAll reports scattered items without a starting index, so match by item.
                 int index = start >= 0 && start < items.Count && Equals(items[start], item) ? start : IndexOf(item);
 
                 if (index >= 0)
-                    removeAt(index);
+                    removeRange(index, 1);
             }
         }
 
-        private void insertItem(int index, object item)
+        private void removeRange(int start, int count)
         {
-            index = Math.Clamp(index, 0, items.Count);
+            for (int i = start; i < start + count; i++)
+            {
+                if (containers[i] != null)
+                {
+                    ClearContainer(containers[i], items[i]);
+                    discard(containers[i], items[i]);
+                }
+            }
 
-            var container = IsItemItsOwnContainer(item) ? (Drawable)item : CreateContainer();
-
-            items.Insert(index, item);
-            containers.Insert(index, container);
-
-            PrepareContainer(container, item);
-            itemsPanel.Insert(index, container);
+            items.RemoveRange(start, count);
+            containers.RemoveRange(start, count);
+            virtualizingPanel?.OnItemsRemoved(start, count);
         }
 
-        private void removeAt(int index)
+        /// <summary>Takes a cleared container out of the panel.</summary>
+        private void discard(Drawable container, object item)
         {
-            var container = containers[index];
-            object item = items[index];
-            ClearContainer(container, item);
-
-            items.RemoveAt(index);
-            containers.RemoveAt(index);
-
-            // A drawable item belongs to whoever added it (it may be added again), so only generated containers are disposed.
-            itemsPanel.Remove(container, !ReferenceEquals(container, item));
+            // A drawable item belongs to whoever added it (it may be added again), so only generated containers are disposed or reused.
+            if (ReferenceEquals(container, item))
+                itemsPanel.Remove(container, false);
+            else if (recycling)
+            {
+                itemsPanel.Remove(container, false);
+                recycled.Push(container);
+            }
+            else
+                itemsPanel.Remove(container, true);
         }
 
         private void move(int from, int to)
@@ -335,12 +541,15 @@ namespace OsuXaml.Controls
 
             items.RemoveAt(from);
             containers.RemoveAt(from);
-            itemsPanel.Remove(container, false);
 
             to = Math.Clamp(to, 0, items.Count);
             items.Insert(to, item);
             containers.Insert(to, container);
-            itemsPanel.Insert(to, container);
+
+            if (virtualizingPanel != null)
+                virtualizingPanel.OnItemMoved(from, to);
+            else
+                itemsPanel.ReorderChildren(containers);
         }
 
         public virtual Vector2 Measure(Vector2 availableSize)
@@ -377,6 +586,11 @@ namespace OsuXaml.Controls
                 observed.CollectionChanged -= onCollectionChanged;
 
             observed = null;
+
+            // Recycled containers are out of the tree, so nothing else disposes them.
+            while (recycled.Count > 0)
+                recycled.Pop().Dispose();
+
             base.Dispose(isDisposing);
         }
     }
@@ -448,7 +662,7 @@ namespace OsuXaml.Controls
 
             try
             {
-                for (int i = 0; i < Containers.Count; i++)
+                foreach (int i in RealizedIndices)
                 {
                     if (Containers[i] is ISelectableItem selectable)
                         selectable.IsSelected = IsSelected(Items[i]);

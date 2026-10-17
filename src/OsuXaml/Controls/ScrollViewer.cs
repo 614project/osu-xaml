@@ -5,6 +5,7 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input;
 using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
+using osu.Framework.Utils;
 using osuTK;
 
 namespace OsuXaml.Controls
@@ -46,6 +47,7 @@ namespace OsuXaml.Controls
         private Slot slot;
 
         private Vector2 lastOffset;
+        private double laidOutAt = double.NaN;
 
         public ScrollViewer()
         {
@@ -75,7 +77,7 @@ namespace OsuXaml.Controls
                 child = value;
 
                 if (child != null)
-                    horizontal.Add(slot = new Slot(child));
+                    horizontal.Add(slot = new ContentSlot(child, this));
             }
         }
 
@@ -159,6 +161,36 @@ namespace OsuXaml.Controls
 
         public void ScrollToVerticalOffset(double offset, bool animated = true) => vertical.ScrollTo(offset, animated);
 
+        /// <summary>
+        /// Shifts the scroll position (and any scroll under way) at once, without animating: a virtualizing panel uses it
+        /// to keep the rows in view in place when the estimated sizes above them are corrected.
+        /// </summary>
+        internal void OffsetScroll(Vector2 delta)
+        {
+            if (canScrollY && delta.Y != 0)
+            {
+                vertical.OffsetScrollPosition(delta.Y);
+                offsetTotal.Y += delta.Y;
+            }
+
+            if (canScrollX && delta.X != 0)
+            {
+                horizontal.OffsetScrollPosition(delta.X);
+                offsetTotal.X += delta.X;
+            }
+        }
+
+        private Vector2d offsetTotal;
+
+        /// <summary>
+        /// Where the scroll is heading, less every <see cref="OffsetScroll"/> so far: it changes only when something scrolls on
+        /// purpose (the user, or code), so a pending bring-into-view can tell that it should stop.
+        /// </summary>
+        internal Vector2d IntendedTarget => new Vector2d(horizontal.Target - offsetTotal.X, vertical.Target - offsetTotal.Y);
+
+        /// <summary>Whether a scroll is still easing towards its target.</summary>
+        internal bool IsScrollAnimating => !Precision.AlmostEquals(vertical.Current, vertical.Target) || !Precision.AlmostEquals(horizontal.Current, horizontal.Target);
+
         public void ScrollToHorizontalOffset(double offset, bool animated = true) => horizontal.ScrollTo(offset, animated);
 
         public Vector2 Measure(Vector2 availableSize)
@@ -186,9 +218,10 @@ namespace OsuXaml.Controls
             if (!canScrollX) horizontal.ScrollToStart(false);
         }
 
-        protected override void UpdateAfterChildren()
+        /// <summary>Measures the content and sizes the scrolled area to it (at least the viewport on each scrolling axis).</summary>
+        private void layoutContent()
         {
-            base.UpdateAfterChildren();
+            laidOutAt = Time.Current;
 
             var viewport = vertical.ChildSize;
             var extent = viewport;
@@ -204,9 +237,18 @@ namespace OsuXaml.Controls
             }
 
             horizontal.Height = extent.Y;
+        }
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+
+            // The content slot normally lays out before the scrollers move; this covers a frame where it didn't update.
+            if (laidOutAt != Time.Current)
+                layoutContent();
 
             // The horizontal bar belongs to the content-tall inner scroller; keep it at the bottom of the viewport instead.
-            horizontal.ScrollbarOffset = (float)Math.Min(0, vertical.Current + viewport.Y - extent.Y);
+            horizontal.ScrollbarOffset = (float)Math.Min(0, vertical.Current + vertical.ChildSize.Y - horizontal.Height);
 
             var offset = new Vector2((float)horizontal.Current, (float)vertical.Current);
 
@@ -214,6 +256,28 @@ namespace OsuXaml.Controls
             {
                 lastOffset = offset;
                 ScrollChanged?.Invoke();
+            }
+        }
+
+        /// <summary>
+        /// Holds the content. It lays the content out right after the content updates, before either scroller updates its
+        /// position, so a scroll position set this frame (such as a virtualizing panel keeping its rows in place) is
+        /// checked against this frame's extent rather than last frame's.
+        /// </summary>
+        private partial class ContentSlot : Slot
+        {
+            private readonly ScrollViewer viewer;
+
+            public ContentSlot(Drawable content, ScrollViewer viewer)
+                : base(content)
+            {
+                this.viewer = viewer;
+            }
+
+            protected override void UpdateAfterChildren()
+            {
+                base.UpdateAfterChildren();
+                viewer.layoutContent();
             }
         }
 
