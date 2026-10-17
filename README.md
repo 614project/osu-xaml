@@ -12,7 +12,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml` | 생성된 코드가 호출하는 런타임 (`XamlBinding`, `BindingScope`). 리플렉션 없음 |
 | `src/OsuXaml/Controls` | WPF식 컨트롤 (패널, 목록, 메뉴, 탭, 입력, 날짜 등. 아래 [목록](#wpf식-컨트롤)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
-| `samples/Gallery` | WPF식 컨트롤 갤러리 |
+| `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
 | `tests/OsuXaml.Tests` | 생성기 테스트 10개, 레이아웃 기하 테스트 6개, 헤드리스 앱 테스트 4개 |
 
 ## 실행
@@ -153,6 +153,8 @@ public partial class MainView : CompositeDrawable
 | | `UniformGrid` | `Rows`, `Columns` |
 | 루트·콘텐츠 | `Window`, `UserControl` | XAML 파일의 루트. `Window`는 `Title`과 팝업 레이어를 가집니다 |
 | | `Border`, `ContentControl`, `ContentPresenter` | `Background`, `BorderBrush`, `BorderThickness`, `CornerRadius`, `Padding`, `Content` + `ContentTemplate`, `Template` |
+| | `Page`, `Frame` | `<Page x:Class="App.HomePage" Title="Home">` 루트, `Frame.Navigate(page)`, `GoBack()`/`GoForward()`, `CanGoBack`/`CanGoForward` (바인딩 가능), `NavigationService`, 뒤로 가기 기록 유지, 슬라이드 전환, `NavigationUIVisibility` |
+| | `Dialog` | `<Dialog x:Class="App.SettingsDialog" Title="Settings">` 루트, `await dialog.ShowDialog(this)`, `DialogResult`, `Closing`, 버튼의 `IsDefault`/`IsCancel` (Enter/Escape) |
 | | `ScrollViewer` | `VerticalScrollBarVisibility`/`HorizontalScrollBarVisibility` (`Auto`, `Visible`, `Hidden`, `Disabled`), `ScrollToEnd()`, `VerticalOffset` |
 | 텍스트 | `TextBlock` | `Text`, `FontSize`, `FontWeight`, `Foreground`, `TextWrapping`, `TextTrimming` |
 | | `Label` | `Content="_Name"` (Alt+N 접근 키), `Target="{Binding ElementName=box}"` |
@@ -166,6 +168,7 @@ public partial class MainView : CompositeDrawable
 | | `RadioButton` | `IsChecked` (양방향), `GroupName` (없으면 같은 부모끼리 한 그룹) |
 | 범위 | `Slider` | `Value` (양방향), `Minimum`, `Maximum`, `Orientation`, `TickFrequency`, `TickPlacement`, `IsSnapToTickEnabled`, 키보드 |
 | | `ProgressBar` | `Value`, `Minimum`, `Maximum`, `IsIndeterminate`, `Orientation` |
+| | `ScrollBar`, `Thumb` | `Value` (양방향), `ViewportSize`, `SmallChange`/`LargeChange`, `Scroll`; `Thumb`의 `DragStarted`/`DragDelta`/`DragCompleted` |
 | 목록 | `ItemsControl` | `ItemsSource`, `ItemTemplate`, `DisplayMemberPath`, `ItemsPanel` |
 | | `ListBox` | `SelectedItem`/`SelectedIndex` (양방향), `SelectionMode`, `SelectedItems`, 키보드, `ScrollIntoView` |
 | | `ListView` + `GridView` | `GridViewColumn` (`Header`, `DisplayMemberBinding`, `CellTemplate`, `Width`, `SortMemberPath`), 머리글 클릭 정렬, 경계 드래그로 열 너비 조절 |
@@ -176,6 +179,7 @@ public partial class MainView : CompositeDrawable
 | | `ContextMenu` | 모든 요소에 `<Border.ContextMenu>`로 붙이고 오른쪽 클릭으로 엽니다 |
 | | `ToolTip` | 모든 요소에 `ToolTip="..."` 또는 `<Button.ToolTip><ToolTip>...` |
 | | `Popup` | `IsOpen` (양방향), `PlacementTarget`, `Placement`, `StaysOpen` |
+| | `MessageBox` | `await MessageBox.Show(this, "Delete?", "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Warning)` → `MessageBoxResult` |
 | 구획 | `TabControl`, `TabItem` | `SelectedIndex`/`SelectedItem` (양방향), `TabStripPlacement`, `ItemsSource` + `ContentTemplate` |
 | | `Expander` | `Header`, `IsExpanded` (양방향), 높이 애니메이션 |
 | | `GroupBox`, `HeaderedContentControl` | `Header`, `HeaderTemplate` |
@@ -195,6 +199,25 @@ public partial class MainView : CompositeDrawable
 
 패널과 `ItemsSource`도 함께 쓸 수 있습니다 (`<WrapPanel ItemsSource="{Bind Tags}">`). `{Bind}`처럼 경로를 비우면 아이템 자체에 바인딩됩니다.
 
+### 대화상자와 페이지 이동
+
+WPF의 `MessageBox.Show`와 `ShowDialog()`는 결과가 나올 때까지 호출한 스레드를 막지만, osu!framework의 Update 스레드는 막을 수 없습니다. 그래서 같은 이름의 메서드가 `Task`를 돌려주고, 코드비하인드에서는 `await`로 씁니다. 대화상자는 창 전체를 어둡게 덮고 아래 입력을 막는 모달로 열립니다.
+
+```csharp
+private async void OnDelete()
+{
+    if (await MessageBox.Show(this, "Delete 3 files?", "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+        viewModel.DeleteSelected();
+}
+
+private async void OnSettings()
+{
+    bool? saved = await new SettingsDialog().ShowDialog(this);   // SettingsDialog.xaml의 루트는 <Dialog>
+}
+```
+
+`Frame`은 WPF처럼 `Page` 인스턴스를 보여주고, 뒤로 간 페이지는 버리지 않고 기록에 남겨 같은 상태로 돌아옵니다. 페이지 안에서는 `NavigationService.Navigate(new DetailsPage())`로 이동합니다.
+
 ### 레이아웃 동작
 
 - 매 프레임 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 패널이 자식을 측정(Measure)하고 배치(Arrange)합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다.
@@ -209,9 +232,15 @@ public partial class MainView : CompositeDrawable
 
 ## 아직 없는 것
 
-- 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마
-- 스타일/리소스 딕셔너리, `<Box.Colour>` 같은 속성 요소, 제네릭 타입 요소
-- ComboBox, ListBox, TabControl, 스타일/템플릿 시스템. 여러 칸에 걸친 자식은 Auto 크기 계산에 들어가지 않습니다 (WPF는 반영합니다)
+- 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
+- 여러 줄 `TextBox` (`AcceptsReturn`): osu!framework의 TextBox가 한 줄 전용입니다. `TextBlock` 인라인 (`<Run>`, `<Bold>`, `<LineBreak>`)과 텍스트 안의 줄바꿈 문자도 없습니다
+- 가상화: `ListBox`, `ListView`, `DataGrid`, `TreeView`는 보이지 않는 행까지 모두 만듭니다. 수천 행이면 느려집니다
+- `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
+- 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
+- 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
+- `Icon Kind`의 오타는 빌드 오류가 아니라 실행 중 물음표 아이콘으로 나타납니다
+- 모달은 `Window`(팝업 레이어) 단위입니다. 한 게임에 Window가 여럿이면 각자 따로 막힙니다
+- 여러 칸에 걸친 Grid 자식은 Auto 크기 계산에 들어가지 않습니다 (WPF는 반영합니다)
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
 - 백그라운드 스레드에서 뷰모델을 바꿀 때의 Update 스레드 마샬링
 - 한글 글꼴: osu!framework 기본 Roboto에는 한글이 없어 샘플은 영어 UI입니다
