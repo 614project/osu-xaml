@@ -335,31 +335,79 @@ namespace OsuXaml.Controls
     /// <see cref="Orientation"/> makes it vertical; <see cref="IsSnapToTickEnabled"/> snaps dragging and keys to
     /// <see cref="TickFrequency"/>. Arrow keys move by <see cref="SmallChange"/>, Page Up/Down by <see cref="LargeChange"/>,
     /// Home/End to the ends, while the slider is focused or hovered.
+    /// It draws a thin rounded track, filled in the accent colour up to a round thumb that grows while hovered or dragged;
+    /// grabbing the thumb drags it from where it was grabbed, clicking the track jumps there.
     /// </summary>
     public partial class Slider : BasicSliderBar<double>
     {
-        private const float thickness = 20;
+        // The cross size of the row the thumb moves in; tick rows add to it.
+        private const float thumb_row = 20;
+        private const float tick_row = 7;
+        private const float tick_length = 4;
+        private const float track_thickness = 4;
+        private const float thumb_size = 18;
         private const int max_ticks = 200;
 
+        private readonly Container body;
+        private readonly Container track;
+        private readonly Container travel;
         private readonly Container ticks;
+        private readonly SliderThumb thumb;
+
         private Orientation orientation = Orientation.Horizontal;
         private double tickFrequency = 1;
         private TickPlacement tickPlacement;
         private bool ticksValid;
         private bool syncing;
 
+        // The cross size the slider gave itself; it follows orientation and tick changes until a size is set.
+        private float defaultThickness = thumb_row;
+
+        private bool pressed;
+        private bool pressedOnThumb;
+        private float valueAtPress;
+        private float pointerAtPress;
+
         public Slider()
         {
-            Height = thickness;
+            Height = thumb_row;
             BackgroundColour = Theme.Surface;
             SelectionColour = Theme.Accent;
             FocusColour = Theme.Overlay;
-            CornerRadius = 4;
-            Masking = true;
+            Masking = false;
+            RangePadding = thumb_size / 2;
             CurrentNumber.MinValue = 0;
             CurrentNumber.MaxValue = 100;
 
-            Add(ticks = new Container { RelativeSizeAxes = Axes.Both });
+            // The base class adds the track and fill boxes as direct children; they move into the thin rounded track.
+            Remove(Box, false);
+            Remove(SelectionBox, false);
+
+            Add(body = new Container
+            {
+                Children = new Drawable[]
+                {
+                    track = new Container
+                    {
+                        Anchor = Anchor.Centre,
+                        Origin = Anchor.Centre,
+                        Masking = true,
+                        CornerRadius = track_thickness / 2,
+                        Children = new Drawable[] { Box, SelectionBox },
+                    },
+                    travel = new Container
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Children = new Drawable[]
+                        {
+                            ticks = new Container { RelativeSizeAxes = Axes.Both },
+                            thumb = new SliderThumb(thumb_size),
+                        },
+                    },
+                },
+            });
+
+            applyOrientation();
 
             // Value is separate from the slider's range-constrained number, so binding it to a view model never copies the
             // source's range onto the slider (or the slider's range onto the source).
@@ -380,7 +428,11 @@ namespace OsuXaml.Controls
                 ValueChanged?.Invoke(e.NewValue);
             };
 
-            Value.DisabledChanged += disabled => CurrentNumber.Disabled = disabled;
+            Value.DisabledChanged += disabled =>
+            {
+                CurrentNumber.Disabled = disabled;
+                this.FadeTo(disabled ? 0.5f : 1, 150, Easing.OutQuint);
+            };
 
             // Changes that don't come from Value come from the user (dragging, clicking, keys) and snap to ticks.
             CurrentNumber.ValueChanged += e =>
@@ -444,20 +496,18 @@ namespace OsuXaml.Controls
                 orientation = value;
 
                 // Move the default thickness to the new cross axis, unless a size was set.
-                if (value == Orientation.Vertical && Width == 0 && Height == thickness)
+                if (value == Orientation.Vertical && Width == 0 && Height == defaultThickness)
                 {
                     Height = 0;
-                    Width = thickness;
+                    Width = defaultThickness;
                 }
-                else if (value == Orientation.Horizontal && Height == 0 && Width == thickness)
+                else if (value == Orientation.Horizontal && Height == 0 && Width == defaultThickness)
                 {
                     Width = 0;
-                    Height = thickness;
+                    Height = defaultThickness;
                 }
 
-                SelectionBox.ClearTransforms();
-                SelectionBox.Anchor = SelectionBox.Origin = value == Orientation.Vertical ? Anchor.BottomLeft : Anchor.TopLeft;
-                SelectionBox.Scale = Vector2.One;
+                applyOrientation();
                 ticksValid = false;
 
                 if (IsLoaded)
@@ -476,6 +526,7 @@ namespace OsuXaml.Controls
             }
         }
 
+        /// <summary>Where tick marks are drawn. Ticks get rows of their own beside the thumb, so the slider grows to make room unless it has a size.</summary>
         public TickPlacement TickPlacement
         {
             get => tickPlacement;
@@ -483,6 +534,8 @@ namespace OsuXaml.Controls
             {
                 tickPlacement = value;
                 ticksValid = false;
+                applyThickness();
+                applyOrientation();
             }
         }
 
@@ -496,6 +549,10 @@ namespace OsuXaml.Controls
         public double LargeChange { get; set; } = 10;
 
         private bool vertical => orientation == Orientation.Vertical;
+
+        private bool ticksBefore => tickPlacement == TickPlacement.TopLeft || tickPlacement == TickPlacement.Both;
+
+        private bool ticksAfter => tickPlacement == TickPlacement.BottomRight || tickPlacement == TickPlacement.Both;
 
         private double snap(double value)
         {
@@ -518,9 +575,79 @@ namespace OsuXaml.Controls
             syncing = false;
         }
 
+        /// <summary>Grows or shrinks the default cross size for the tick rows, while the slider has no size of its own.</summary>
+        private void applyThickness()
+        {
+            float thickness = thumb_row + (ticksBefore ? tick_row : 0) + (ticksAfter ? tick_row : 0);
+
+            if (vertical && Width == defaultThickness)
+                Width = thickness;
+            else if (!vertical && Height == defaultThickness)
+                Height = thickness;
+
+            defaultThickness = thickness;
+        }
+
+        private void applyOrientation()
+        {
+            // The thumb row sits between the tick rows; with a size larger than needed, the whole lot is centred.
+            float shift = ((ticksBefore ? tick_row : 0) - (ticksAfter ? tick_row : 0)) / 2;
+
+            thumb.ClearTransforms();
+
+            if (vertical)
+            {
+                body.RelativeSizeAxes = Axes.Y;
+                body.Size = new Vector2(thumb_row, 1);
+                body.Anchor = body.Origin = Anchor.TopCentre;
+                body.Position = new Vector2(shift, 0);
+
+                track.RelativeSizeAxes = Axes.Y;
+                track.Size = new Vector2(track_thickness, 1);
+
+                SelectionBox.RelativeSizeAxes = Axes.X;
+                SelectionBox.Anchor = SelectionBox.Origin = Anchor.BottomCentre;
+                SelectionBox.Size = new Vector2(1, 0);
+
+                travel.Padding = new MarginPadding { Vertical = RangePadding };
+
+                thumb.Anchor = Anchor.BottomCentre;
+                thumb.RelativePositionAxes = Axes.Y;
+                thumb.Position = new Vector2(0, IsLoaded ? -NormalizedValue : 0);
+            }
+            else
+            {
+                body.RelativeSizeAxes = Axes.X;
+                body.Size = new Vector2(1, thumb_row);
+                body.Anchor = body.Origin = Anchor.CentreLeft;
+                body.Position = new Vector2(0, shift);
+
+                track.RelativeSizeAxes = Axes.X;
+                track.Size = new Vector2(1, track_thickness);
+
+                SelectionBox.RelativeSizeAxes = Axes.Y;
+                SelectionBox.Anchor = SelectionBox.Origin = Anchor.CentreLeft;
+                SelectionBox.Size = new Vector2(0, 1);
+
+                travel.Padding = new MarginPadding { Horizontal = RangePadding };
+
+                thumb.Anchor = Anchor.CentreLeft;
+                thumb.RelativePositionAxes = Axes.X;
+                thumb.Position = new Vector2(IsLoaded ? NormalizedValue : 0, 0);
+            }
+
+            SelectionBox.Scale = Vector2.One;
+        }
+
         protected override void UpdateValue(float value)
         {
-            SelectionBox.ScaleTo(vertical ? new Vector2(1, value) : new Vector2(value, 1), 300, Easing.OutQuint);
+            // The thumb follows the pointer exactly while dragged; keys, clicks and bindings glide it there.
+            double duration = IsDragged ? 0 : 200;
+
+            if (vertical)
+                thumb.MoveToY(-value, duration, Easing.OutQuint);
+            else
+                thumb.MoveToX(value, duration, Easing.OutQuint);
         }
 
         protected override void Update()
@@ -529,6 +656,14 @@ namespace OsuXaml.Controls
 
             if (!ticksValid)
                 updateTicks();
+
+            // The fill ends under the thumb's centre, wherever its animation has got to.
+            if (vertical)
+                SelectionBox.Height = RangePadding - thumb.Y * travel.ChildSize.Y;
+            else
+                SelectionBox.Width = RangePadding + thumb.X * travel.ChildSize.X;
+
+            thumb.SetState(IsDragged || pressed ? SliderThumb.State.Pressed : IsHovered ? SliderThumb.State.Hovered : SliderThumb.State.Idle);
         }
 
         private void updateTicks()
@@ -544,24 +679,26 @@ namespace OsuXaml.Controls
             {
                 float fraction = (float)((v - Minimum) / range);
 
-                if (tickPlacement != TickPlacement.BottomRight)
-                    ticks.Add(createTick(fraction, start: true));
-                if (tickPlacement != TickPlacement.TopLeft)
-                    ticks.Add(createTick(fraction, start: false));
+                if (ticksBefore)
+                    ticks.Add(createTick(fraction, before: true));
+                if (ticksAfter)
+                    ticks.Add(createTick(fraction, before: false));
             }
         }
 
-        private Drawable createTick(float fraction, bool start)
+        /// <summary>A short line just outside the thumb row, so the thumb never covers it.</summary>
+        private Drawable createTick(float fraction, bool before)
         {
+            const float gap = 1;
+
             return new Box
             {
-                Anchor = vertical ? (start ? Anchor.BottomLeft : Anchor.BottomRight) : (start ? Anchor.TopLeft : Anchor.BottomLeft),
-                Origin = vertical ? (start ? Anchor.CentreLeft : Anchor.CentreRight) : (start ? Anchor.TopCentre : Anchor.BottomCentre),
+                Anchor = vertical ? (before ? Anchor.BottomLeft : Anchor.BottomRight) : (before ? Anchor.TopLeft : Anchor.BottomLeft),
+                Origin = vertical ? (before ? Anchor.CentreRight : Anchor.CentreLeft) : (before ? Anchor.BottomCentre : Anchor.TopCentre),
                 RelativePositionAxes = vertical ? Axes.Y : Axes.X,
-                RelativeSizeAxes = vertical ? Axes.X : Axes.Y,
-                Size = vertical ? new Vector2(0.35f, 1) : new Vector2(1, 0.35f),
-                X = vertical ? 0 : fraction,
-                Y = vertical ? -fraction : 0,
+                Size = vertical ? new Vector2(tick_length, 1) : new Vector2(1, tick_length),
+                X = vertical ? (before ? -gap : gap) : fraction,
+                Y = vertical ? -fraction : (before ? -gap : gap),
                 Colour = Theme.Text,
                 Alpha = 0.35f,
             };
@@ -614,13 +751,52 @@ namespace OsuXaml.Controls
         /// <summary>Sets the value as user input does: clamped to the range and snapped to ticks when snapping is on.</summary>
         private void changeValueByUser(double value) => CurrentNumber.Value = Math.Clamp(value, Minimum, Maximum);
 
+        // The base class outlines a focused slider, which needs masking; the thumb row must not be clipped, so no outline.
+        protected override void OnFocus(FocusEvent e)
+        {
+            base.OnFocus(e);
+            BorderThickness = 0;
+        }
+
+        private bool isOnThumb(Vector2 screenSpacePosition)
+        {
+            var local = thumb.ToLocalSpace(screenSpacePosition);
+            return Vector2.Distance(local, thumb.DrawSize / 2) <= thumb_size / 2 + 2;
+        }
+
+        // Grabbing the thumb drags it relative to where it was grabbed instead of jumping to the pointer.
+        protected override bool ShouldHandleAsRelativeDrag(MouseDownEvent e) => isOnThumb(e.ScreenSpaceMousePosition);
+
+        protected override bool OnMouseDown(MouseDownEvent e)
+        {
+            if (e.Button == MouseButton.Left && !CurrentNumber.Disabled)
+            {
+                pressed = true;
+                pressedOnThumb = isOnThumb(e.ScreenSpaceMousePosition);
+                valueAtPress = NormalizedValue;
+                pointerAtPress = ToLocalSpace(e.ScreenSpaceMousePosition).Y;
+            }
+
+            return base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseUp(MouseUpEvent e)
+        {
+            if (e.Button == MouseButton.Left)
+                pressed = false;
+
+            base.OnMouseUp(e);
+        }
+
         // SliderBar only knows horizontal input, so a vertical slider handles the pointer itself.
         protected override bool OnClick(ClickEvent e)
         {
             if (!vertical)
                 return base.OnClick(e);
 
-            setFromPointer(e.ScreenSpaceMousePosition);
+            if (!pressedOnThumb)
+                setFromPointer(e.ScreenSpaceMousePosition);
+
             return true;
         }
 
@@ -655,9 +831,73 @@ namespace OsuXaml.Controls
 
             float usable = DrawHeight - 2 * RangePadding;
             float y = ToLocalSpace(screenSpacePosition).Y;
-            float fraction = usable > 0 ? 1 - (y - RangePadding) / usable : 0;
+            float fraction;
+
+            if (usable <= 0)
+                fraction = 0;
+            else if (pressedOnThumb)
+                fraction = valueAtPress + (pointerAtPress - y) / usable;
+            else
+                fraction = 1 - (y - RangePadding) / usable;
 
             changeValueByUser(Minimum + Math.Clamp(fraction, 0, 1) * (Maximum - Minimum));
+        }
+
+        /// <summary>The round handle: a ring with an accent dot that grows while hovered and grows further while dragged.</summary>
+        private partial class SliderThumb : CompositeDrawable
+        {
+            public enum State
+            {
+                Idle,
+                Hovered,
+                Pressed,
+            }
+
+            private readonly Circle ring;
+            private readonly Circle dot;
+            private State state = State.Idle;
+
+            public SliderThumb(float size)
+            {
+                Size = new Vector2(size);
+                Origin = Anchor.Centre;
+
+                InternalChildren = new Drawable[]
+                {
+                    ring = new Circle
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Colour = Theme.Border,
+                        EdgeEffect = new osu.Framework.Graphics.Effects.EdgeEffectParameters
+                        {
+                            Type = osu.Framework.Graphics.Effects.EdgeEffectType.Shadow,
+                            Colour = Colour4.Black.Opacity(0.25f),
+                            Radius = 4,
+                            Offset = new Vector2(0, 1),
+                        },
+                    },
+                    dot = new Circle
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Anchor = Anchor.Centre,
+                        Origin = Anchor.Centre,
+                        Colour = Theme.Accent,
+                        Scale = new Vector2(0.55f),
+                    },
+                };
+            }
+
+            public void SetState(State newState)
+            {
+                if (state == newState)
+                    return;
+
+                state = newState;
+
+                float scale = newState == State.Pressed ? 0.8f : newState == State.Hovered ? 0.7f : 0.55f;
+                dot.ScaleTo(scale, 150, Easing.OutQuint);
+                ring.FadeColour(newState == State.Idle ? Theme.Border : Theme.Overlay, 150, Easing.OutQuint);
+            }
         }
     }
 
