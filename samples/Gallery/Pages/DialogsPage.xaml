@@ -1,0 +1,67 @@
+<UserControl
+    xmlns="osu-xaml"
+    xmlns:x="osu-xaml:x"
+    xmlns:local="clr-namespace:Gallery"
+    x:Class="Gallery.DialogsPage"
+    x:DataType="local:GalleryViewModel">
+
+  <UserControl.Resources>
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="#181825" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style x:Key="Heading" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#a6adc8" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style x:Key="Note" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#a6adc8" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Resources>
+
+  <Grid Padding="20" ColumnDefinitions="*,*" ColumnSpacing="20">
+
+    <StackPanel Spacing="16">
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="MESSAGEBOX" Style="{StaticResource Heading}" />
+          <WrapPanel Spacing="8">
+            <Button Content="Information" Click="OnInformation" />
+            <Button Content="Yes / No / Cancel" Click="OnQuestion" />
+            <Button Content="Warning" Click="OnWarning" />
+            <Button Content="Error" Click="OnError" />
+          </WrapPanel>
+          <TextBlock Text="{Bind Status, StringFormat='Last result: {0}'}" Style="{StaticResource Note}" />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="DIALOG" Style="{StaticResource Heading}" />
+          <TextBlock Text="SettingsDialog.xaml is a Dialog root with IsDefault and IsCancel buttons: Enter saves, Escape cancels, and the title bar drags it." Style="{StaticResource Note}" />
+          <Button Content="Settings..." Click="OnSettings" HorizontalAlignment="Left" />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="SCROLLBAR (SHARES THE VOLUME WITH THE INPUTS PAGE)" Style="{StaticResource Heading}" />
+          <ScrollBar Orientation="Horizontal" Maximum="100" ViewportSize="20" LargeChange="20" Value="{Bind Volume}" />
+          <Slider Value="{Bind Volume}" Maximum="100" TickFrequency="10" TickPlacement="BottomRight" />
+          <TextBlock Text="{Bind Volume, StringFormat='Volume {0:0}'}" Style="{StaticResource Note}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <!-- A Frame with its own back/forward bar; the pages navigate it through NavigationService. -->
+    <Border Grid.Column="1" Style="{StaticResource Card}" Padding="0">
+      <Frame NavigationUIVisibility="Visible">
+        <local:WelcomePage />
+      </Frame>
+    </Border>
+  </Grid>
+</UserControl>

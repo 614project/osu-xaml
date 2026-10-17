@@ -24,7 +24,7 @@
         <MenuItem Header="_Status bar" IsCheckable="True" IsChecked="{Bind ShowStatusBar}" />
       </MenuItem>
       <MenuItem Header="_Help">
-        <MenuItem Header="_About" Click="{Bind About}" />
+        <MenuItem Header="_About" Click="OnAbout" />
       </MenuItem>
     </Menu>
 
@@ -58,6 +58,9 @@
       </TabItem>
       <TabItem Header="Shapes">
         <local:ShapesPage />
+      </TabItem>
+      <TabItem Header="Dialogs">
+        <local:DialogsPage />
       </TabItem>
     </TabControl>
   </DockPanel>

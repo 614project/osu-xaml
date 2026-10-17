@@ -122,8 +122,6 @@ namespace Gallery
 
         public void SaveFile() => Command("Saved");
 
-        public void About() => Command("osu!xaml gallery: WPF-style controls on osu!framework");
-
         public void AddTag()
         {
             Tags.Add($"Tag {nextTag++}");

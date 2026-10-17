@@ -1,0 +1,16 @@
+<Page
+    xmlns="osu-xaml"
+    xmlns:x="osu-xaml:x"
+    xmlns:local="clr-namespace:Gallery"
+    x:Class="Gallery.WelcomePage"
+    x:DataType="local:GalleryViewModel"
+    Title="Welcome">
+
+  <StackPanel Padding="20" Spacing="12">
+    <TextBlock Text="FRAME AND PAGES" FontWeight="Bold" Foreground="#a6adc8" FontSize="14" />
+    <TextBlock Text="{Bind Greeting}" FontSize="26" FontWeight="Bold" />
+    <TextBlock Text="Pages slide in, the back stack keeps them alive, and the arrows above, Alt+Left and Alt+Right or the mouse's side buttons move through history."
+               TextWrapping="Wrap" Foreground="#a6adc8" FontSize="14" />
+    <Button Content="Show the people" Click="OnPeople" HorizontalAlignment="Left" />
+  </StackPanel>
+</Page>
