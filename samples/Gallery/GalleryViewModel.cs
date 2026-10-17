@@ -66,6 +66,8 @@ namespace Gallery
 
         public Bindable<string> PasswordInfo { get; } = new Bindable<string>("No password yet");
 
+        public Bindable<string> Notes { get; } = new Bindable<string>("Enter starts a new line,\nand the box grows up to six of them.");
+
         public BindableBool Busy { get; } = new BindableBool(true);
 
         public BindableBool ShowDetails { get; } = new BindableBool();

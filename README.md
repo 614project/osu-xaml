@@ -13,7 +13,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml/Controls` | WPF식 컨트롤 (패널, 목록, 메뉴, 탭, 입력, 날짜 등. 아래 [목록](#wpf식-컨트롤)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
-| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 360개 |
+| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 384개 |
 
 ## 실행
 
@@ -156,10 +156,11 @@ public partial class MainView : CompositeDrawable
 | | `Page`, `Frame` | `<Page x:Class="App.HomePage" Title="Home">` 루트, `Frame.Navigate(page)`, `GoBack()`/`GoForward()`, `CanGoBack`/`CanGoForward` (바인딩 가능), `NavigationService`, 뒤로 가기 기록 유지, 슬라이드 전환, `NavigationUIVisibility` |
 | | `Dialog` | `<Dialog x:Class="App.SettingsDialog" Title="Settings">` 루트, `await dialog.ShowDialog(this)`, `DialogResult`, `Closing`, 버튼의 `IsDefault`/`IsCancel` (Enter/Escape) |
 | | `ScrollViewer` | `VerticalScrollBarVisibility`/`HorizontalScrollBarVisibility` (`Auto`, `Visible`, `Hidden`, `Disabled`), `ScrollToEnd()`, `VerticalOffset` |
-| 텍스트 | `TextBlock` | `Text`, `FontSize`, `FontWeight`, `Foreground`, `TextWrapping`, `TextTrimming` |
+| 텍스트 | `TextBlock` | `Text` (`\n`에서 줄바꿈), `FontSize`, `FontWeight`, `FontStyle`, `TextDecorations`, `Foreground`, `TextWrapping`, `TextTrimming`, 인라인 |
+| | `Run`, `Span`, `Bold`, `Italic`, `Underline`, `LineBreak` | `TextBlock` 안의 인라인. `Text`, `FontSize`, `FontWeight`, `FontStyle`, `TextDecorations`, `Foreground` |
 | | `Label` | `Content="_Name"` (Alt+N 접근 키), `Target="{Binding ElementName=box}"` |
 | | `Hyperlink` | `NavigateUri`, `Click`, `RequestNavigate` |
-| | `TextBox` | `Text` (양방향), `PlaceholderText`, `MaxLength`, `IsReadOnly`, `TextChanged` |
+| | `TextBox` | `Text` (양방향), `PlaceholderText`, `MaxLength`, `IsReadOnly`, `TextChanged`, `AcceptsReturn`, `TextWrapping`, `MinLines`/`MaxLines` |
 | | `PasswordBox` | `Password` (양방향), `PasswordChar`, `PasswordChanged` |
 | 버튼 | `Button` | `Content` 또는 자식 요소, `Click`, `IsEnabled`, 호버/누름 애니메이션 |
 | | `RepeatButton` | 누르고 있으면 `Delay` 뒤 `Interval`마다 `Click` |
@@ -218,6 +219,26 @@ private async void OnSettings()
 
 `Frame`은 WPF처럼 `Page` 인스턴스를 보여주고, 뒤로 간 페이지는 버리지 않고 기록에 남겨 같은 상태로 돌아옵니다. 페이지 안에서는 `NavigationService.Navigate(new DetailsPage())`로 이동합니다.
 
+### 여러 줄 텍스트
+
+`TextBlock`은 `Text` 안의 `\n`(XAML 속성에서는 `&#10;`)과 `<LineBreak />`에서 줄을 바꾸고, 내용에 인라인을 섞어 쓸 수 있습니다. 생성기는 WPF와 같은 공백 규칙을 따릅니다. 이어진 공백과 줄바꿈은 공백 하나가 되고, 태그 바로 안쪽과 `LineBreak` 앞뒤의 공백은 지워집니다. `xml:space="preserve"`를 붙이면 그대로 둡니다.
+
+```xml
+<TextBlock TextWrapping="Wrap">
+  Text mixes <Bold>bold</Bold>, <Italic>italic</Italic> and <Run Foreground="#f9e2af">coloured</Run> runs,
+  <LineBreak />
+  and <Run Text="{Bind Name}" FontWeight="Bold" /> breaks onto a new line.
+</TextBlock>
+
+<TextBox Text="{Bind Notes}" AcceptsReturn="True" TextWrapping="Wrap" MinLines="3" MaxLines="6" />
+```
+
+- 각 줄은 그 줄에서 가장 큰 글꼴만큼 높아지고, `TextTrimming`은 줄마다 따로 말줄임표를 붙입니다.
+- `Text`는 인라인의 글자를 이어 붙인 값입니다. `Text`를 직접 바꾸면 인라인 대신 그 글자가 나옵니다.
+- `AcceptsReturn="True"`인 `TextBox`는 Enter로 줄을 바꾸고 붙여 넣은 줄바꿈도 남깁니다. `Text`에는 `\n`으로 들어가고, 뷰모델이 넣은 `\r\n`도 `\n`으로 맞춥니다.
+- `Height`가 없으면 `AcceptsReturn`이나 `TextWrapping`을 켠 상자는 줄 수만큼 자라고, `MinLines`/`MaxLines`가 그 범위를 정합니다. `Height`를 주면 그 높이 안에서 캐럿을 따라가고 마우스 휠로도 스크롤합니다.
+- 위·아래 화살표는 열 위치를 기억하며 줄을 옮깁니다. PageUp/PageDown, 줄 단위 Home/End, Ctrl+Home/End, 세 번 클릭(줄 선택)도 WPF처럼 동작합니다.
+
 ### 레이아웃 동작
 
 - 매 프레임 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 패널이 자식을 측정(Measure)하고 배치(Arrange)합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다.
@@ -233,7 +254,7 @@ private async void OnSettings()
 ## 아직 없는 것
 
 - 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
-- 여러 줄 `TextBox` (`AcceptsReturn`): osu!framework의 TextBox가 한 줄 전용입니다. `TextBlock` 인라인 (`<Run>`, `<Bold>`, `<LineBreak>`)과 텍스트 안의 줄바꿈 문자도 없습니다
+- 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
 - 가상화: `ListBox`, `ListView`, `DataGrid`, `TreeView`는 보이지 않는 행까지 모두 만듭니다. 수천 행이면 느려집니다
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다

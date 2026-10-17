@@ -41,13 +41,16 @@
         </Border>
 
         <Border Style="{StaticResource Card}">
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
             <TextBlock Grid.ColumnSpan="2" Text="TEXT" Style="{StaticResource Heading}" />
             <Label Grid.Row="1" Content="_Name" Target="{Binding ElementName=nameBox}" VerticalAlignment="Center" />
             <TextBox x:Name="nameBox" Grid.Row="1" Grid.Column="1" Text="{Bind Name}" PlaceholderText="Your name" />
             <Label Grid.Row="2" Content="_Password" Target="{Binding ElementName=passwordBox}" VerticalAlignment="Center" />
             <PasswordBox x:Name="passwordBox" Grid.Row="2" Grid.Column="1" Password="{Bind Password}" PlaceholderText="Type a password" />
             <TextBlock Grid.Row="3" Grid.Column="1" Text="{Bind PasswordInfo}" FontSize="14" Foreground="#a6adc8" />
+            <Label Grid.Row="4" Content="N_otes" Target="{Binding ElementName=notesBox}" VerticalAlignment="Top" />
+            <TextBox x:Name="notesBox" Grid.Row="4" Grid.Column="1" Text="{Bind Notes}" AcceptsReturn="True" TextWrapping="Wrap"
+                     MinLines="3" MaxLines="6" />
           </Grid>
         </Border>
 
