@@ -203,7 +203,8 @@ namespace OsuXaml.Controls
 
         public override void SelectContainer(Drawable container, UIEvent e = null)
         {
-            if (container is TabItem { IsEnabled: false })
+            // A selection bound to a disabled bindable is locked, as for the keyboard in selectFrom.
+            if (container is TabItem { IsEnabled: false } || SelectedIndex.Disabled)
                 return;
 
             base.SelectContainer(container, e);

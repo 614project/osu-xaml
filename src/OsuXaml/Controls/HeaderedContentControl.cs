@@ -102,6 +102,15 @@ namespace OsuXaml.Controls
         /// <summary>Creates the drawable for a text header.</summary>
         protected virtual Drawable CreateHeaderTextContent(LocalisableString text) => new TextBlock { Text = text, Colour = Foreground };
 
+        protected override void OnForegroundChanged()
+        {
+            base.OnForegroundChanged();
+
+            // A text header takes its colour from CreateHeaderTextContent, which may use Foreground; create it again.
+            // (Derived controls' constructors can get here before the header presenter exists.)
+            headerPresenter?.RecreateText();
+        }
+
         /// <summary>The size of the header row for a given width, including <see cref="HeaderPadding"/>.</summary>
         protected Vector2 MeasureHeader(float availableWidth)
         {
@@ -191,12 +200,22 @@ namespace OsuXaml.Controls
         {
             private readonly HeaderedContentControl owner;
 
+            private Drawable ownText;
+
             public HeaderPresenter(HeaderedContentControl owner)
             {
                 this.owner = owner;
             }
 
-            protected override Drawable CreateTextContent(LocalisableString text) => owner.CreateHeaderTextContent(text);
+            /// <summary>Builds a text header again, so it picks up the owner's current text style.</summary>
+            public void RecreateText()
+            {
+                // Re-setting the template presents the content again.
+                if (ownText != null && ReferenceEquals(PresentedContent, ownText))
+                    ContentTemplate = ContentTemplate;
+            }
+
+            protected override Drawable CreateTextContent(LocalisableString text) => ownText = owner.CreateHeaderTextContent(text);
         }
     }
 }

@@ -14,6 +14,7 @@ namespace OsuXaml.Controls
     public partial class Label : ContentControl
     {
         private Key? accessKey;
+        private TextBlock accessText;
 
         public Label()
         {
@@ -25,7 +26,8 @@ namespace OsuXaml.Controls
         public Drawable Target { get; set; }
 
         /// <summary>The key that, with Alt, focuses <see cref="Target"/>; taken from the underscore in the text.</summary>
-        public Key? AccessKey => accessKey;
+        /// <remarks>Only while the text it came from is shown: other content has no access key.</remarks>
+        public Key? AccessKey => accessText != null && ReferenceEquals(PresentedContent, accessText) ? accessKey : null;
 
         /// <summary>Moves focus to <see cref="Target"/> if it can take it. Returns whether it did.</summary>
         public bool FocusTarget()
@@ -45,7 +47,7 @@ namespace OsuXaml.Controls
         {
             string shown = ParseAccessText(text.ToString(), out char? key);
             accessKey = key == null ? null : keyFor(key.Value);
-            return new TextBlock { Text = shown, Colour = Foreground };
+            return accessText = new TextBlock { Text = shown, Colour = Foreground };
         }
 
         // The click moves focus itself; the framework must not take it away again afterwards.
@@ -55,7 +57,7 @@ namespace OsuXaml.Controls
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {
-            if (accessKey != null && e.AltPressed && !e.ControlPressed && e.Key == accessKey && FocusTarget())
+            if (AccessKey != null && e.AltPressed && !e.ControlPressed && e.Key == AccessKey && FocusTarget())
                 return true;
 
             return base.OnKeyDown(e);

@@ -37,14 +37,27 @@ namespace OsuXaml.Controls
             repeat?.Cancel();
             repeat = Scheduler.AddDelayed(() =>
             {
-                repeat = Scheduler.AddDelayed(() =>
-                {
-                    if (pointerIsOver())
-                        raiseClick();
-                }, System.Math.Max(1, Interval), true);
+                // The first repeat comes Delay after the press, then one every Interval.
+                repeatOnce();
+
+                if (IsPressed)
+                    repeat = Scheduler.AddDelayed(repeatOnce, System.Math.Max(1, Interval), true);
             }, System.Math.Max(0, Delay));
 
             return true;
+        }
+
+        private void repeatOnce()
+        {
+            // A release this button never saw (it was out of the tree at the time) still ends the press.
+            if (pressState?.Mouse.IsPressed(MouseButton.Left) != true)
+            {
+                stop();
+                return;
+            }
+
+            if (pointerIsOver())
+                raiseClick();
         }
 
         protected override void OnMouseUp(MouseUpEvent e)

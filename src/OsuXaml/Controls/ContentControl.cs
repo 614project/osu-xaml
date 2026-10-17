@@ -61,6 +61,10 @@ namespace OsuXaml.Controls
         private ContentPresenter presenter;
         private bool presentedOnce;
 
+        // The content alignments this control gave the presented content, so later changes replace them and a detach undoes them.
+        private HorizontalAlignment? givenHorizontal;
+        private VerticalAlignment? givenVertical;
+
         private Colour4 foreground = Theme.Text;
         private HorizontalAlignment horizontalContentAlignment;
         private VerticalAlignment verticalContentAlignment;
@@ -71,6 +75,10 @@ namespace OsuXaml.Controls
 
         private bool sizeToContentX;
         private bool sizeToContentY;
+
+        // No size of its own when loaded; such a control also sizes to its content once it is moved out of a panel.
+        private bool autoWidth;
+        private bool autoHeight;
 
         protected ContentControl()
         {
@@ -148,6 +156,8 @@ namespace OsuXaml.Controls
                 foreground = value;
                 if (ownsPresented && presented is TextBlock text)
                     text.Colour = value;
+
+                OnForegroundChanged();
             }
         }
 
@@ -239,6 +249,11 @@ namespace OsuXaml.Controls
         {
         }
 
+        /// <summary>Called after <see cref="Foreground"/> changes, also from the constructors of derived controls.</summary>
+        protected virtual void OnForegroundChanged()
+        {
+        }
+
         [BackgroundDependencyLoader]
         private void load()
         {
@@ -307,9 +322,16 @@ namespace OsuXaml.Controls
             if (slot == null)
                 return;
 
-            // Drawables handed in as Content belong to the caller, so they are detached rather than disposed.
+            // Drawables handed in as Content belong to the caller, so they are detached rather than disposed,
+            // getting back the margin and size the slot took over.
             if (!ownsPresented)
-                slot.Remove(presented, false);
+            {
+                slot.Detach();
+                unalignContent(presented);
+            }
+
+            givenHorizontal = null;
+            givenVertical = null;
 
             contentArea.Remove(slot, true);
             slot = null;
@@ -320,10 +342,21 @@ namespace OsuXaml.Controls
         {
             var props = Layout.Get(drawable);
 
-            if (props.HorizontalAlignment == HorizontalAlignment.Stretch)
-                props.HorizontalAlignment = horizontalContentAlignment;
-            if (props.VerticalAlignment == VerticalAlignment.Stretch)
-                props.VerticalAlignment = verticalContentAlignment;
+            // Content that set its own alignment keeps it; an alignment this control gave is replaced on change.
+            if (props.HorizontalAlignment == HorizontalAlignment.Stretch || props.HorizontalAlignment == givenHorizontal)
+                props.HorizontalAlignment = (givenHorizontal = horizontalContentAlignment).Value;
+            if (props.VerticalAlignment == VerticalAlignment.Stretch || props.VerticalAlignment == givenVertical)
+                props.VerticalAlignment = (givenVertical = verticalContentAlignment).Value;
+        }
+
+        private void unalignContent(Drawable drawable)
+        {
+            var props = Layout.Get(drawable);
+
+            if (givenHorizontal != null && props.HorizontalAlignment == givenHorizontal)
+                props.HorizontalAlignment = HorizontalAlignment.Stretch;
+            if (givenVertical != null && props.VerticalAlignment == givenVertical)
+                props.VerticalAlignment = VerticalAlignment.Stretch;
         }
 
         private void applyTemplate()
@@ -369,19 +402,26 @@ namespace OsuXaml.Controls
         {
             base.LoadComplete();
 
-            sizeToContentX = !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.X) && !AutoSizeAxes.HasFlag(Axes.X) && Width == 0;
-            sizeToContentY = !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.Y) && !AutoSizeAxes.HasFlag(Axes.Y) && Height == 0;
+            autoWidth = !RelativeSizeAxes.HasFlag(Axes.X) && !AutoSizeAxes.HasFlag(Axes.X) && Width == 0;
+            autoHeight = !RelativeSizeAxes.HasFlag(Axes.Y) && !AutoSizeAxes.HasFlag(Axes.Y) && Height == 0;
+            sizeToContentX = !(Parent is Slot) && autoWidth;
+            sizeToContentY = !(Parent is Slot) && autoHeight;
         }
 
         protected override void UpdateAfterChildren()
         {
             base.UpdateAfterChildren();
 
-            if (sizeToContentX || sizeToContentY)
+            // Out of a panel, nothing else sizes a control that was loaded in one (the slot's stretch is undone on removal).
+            bool inPanel = Parent is Slot;
+            bool sizeX = sizeToContentX || (autoWidth && !inPanel);
+            bool sizeY = sizeToContentY || (autoHeight && !inPanel);
+
+            if (sizeX || sizeY)
             {
                 var desired = Measure(new Vector2(float.PositiveInfinity));
-                if (sizeToContentX) Width = desired.X;
-                if (sizeToContentY) Height = desired.Y;
+                if (sizeX) Width = desired.X;
+                if (sizeY) Height = desired.Y;
             }
 
             if (templateSlot != null)
