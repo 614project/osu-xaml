@@ -10,10 +10,10 @@ namespace OsuXaml.Controls
 {
     /// <summary>
     /// Clickable link text, like WPF's Hyperlink: <c>&lt;Hyperlink NavigateUri="https://..."&gt;osu!framework&lt;/Hyperlink&gt;</c>.
-    /// Hovering underlines and brightens it. A click raises <see cref="Click"/>, then <see cref="RequestNavigate"/> if anything
+    /// Hovering underlines and brightens it and shows the hand cursor. A click raises <see cref="Click"/>, then <see cref="RequestNavigate"/> if anything
     /// handles it, otherwise opens <see cref="NavigateUri"/> in the system browser. It sizes to its text and is left-aligned by default.
     /// </summary>
-    public partial class Hyperlink : ContentControl
+    public partial class Hyperlink : ContentControl, IHasDefaultCursor
     {
         private readonly Box underline;
         private Colour4 hoverForeground = Theme.Accent.Lighten(0.25f);
@@ -76,6 +76,8 @@ namespace OsuXaml.Controls
 
         /// <summary>Raised with <see cref="NavigateUri"/> on click. While anything handles it, the link doesn't open the browser itself.</summary>
         public event Action<string> RequestNavigate;
+
+        Cursor IHasDefaultCursor.DefaultCursor => isEnabled ? Cursors.Hand : null;
 
         /// <summary>Opens <paramref name="uri"/> when nothing handles <see cref="RequestNavigate"/>.</summary>
         protected virtual void Navigate(string uri) => host?.OpenUrlExternally(uri);
