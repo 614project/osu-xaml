@@ -202,7 +202,7 @@ public partial class MainView : CompositeDrawable
 
 ### 대화상자와 페이지 이동
 
-WPF의 `MessageBox.Show`와 `ShowDialog()`는 결과가 나올 때까지 호출한 스레드를 막지만, osu!framework의 Update 스레드는 막을 수 없습니다. 그래서 같은 이름의 메서드가 `Task`를 돌려주고, 코드비하인드에서는 `await`로 씁니다. 대화상자는 창 전체를 어둡게 덮고 아래 입력을 막는 모달로 열립니다.
+WPF의 `MessageBox.Show`와 `ShowDialog()`는 결과가 나올 때까지 호출한 스레드를 막지만, osu!framework의 Update 스레드는 막을 수 없습니다. 그래서 같은 이름의 메서드가 `Task`를 돌려주고, 코드비하인드에서는 `await`로 씁니다. 대화상자는 창 전체를 어둡게 덮고 아래 입력을 막는 모달로 열립니다. WPF처럼 앱 전체에 모달이라서, 한 게임에 `Window`가 여럿이면 다른 Window도 함께 어두워지고 클릭·키·메뉴·툴팁을 받지 않습니다. 여러 Window에 대화상자가 열려 있으면 가장 나중에 연 것이 입력을 받습니다.
 
 ```csharp
 private async void OnDelete()
@@ -279,7 +279,6 @@ private async void OnSettings()
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
 - 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
 - `Icon Kind`의 오타는 빌드 오류가 아니라 실행 중 물음표 아이콘으로 나타납니다
-- 모달은 `Window`(팝업 레이어) 단위입니다. 한 게임에 Window가 여럿이면 각자 따로 막힙니다
 - 여러 칸에 걸친 Grid 자식은 Auto 크기 계산에 들어가지 않습니다 (WPF는 반영합니다)
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
 - 백그라운드 스레드에서 뷰모델을 바꿀 때의 Update 스레드 마샬링
