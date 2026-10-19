@@ -54,7 +54,7 @@ namespace OsuXaml.Generator
             string elementName = markup.Get("ElementName");
 
             if (elementName != null)
-                dcType = names.TryGetValue(elementName, out var named) ? (named == rootElement ? rootType : resolveType(named.Name.NamespaceName, named.Name.LocalName)) : null;
+                dcType = names.TryGetValue(elementName, out var named) ? (named == rootElement ? rootType : elementType(named)) : null;
             else
                 dcType = markup.Get("Source") != null ? scope.RootDataContextType : scope.DataContextType;
 
@@ -80,7 +80,7 @@ namespace OsuXaml.Generator
             string elementName = markup.Get("ElementName");
 
             if (elementName != null)
-                dcType = names.TryGetValue(elementName, out var named) ? (named == rootElement ? rootType : resolveType(named.Name.NamespaceName, named.Name.LocalName)) : null;
+                dcType = names.TryGetValue(elementName, out var named) ? (named == rootElement ? rootType : elementType(named)) : null;
             else
                 dcType = markup.Get("Source") != null ? scope.RootDataContextType : scope.DataContextType;
 

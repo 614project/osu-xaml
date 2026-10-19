@@ -91,7 +91,7 @@ namespace OsuXaml.Generator
                 }
 
                 dc = named == rootElement ? "this" : "this." + elementName;
-                dcType = named == rootElement ? rootType : resolveType(named.Name.NamespaceName, named.Name.LocalName);
+                dcType = named == rootElement ? rootType : elementType(named);
                 toNamedElement = true;
                 return dcType != null;
             }

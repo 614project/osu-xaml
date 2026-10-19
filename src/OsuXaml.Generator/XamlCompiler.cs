@@ -489,7 +489,7 @@ namespace OsuXaml.Generator
 
                 if (primitive == null)
                 {
-                    report(Diagnostics.UnknownType, element, "x:" + element.Name.LocalName, " (use x:String, x:Double, x:Single, x:Int32 or x:Boolean)");
+                    report(Diagnostics.UnknownType, element, "x:" + element.Name.LocalName, " (use x:String, x:Double, x:Single, x:Int32, x:Int64 or x:Boolean)");
                     return (null, null);
                 }
 
@@ -522,6 +522,7 @@ namespace OsuXaml.Generator
                 case "Single": return compilation.GetSpecialType(SpecialType.System_Single);
                 case "Int32": return compilation.GetSpecialType(SpecialType.System_Int32);
                 case "Boolean": return compilation.GetSpecialType(SpecialType.System_Boolean);
+                case "Int64": return compilation.GetSpecialType(SpecialType.System_Int64);
                 default: return null;
             }
         }
@@ -730,7 +731,7 @@ namespace OsuXaml.Generator
             if (element == null || directive_namespaces.Contains(element.Name.NamespaceName))
                 return false;
 
-            for (var type = resolveType(element.Name.NamespaceName, element.Name.LocalName); type != null; type = type.BaseType)
+            for (var type = elementType(element); type != null; type = type.BaseType)
             {
                 if (type.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "OsuXaml.TrimSurroundingWhitespaceAttribute"))
                     return true;
@@ -757,6 +758,10 @@ namespace OsuXaml.Generator
                 string ownerName = name.Substring(0, dot);
                 string memberName = name.Substring(dot + 1);
                 var owner = resolveType(value.Namespace.Length > 0 ? value.Namespace : value.Context.GetDefaultNamespace().NamespaceName, ownerName);
+
+                // <BasicDropdown.Items> on a BasicDropdown<string> names the element's own generic type (or a base) without its type arguments.
+                if (owner == null || !inherits(type, owner))
+                    owner = baseNamed(type, ownerName) ?? owner;
 
                 if (owner == null)
                 {
@@ -815,6 +820,18 @@ namespace OsuXaml.Generator
             }
 
             report(Diagnostics.UnknownMember, value.Source, type.Name, name);
+        }
+
+        /// <summary>The type or base type of <paramref name="type"/> called <paramref name="name"/> (generic ones included), or null.</summary>
+        private static INamedTypeSymbol baseNamed(INamedTypeSymbol type, string name)
+        {
+            for (var t = type; t != null; t = t.BaseType)
+            {
+                if (t.Name == name)
+                    return t;
+            }
+
+            return null;
         }
 
         private void emitPropertyElement(string v, INamedTypeSymbol type, XElement property, Scope scope)
@@ -903,7 +920,7 @@ namespace OsuXaml.Generator
         {
             var type = directive_namespaces.Contains(child.Name.NamespaceName)
                 ? directiveType(child.Name.LocalName)
-                : resolveType(child.Name.NamespaceName, child.Name.LocalName);
+                : elementType(child);
 
             return type == null || implicitly(type, bindableClassValueType(target) ?? target) || isTemplateType(target);
         }
