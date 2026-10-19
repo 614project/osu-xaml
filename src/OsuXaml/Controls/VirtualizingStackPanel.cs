@@ -108,9 +108,23 @@ namespace OsuXaml.Controls
         private int bringIntoViewStill;
         private int bringIntoViewRequests;
 
-        public Orientation Orientation { get; set; }
+        // The extent and widest item at the last arrange; when arranging changes them, the panel's desired size changed.
+        private Vector2 arrangedExtent = new Vector2(float.NaN);
 
-        public float Spacing { get; set; }
+        private Orientation orientation;
+        private float spacing;
+
+        public Orientation Orientation
+        {
+            get => orientation;
+            set => Layout.SetAffectsMeasure(this, ref orientation, value);
+        }
+
+        public float Spacing
+        {
+            get => spacing;
+            set => Layout.SetAffectsMeasure(this, ref spacing, value);
+        }
 
         /// <summary>How many items have a container right now.</summary>
         public int RealizedCount => Owner == null ? Slots.Count : realized.Count;
@@ -227,8 +241,14 @@ namespace OsuXaml.Controls
         {
             base.Update();
 
-            if (Owner != null)
-                updateRealized();
+            if (Owner == null)
+                return;
+
+            updateRealized();
+
+            // Bringing a row into view corrects the scroll position every frame until it settles.
+            if (bringIntoView >= 0)
+                InvalidateArrange();
         }
 
         protected override void ArrangeOverride(Vector2 size)
@@ -279,7 +299,15 @@ namespace OsuXaml.Controls
                     slot.Arrange(Make(offset, 0, Orientation), Make(sizes.LengthOf(index), cross, Orientation));
             }
 
-            InvalidateMeasure();
+            // Measuring the rows in view replaces estimates, which changes the extent the panel asks for.
+            var extent = Make((float)sizes.Extent, widestItem, Orientation);
+
+            if (extent != arrangedExtent)
+            {
+                arrangedExtent = extent;
+                InvalidateMeasure();
+            }
+
             continueBringIntoView();
         }
 

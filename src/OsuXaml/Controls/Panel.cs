@@ -9,9 +9,11 @@ using osuTK;
 namespace OsuXaml.Controls
 {
     /// <summary>
-    /// Base for WPF-style panels. Each frame, after children have updated (so auto-sized children know their size),
-    /// the panel measures its children and arranges their slots. A panel that isn't inside another panel and
-    /// has no size of its own sizes itself to its content.
+    /// Base for WPF-style panels. After children have updated (so auto-sized children know their size), a panel measures its
+    /// children and arranges their slots, but only when something changed: a child was added, removed or resized, an attached
+    /// or panel property changed, an element inside reported a new desired size (<see cref="Layout.InvalidateMeasure"/>), or the
+    /// panel's own size changed. Otherwise it keeps last frame's layout. A panel that isn't inside another panel and has no
+    /// size of its own sizes itself to its content.
     /// </summary>
     public abstract partial class Panel : CompositeDrawable, ILayoutElement, IItemsHost
     {
@@ -21,9 +23,22 @@ namespace OsuXaml.Controls
         private bool sizeToContentX;
         private bool sizeToContentY;
 
-        private double measuredAt = double.NaN;
+        // Bumped by every invalidation; a measurement or arrangement made at an older version is out of date.
+        private int layoutVersion;
+        private bool arrangeRequested = true;
+
+        private int measuredVersion = -1;
         private Vector2 measuredFor;
         private Vector2 measured;
+        private double measuredAt = double.NaN;
+
+        private int arrangedVersion = -1;
+        private Vector2 arrangedSize;
+
+        // Whether the last measure or arrange measured an element that doesn't report its changes; until that's no longer
+        // so, this panel measures and arranges every frame (keeping a measurement only for the frame it was made in).
+        private bool measuredUnreported;
+        private bool arrangedUnreported;
 
         protected Panel()
         {
@@ -47,8 +62,25 @@ namespace OsuXaml.Controls
         public new MarginPadding Padding
         {
             get => base.Padding;
-            set => base.Padding = value;
+            set
+            {
+                if (base.Padding.Equals(value))
+                    return;
+
+                base.Padding = value;
+                InvalidateMeasure();
+            }
         }
+
+        public bool ReportsMeasureChanges => true;
+
+        /// <summary>How many times this panel has measured its children (not counting measurements it kept).</summary>
+        internal int MeasureCount { get; private set; }
+
+        /// <summary>How many times this panel has arranged its children.</summary>
+        internal int ArrangeCount { get; private set; }
+
+        private bool unreported => measuredUnreported || arrangedUnreported;
 
         public void Add(Drawable drawable) => Insert(slots.Count, drawable);
 
@@ -57,6 +89,7 @@ namespace OsuXaml.Controls
             var slot = new Slot(drawable);
             slots.Insert(index, slot);
             AddInternal(slot);
+            InvalidateMeasure();
         }
 
         public bool Remove(Drawable drawable, bool disposeImmediately)
@@ -73,6 +106,7 @@ namespace OsuXaml.Controls
                 slot.Detach();
 
             RemoveInternal(slot, true);
+            InvalidateMeasure();
             return true;
         }
 
@@ -81,6 +115,7 @@ namespace OsuXaml.Controls
             foreach (var slot in slots)
                 RemoveInternal(slot, true);
             slots.Clear();
+            InvalidateMeasure();
         }
 
         /// <summary>Puts the slots in the order of <paramref name="contents"/>, which must be exactly this panel's children.</summary>
@@ -91,6 +126,8 @@ namespace OsuXaml.Controls
 
             foreach (var content in contents)
                 slots.Add(byContent[content]);
+
+            InvalidateMeasure();
         }
 
         /// <summary>The slot holding <paramref name="content"/>, or null.</summary>
@@ -105,20 +142,40 @@ namespace OsuXaml.Controls
 
         public Vector2 Measure(Vector2 availableSize)
         {
-            // Nested panels measure their subtree once per frame per constraint.
-            if (Time.Current == measuredAt && measuredFor == availableSize)
+            if (measuredVersion == layoutVersion && measuredFor == availableSize && (!unreported || measuredAt == Time.Current))
+            {
+                // Whoever measures this panel can't keep the result past this frame either.
+                if (unreported)
+                    Layout.MeasuredUnreported();
+
                 return measured;
+            }
+
+            int version = layoutVersion;
+            bool outer = Layout.BeginWatch();
 
             var padding = new Vector2(Padding.TotalHorizontal, Padding.TotalVertical);
             var desired = MeasureOverride(Vector2.ComponentMax(Vector2.Zero, availableSize - padding)) + padding;
 
+            measuredUnreported = Layout.EndWatch(outer);
+            measuredVersion = version;
             measuredAt = Time.Current;
             measuredFor = availableSize;
+            MeasureCount++;
             return measured = desired;
         }
 
-        /// <summary>Makes the next <see cref="Measure"/> run again this frame, for panels whose desired size just changed.</summary>
-        protected void InvalidateMeasure() => measuredAt = double.NaN;
+        /// <summary>
+        /// Makes this panel, and every panel it is in, measure and arrange again on the next frame, for a change to something
+        /// its measuring reads that it doesn't notice by itself.
+        /// </summary>
+        public void InvalidateMeasure() => Layout.InvalidateMeasure(this);
+
+        /// <summary>Makes this panel arrange its children again on the next frame, for a change that moves them without changing the panel's desired size.</summary>
+        public void InvalidateArrange() => arrangeRequested = true;
+
+        /// <summary>Marks this panel's own measurement and arrangement out of date; <see cref="Layout.InvalidateMeasure"/> calls it on every panel on the way up.</summary>
+        internal void InvalidateLayout() => layoutVersion++;
 
         protected abstract Vector2 MeasureOverride(Vector2 available);
 
@@ -143,7 +200,22 @@ namespace OsuXaml.Controls
                 if (sizeToContentY) Height = desired.Y;
             }
 
-            ArrangeOverride(ChildSize);
+            var size = ChildSize;
+
+            if (arrangedVersion == layoutVersion && !arrangeRequested && arrangedSize == size && !unreported)
+                return;
+
+            // Invalidations made while arranging (a virtualizing panel adding the rows it now shows) count for the next frame.
+            int version = layoutVersion;
+            arrangeRequested = false;
+            bool outer = Layout.BeginWatch();
+
+            ArrangeOverride(size);
+
+            arrangedUnreported = Layout.EndWatch(outer);
+            arrangedVersion = version;
+            arrangedSize = size;
+            ArrangeCount++;
         }
 
         protected static float Axis(Vector2 v, Orientation o) => o == Orientation.Horizontal ? v.X : v.Y;
@@ -158,9 +230,20 @@ namespace OsuXaml.Controls
     /// <summary>Lays children out in a line, like WPF's StackPanel. <c>Spacing</c> adds a gap between children.</summary>
     public partial class StackPanel : Panel
     {
-        public Orientation Orientation { get; set; }
+        private Orientation orientation;
+        private float spacing;
 
-        public float Spacing { get; set; }
+        public Orientation Orientation
+        {
+            get => orientation;
+            set => Layout.SetAffectsMeasure(this, ref orientation, value);
+        }
+
+        public float Spacing
+        {
+            get => spacing;
+            set => Layout.SetAffectsMeasure(this, ref spacing, value);
+        }
 
         protected override Vector2 MeasureOverride(Vector2 available) => MeasureStack(Slots, available, Orientation, Spacing);
 
@@ -213,9 +296,20 @@ namespace OsuXaml.Controls
     /// <summary>Flows children in lines that wrap at the panel edge.</summary>
     public partial class WrapPanel : Panel
     {
-        public Orientation Orientation { get; set; } = Orientation.Horizontal;
+        private Orientation orientation = Orientation.Horizontal;
+        private float spacing;
 
-        public float Spacing { get; set; }
+        public Orientation Orientation
+        {
+            get => orientation;
+            set => Layout.SetAffectsMeasure(this, ref orientation, value);
+        }
+
+        public float Spacing
+        {
+            get => spacing;
+            set => Layout.SetAffectsMeasure(this, ref spacing, value);
+        }
 
         protected override Vector2 MeasureOverride(Vector2 available) => layout(available, arrange: false);
 
@@ -262,7 +356,13 @@ namespace OsuXaml.Controls
     /// <summary>Docks children to the edges in order; the last child fills what is left.</summary>
     public partial class DockPanel : Panel
     {
-        public bool LastChildFill { get; set; } = true;
+        private bool lastChildFill = true;
+
+        public bool LastChildFill
+        {
+            get => lastChildFill;
+            set => Layout.SetAffectsMeasure(this, ref lastChildFill, value);
+        }
 
         public static void SetDock(Drawable drawable, Dock dock) => Layout.Get(drawable).Dock = dock;
 
@@ -368,9 +468,20 @@ namespace OsuXaml.Controls
     /// <summary>Equal-sized cells. With neither Rows nor Columns set it picks a near-square grid.</summary>
     public partial class UniformGrid : Panel
     {
-        public int Rows { get; set; }
+        private int rows;
+        private int columns;
 
-        public int Columns { get; set; }
+        public int Rows
+        {
+            get => rows;
+            set => Layout.SetAffectsMeasure(this, ref rows, value);
+        }
+
+        public int Columns
+        {
+            get => columns;
+            set => Layout.SetAffectsMeasure(this, ref columns, value);
+        }
 
         private (int rows, int columns) dimensions()
         {
