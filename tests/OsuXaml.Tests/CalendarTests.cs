@@ -69,6 +69,143 @@ namespace OsuXaml.Tests
                                                              && day(calendar, new DateTime(2027, 3, 3)).IsSelected);
         }
 
+        private static DateTime oct(int day) => new DateTime(2026, 10, day);
+
+        private static string dates(System.Collections.Generic.IEnumerable<DateTime> list) => string.Join(",", list.Select(d => d.Day));
+
+        private void clickWith(Key modifier, Drawable drawable)
+        {
+            InputManager.PressKey(modifier);
+            click(drawable);
+            InputManager.ReleaseKey(modifier);
+        }
+
+        private void drag(Drawable from, Drawable to, Key? modifier = null)
+        {
+            if (modifier is Key key)
+                InputManager.PressKey(key);
+
+            InputManager.MoveMouseTo(from);
+            InputManager.PressButton(MouseButton.Left);
+            InputManager.MoveMouseTo(to);
+            InputManager.ReleaseButton(MouseButton.Left);
+
+            if (modifier is Key held)
+                InputManager.ReleaseKey(held);
+        }
+
+        [Test]
+        public void SingleRangeByShiftClickAndDrag()
+        {
+            var days = new BindableList<DateTime>();
+            Calendar calendar = null;
+            int reports = 0;
+
+            AddStep("create", () =>
+            {
+                reports = 0;
+                days.Clear();
+                calendar = new Calendar { SelectionMode = CalendarSelectionMode.SingleRange, DisplayDate = { Value = october16 } };
+                XamlBinding.TwoWayList(calendar.SelectedDates, days);
+                calendar.SelectedDatesChanged += _ => reports++;
+                Child = calendar;
+            });
+
+            AddStep("click the 5th", () => click(day(calendar, oct(5))));
+            AddStep("shift+click the 8th", () => clickWith(Key.ShiftLeft, day(calendar, oct(8))));
+            AddAssert("5th to 8th, bound list follows", () => dates(calendar.SelectedDates) == "5,6,7,8" && dates(days) == "5,6,7,8"
+                                                            && calendar.SelectedDate.Value == oct(5) && reports == 2);
+            AddAssert("cells show the run", () => calendar.ChildrenOfType<CalendarDayButton>().Count(d => d.IsSelected) == 4 && day(calendar, oct(7)).IsSelected);
+
+            AddStep("shift+click the 3rd", () => clickWith(Key.ShiftLeft, day(calendar, oct(3))));
+            AddAssert("runs back from the 5th", () => dates(calendar.SelectedDates) == "5,4,3");
+
+            AddStep("drag from the 12th to the 14th", () => drag(day(calendar, oct(12)), day(calendar, oct(14))));
+            AddAssert("12th to 14th", () => dates(calendar.SelectedDates) == "12,13,14" && calendar.SelectedDate.Value == oct(12));
+
+            AddStep("view model adds the 20th", () => days.Add(oct(20)));
+            AddAssert("shown, SelectedDate unchanged", () => day(calendar, oct(20)).IsSelected && calendar.SelectedDate.Value == oct(12));
+
+            AddStep("set SelectedDate", () => calendar.SelectedDate.Value = oct(1));
+            AddAssert("only that date, as in WPF", () => dates(calendar.SelectedDates) == "1" && dates(days) == "1");
+
+            AddStep("view model clears", () => days.Clear());
+            AddAssert("nothing selected", () => calendar.SelectedDate.Value == null && !calendar.ChildrenOfType<CalendarDayButton>().Any(d => d.IsSelected));
+        }
+
+        [Test]
+        public void MultipleRangeTogglesAndAddsRuns()
+        {
+            Calendar calendar = null;
+
+            AddStep("create", () => Child = calendar = new Calendar
+            {
+                SelectionMode = CalendarSelectionMode.MultipleRange,
+                DisplayDate = { Value = october16 },
+                DisplayDateEnd = oct(28),
+            });
+
+            AddStep("click the 5th, ctrl+click the 7th and 9th", () =>
+            {
+                click(day(calendar, oct(5)));
+                clickWith(Key.ControlLeft, day(calendar, oct(7)));
+                clickWith(Key.ControlLeft, day(calendar, oct(9)));
+            });
+            AddAssert("three dates", () => dates(calendar.SelectedDates) == "5,7,9");
+
+            AddStep("ctrl+click the 7th again", () => clickWith(Key.ControlLeft, day(calendar, oct(7))));
+            AddAssert("toggled off", () => dates(calendar.SelectedDates) == "5,9");
+
+            AddStep("ctrl+drag the 12th to the 14th", () => drag(day(calendar, oct(12)), day(calendar, oct(14)), Key.ControlLeft));
+            AddAssert("run added", () => dates(calendar.SelectedDates) == "5,9,12,13,14");
+
+            AddStep("ctrl+shift+click the 16th", () =>
+            {
+                InputManager.PressKey(Key.ControlLeft);
+                clickWith(Key.ShiftLeft, day(calendar, oct(16)));
+                InputManager.ReleaseKey(Key.ControlLeft);
+            });
+            AddAssert("run from the 12th added", () => dates(calendar.SelectedDates) == "5,9,12,13,14,15,16");
+
+            AddStep("drag past DisplayDateEnd", () => drag(day(calendar, oct(26)), day(calendar, oct(30))));
+            AddAssert("stops at the end", () => dates(calendar.SelectedDates) == "26,27,28");
+
+            AddStep("plain click", () => click(day(calendar, oct(20))));
+            AddAssert("just the 20th", () => dates(calendar.SelectedDates) == "20" && calendar.HasFocus);
+            AddAssert("keyboard position ringed", () => day(calendar, oct(20)).IsHighlighted);
+
+            AddStep("shift+right twice", () =>
+            {
+                InputManager.PressKey(Key.ShiftLeft);
+                InputManager.Key(Key.Right);
+                InputManager.Key(Key.Right);
+                InputManager.ReleaseKey(Key.ShiftLeft);
+            });
+            AddAssert("extended", () => dates(calendar.SelectedDates) == "20,21,22" && day(calendar, oct(22)).IsHighlighted);
+
+            AddStep("right", () => InputManager.Key(Key.Right));
+            AddAssert("moves a one-date selection", () => dates(calendar.SelectedDates) == "23");
+
+            AddStep("ctrl+space on the 23rd", () =>
+            {
+                InputManager.PressKey(Key.ControlLeft);
+                InputManager.Key(Key.Space);
+                InputManager.ReleaseKey(Key.ControlLeft);
+            });
+            AddAssert("toggled off", () => calendar.SelectedDates.Count == 0 && calendar.SelectedDate.Value == null);
+
+            AddStep("back to single date", () =>
+            {
+                calendar.SelectedDates.AddRange(new[] { oct(2), oct(3) });
+                calendar.SelectionMode = CalendarSelectionMode.SingleDate;
+            });
+            AddAssert("keeps the first", () => dates(calendar.SelectedDates) == "2");
+
+            AddStep("no selection", () => calendar.SelectionMode = CalendarSelectionMode.None);
+            AddStep("click the 9th", () => click(day(calendar, oct(9))));
+            AddAssert("ignored", () => dates(calendar.SelectedDates) == "2");
+        }
+
         [Test]
         public void NavigationButtonsZoomAndRange()
         {

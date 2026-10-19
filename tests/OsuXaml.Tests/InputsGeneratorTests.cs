@@ -20,6 +20,7 @@ namespace Demo
         public Bindable<string> Password { get; } = new Bindable<string>("""");
         public Bindable<DateTime?> Birthday { get; } = new Bindable<DateTime?>();
         public Bindable<DateTime?> Due { get; } = new Bindable<DateTime?>();
+        public BindableList<DateTime> Holidays { get; } = new BindableList<DateTime>();
         public BindableBool PickerOpen { get; } = new BindableBool();
         public BindableDouble Volume { get; } = new BindableDouble(5);
         public BindableDouble Progress { get; } = new BindableDouble();
@@ -103,6 +104,16 @@ namespace Demo
             Assert.That(source, Does.Contain("XamlBinding.TwoWay(e2.IsDropDownOpen, dataContext.PickerOpen)"));
             Assert.That(source, Does.Contain("SelectedDate.Value = new global::System.DateTime(2026, 12, 24, 0, 0, 0)"));
             Assert.That(source, Does.Contain("SelectedDatesChanged += "));
+        }
+
+        [Test]
+        public void CalendarSelectsSeveralDates()
+        {
+            string source = compiles(@"<Calendar SelectionMode=""MultipleRange"" SelectedDates=""{Binding Holidays}"" SelectedDate=""{Bind Birthday}"" />");
+
+            Assert.That(source, Does.Contain("SelectionMode = global::OsuXaml.Controls.CalendarSelectionMode.MultipleRange"));
+            Assert.That(source, Does.Contain("XamlBinding.TwoWayList(e0.SelectedDates, dataContext.Holidays)"));
+            Assert.That(source, Does.Contain("XamlBinding.TwoWay(e0.SelectedDate, dataContext.Birthday)"));
         }
 
         [Test]

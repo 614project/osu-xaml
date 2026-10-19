@@ -77,6 +77,8 @@ namespace OsuXaml.Generator
                     {
                         case IPropertySymbol p when p.SetMethod != null && canAccess(p.SetMethod):
                         case IPropertySymbol pb when pb.GetMethod != null && canAccess(pb.GetMethod) && bindableClassValueType(pb.Type) != null:
+                        // A control's own list (Calendar.SelectedDates) takes a two-way list binding.
+                        case IPropertySymbol pl when pl.GetMethod != null && canAccess(pl.GetMethod) && isBindableListClass(pl.Type):
                         case IFieldSymbol f when !f.IsReadOnly && !f.IsConst && canAccess(f):
                         case IEventSymbol e when canAccess(e):
                             return m;
