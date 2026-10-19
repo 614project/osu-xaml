@@ -14,7 +14,8 @@ namespace OsuXaml.Controls
     /// <summary>
     /// Like WPF's CheckBox: a rounded box that shows a check mark while <see cref="IsChecked"/>, followed by its
     /// <c>Content</c> (text or any element). Clicking it toggles <see cref="IsChecked"/>, which binds two-way, and Space
-    /// toggles it while it has focus. Three-state check boxes aren't supported.
+    /// toggles it while it has focus. <see cref="IsChecked"/> is a <c>bool?</c> as in WPF: null is the indeterminate state,
+    /// drawn as a dash, which clicks reach only when <see cref="IsThreeState"/> is set (checked, then indeterminate, then unchecked).
     /// </summary>
     public partial class CheckBox : ContentControl
     {
@@ -24,6 +25,7 @@ namespace OsuXaml.Controls
         private readonly Container box;
         private readonly Box fill;
         private readonly SpriteIcon check;
+        private readonly SpriteIcon dash;
         private bool isEnabled = true;
         private bool hovered;
         private MarginPadding padding;
@@ -55,6 +57,15 @@ namespace OsuXaml.Controls
                         Colour = Theme.AccentText,
                         Alpha = 0,
                     },
+                    dash = new SpriteIcon
+                    {
+                        Icon = FontAwesome.Solid.Minus,
+                        Size = new Vector2(10),
+                        Anchor = Anchor.Centre,
+                        Origin = Anchor.Centre,
+                        Colour = Theme.AccentText,
+                        Alpha = 0,
+                    },
                 },
             });
 
@@ -62,19 +73,33 @@ namespace OsuXaml.Controls
             {
                 updateState(true);
 
-                if (e.NewValue)
+                if (e.NewValue == true)
                     Checked?.Invoke();
-                else
+                else if (e.NewValue == false)
                     Unchecked?.Invoke();
+                else
+                    Indeterminate?.Invoke();
             };
         }
 
-        /// <summary>Whether the box is checked. Binds two-way.</summary>
-        public Bindable<bool> IsChecked { get; } = new Bindable<bool>();
+        /// <summary>
+        /// Whether the box is checked: true, false, or null for indeterminate. Binds two-way, with a <c>Bindable&lt;bool?&gt;</c>
+        /// or a <c>Bindable&lt;bool&gt;</c> (which keeps its last value while the box is indeterminate).
+        /// </summary>
+        public Bindable<bool?> IsChecked { get; } = new Bindable<bool?>(false);
+
+        /// <summary>
+        /// Whether clicks also reach the indeterminate state: unchecked, checked, indeterminate, unchecked again. Without it the
+        /// box can still show indeterminate (set from code or a binding, e.g. a "select all" box), and a click unchecks it, as in WPF.
+        /// </summary>
+        public bool IsThreeState { get; set; }
 
         public event Action Checked;
 
         public event Action Unchecked;
+
+        /// <summary>Raised when <see cref="IsChecked"/> becomes null.</summary>
+        public event Action Indeterminate;
 
         /// <summary>Raised after a click (or Space) toggled the box.</summary>
         public event Action Click;
@@ -103,7 +128,7 @@ namespace OsuXaml.Controls
             }
         }
 
-        /// <summary>Toggles the box as a click would.</summary>
+        /// <summary>Moves the box to its next state as a click would (see <see cref="NextState"/>).</summary>
         public void Toggle()
         {
             if (!isEnabled)
@@ -111,9 +136,18 @@ namespace OsuXaml.Controls
 
             // A disabled bindable (e.g. a locked view model setting) can't be written; the click is still reported.
             if (!IsChecked.Disabled)
-                IsChecked.Value = !IsChecked.Value;
+                IsChecked.Value = NextState(IsChecked.Value, IsThreeState);
 
             Click?.Invoke();
+        }
+
+        /// <summary>WPF's order: unchecked to checked, checked to indeterminate (three-state) or unchecked, indeterminate to unchecked.</summary>
+        internal static bool? NextState(bool? current, bool threeState)
+        {
+            if (current == true)
+                return threeState ? null : false;
+
+            return current == null ? false : true;
         }
 
         public override Vector2 Measure(Vector2 availableSize)
@@ -213,14 +247,19 @@ namespace OsuXaml.Controls
                 return;
 
             double duration = animate ? 150 : 0;
-            bool on = IsChecked.Value;
+            bool on = IsChecked.Value == true;
+            bool indeterminate = IsChecked.Value == null;
+            bool filled = on || indeterminate;
             bool highlight = isEnabled && (hovered || HasFocus);
 
-            fill.FadeColour(on ? (highlight ? Theme.Accent.Lighten(0.15f) : Theme.Accent) : (highlight ? Theme.Hover : Theme.Surface), duration, Easing.OutQuint);
-            box.TransformTo(nameof(BorderColour), (ColourInfo)(on ? Theme.Accent : highlight ? Theme.Accent : Theme.Border), duration, Easing.OutQuint);
+            fill.FadeColour(filled ? (highlight ? Theme.Accent.Lighten(0.15f) : Theme.Accent) : (highlight ? Theme.Hover : Theme.Surface), duration, Easing.OutQuint);
+            box.TransformTo(nameof(BorderColour), (ColourInfo)(filled ? Theme.Accent : highlight ? Theme.Accent : Theme.Border), duration, Easing.OutQuint);
 
             check.FadeTo(on ? 1 : 0, duration, Easing.OutQuint);
             check.ScaleTo(on ? 1 : 0.5f, animate ? 250 : 0, on ? Easing.OutBack : Easing.OutQuint);
+
+            dash.FadeTo(indeterminate ? 1 : 0, duration, Easing.OutQuint);
+            dash.ScaleTo(indeterminate ? 1 : 0.5f, animate ? 250 : 0, indeterminate ? Easing.OutBack : Easing.OutQuint);
         }
     }
 }

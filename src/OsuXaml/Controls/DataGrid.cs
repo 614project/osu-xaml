@@ -132,24 +132,35 @@ namespace OsuXaml.Controls
     }
 
     /// <summary>
-    /// Shows a <c>Bindable&lt;bool&gt;</c> member as a CheckBox bound two-way; one click toggles it.
+    /// Shows a <c>Bindable&lt;bool&gt;</c> or <c>Bindable&lt;bool?&gt;</c> member as a CheckBox bound two-way; one click toggles it.
     /// A plain bool member, a read-only column or a read-only grid shows the value without letting it change.
     /// </summary>
     public class DataGridCheckBoxColumn : DataGridBoundColumn
     {
+        /// <summary>Whether clicks also reach the indeterminate state (for <c>bool?</c> members), like CheckBox.IsThreeState.</summary>
+        public bool IsThreeState { get; set; }
+
         protected internal override Drawable GenerateElement(DataGridCell cell, object item, BindingScope scope)
         {
-            var checkBox = new DataGridCheckBox(cell);
+            var checkBox = new DataGridCheckBox(cell) { IsThreeState = IsThreeState };
 
             // Only the box takes clicks; the rest of the cell selects the row.
             Layout.SetHorizontalAlignment(checkBox, HorizontalAlignment.Left);
 
-            if (Binding?.GetSource(item) is Bindable<bool> bindable)
-                checkBox.IsChecked.BindTo(bindable);
-            else
+            switch (Binding?.GetSource(item))
             {
-                checkBox.AlwaysReadOnly = true;
-                Binding?.Observe(item, scope, value => checkBox.IsChecked.Value = value is bool b && b);
+                case Bindable<bool?> nullable:
+                    checkBox.IsChecked.BindTo(nullable);
+                    break;
+
+                case Bindable<bool> bindable:
+                    XamlBinding.TwoWayNullable(scope, checkBox.IsChecked, bindable);
+                    break;
+
+                default:
+                    checkBox.AlwaysReadOnly = true;
+                    Binding?.Observe(item, scope, value => checkBox.IsChecked.Value = value as bool?);
+                    break;
             }
 
             return checkBox;

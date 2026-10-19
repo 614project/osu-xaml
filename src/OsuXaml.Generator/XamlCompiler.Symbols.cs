@@ -191,6 +191,18 @@ namespace OsuXaml.Generator
             return null;
         }
 
+        /// <summary>Whether the type is or derives from the <c>BindableList&lt;T&gt;</c> class, which two-way list bindings link with BindTo.</summary>
+        private static bool isBindableListClass(ITypeSymbol type)
+        {
+            for (var t = type as INamedTypeSymbol; t != null; t = t.BaseType)
+            {
+                if (t.IsGenericType && t.OriginalDefinition.ToDisplayString() == "osu.Framework.Bindables.BindableList<T>")
+                    return true;
+            }
+
+            return false;
+        }
+
         private static ITypeSymbol genericInterfaceArgument(ITypeSymbol type, string definition)
         {
             if (type is INamedTypeSymbol named && named.IsGenericType && named.OriginalDefinition.ToDisplayString() == definition)

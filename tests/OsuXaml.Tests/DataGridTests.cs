@@ -173,13 +173,13 @@ namespace OsuXaml.Tests
             CheckBox checkBox(int i) => (CheckBox)grid.CellFor(people[i], activeColumn).PresentedContent;
 
             AddStep("create", () => Child = grid = createGrid(people, scope));
-            AddAssert("shows values", () => checkBox(0).IsChecked.Value && !checkBox(1).IsChecked.Value);
+            AddAssert("shows values", () => checkBox(0).IsChecked.Value == true && checkBox(1).IsChecked.Value == false);
 
             AddStep("click Ann's check box", () => checkBox(1).TriggerClick());
             AddAssert("view model follows", () => people[1].Active.Value);
 
             AddStep("view model clears Cid", () => people[0].Active.Value = false);
-            AddAssert("check box follows", () => !checkBox(0).IsChecked.Value);
+            AddAssert("check box follows", () => checkBox(0).IsChecked.Value == false);
 
             AddStep("make grid read-only and click", () =>
             {
