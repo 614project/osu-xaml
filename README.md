@@ -13,7 +13,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml/Controls` | WPF식 컨트롤 (패널, 목록, 메뉴, 탭, 입력, 날짜 등. 아래 [목록](#wpf식-컨트롤)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
-| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 404개 |
+| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 415개 |
 
 ## 실행
 
@@ -118,7 +118,7 @@ public partial class MainView : CompositeDrawable
 | 기본 변환기 | `Converter=Not`, `BoolToVisibility`, `InverseBoolToVisibility`, `IsNull`, `IsNotNull`, `NullToVisibility` 등 | x:Class에 같은 이름이 없으면 `OsuXaml.Converters`에서 찾음 |
 | 전역 속성 | `Visibility="Collapsed"`, `HorizontalAlignment`, `ToolTip`, `ContextMenu` | `[assembly: XamlGlobalProperties(typeof(T))]`로 등록한 정적 `SetX(Drawable, 값)` |
 
-선택 상태(`SelectedItem`, `IsChecked`, `IsExpanded`, `IsOpen` 등)는 `Bindable<T>` 프로퍼티라서 뷰모델의 `Bindable<T>`와 양방향으로 연결됩니다. `SelectedItem`은 `Bindable<object>`지만 뷰모델의 `Bindable<Person>`과도 바로 묶입니다.
+선택 상태(`SelectedItem`, `IsChecked`, `IsExpanded`, `IsOpen` 등)는 `Bindable<T>` 프로퍼티라서 뷰모델의 `Bindable<T>`와 양방향으로 연결됩니다. `SelectedItem`은 `Bindable<object>`지만 뷰모델의 `Bindable<Person>`과도 바로 묶입니다. `CheckBox.IsChecked`는 WPF처럼 `bool?`이지만 뷰모델의 `Bindable<bool>`과도 양방향으로 묶이고, 미정(null)일 때는 뷰모델 값을 그대로 둡니다. `Calendar.SelectedDates`처럼 컨트롤이 가진 `BindableList<T>`는 같은 타입의 뷰모델 목록과 양방향으로 묶입니다.
 
 ## WPF식 컨트롤
 
@@ -165,7 +165,7 @@ public partial class MainView : CompositeDrawable
 | 버튼 | `Button` | `Content` 또는 자식 요소, `Click`, `IsEnabled`, 호버/누름 애니메이션 |
 | | `RepeatButton` | 누르고 있으면 `Delay` 뒤 `Interval`마다 `Click` |
 | | `ToggleButton` | `IsChecked` (양방향), `Checked`/`Unchecked` |
-| | `CheckBox` | `IsChecked` (양방향), `Content`, Space로 전환 |
+| | `CheckBox` | `IsChecked` (양방향, WPF처럼 `bool?`), `IsThreeState` (체크 → 미정 → 해제), `Indeterminate`, `Content`, Space로 전환 |
 | | `RadioButton` | `IsChecked` (양방향), `GroupName` (없으면 같은 부모끼리 한 그룹) |
 | 범위 | `Slider` | `Value` (양방향), `Minimum`, `Maximum`, `Orientation`, `TickFrequency`, `TickPlacement`, `IsSnapToTickEnabled`, 키보드 |
 | | `ProgressBar` | `Value`, `Minimum`, `Maximum`, `IsIndeterminate`, `Orientation` |
@@ -173,7 +173,7 @@ public partial class MainView : CompositeDrawable
 | 목록 | `ItemsControl` | `ItemsSource`, `ItemTemplate`, `DisplayMemberPath`, `ItemsPanel` (`VirtualizingStackPanel`이면 가상화) |
 | | `ListBox` | `SelectedItem`/`SelectedIndex` (양방향), `SelectionMode`, `SelectedItems`, 키보드, `ScrollIntoView`, 가상화 |
 | | `ListView` + `GridView` | `GridViewColumn` (`Header`, `DisplayMemberBinding`, `CellTemplate`, `Width`, `SortMemberPath`), 머리글 클릭 정렬, 경계 드래그로 열 너비 조절 |
-| | `DataGrid` | `DataGridTextColumn`/`DataGridCheckBoxColumn`/`DataGridTemplateColumn`, 더블클릭·F2 편집, `AlternatingRowBackground`, `IsReadOnly`, 정렬 |
+| | `DataGrid` | `DataGridTextColumn`/`DataGridCheckBoxColumn`/`DataGridTemplateColumn`, `AutoGenerateColumns` ([빌드 시점 생성](#데이터그리드-열-자동-생성)), 더블클릭·F2 편집, `AlternatingRowBackground`, `IsReadOnly`, 정렬 |
 | | `TreeView` | `HierarchicalDataTemplate`, `TreeViewItem`, `SelectedItem` (양방향), `IsExpandedBinding`, 키보드, 가상화 (`IsVirtualizing="True"`일 때) |
 | | `ComboBox` | `SelectedItem`/`SelectedIndex`/`SelectedValue` (양방향), `IsDropDownOpen`, `IsEditable` + `Text`, `PlaceholderText`, 키보드 |
 | 메뉴·팝업 | `Menu`, `MenuItem` | `Header="_File"`, `Click`, `InputGestureText`, `IsCheckable`/`IsChecked`, 하위 메뉴, Alt 접근 키 |
@@ -181,13 +181,13 @@ public partial class MainView : CompositeDrawable
 | | `ToolTip` | 모든 요소에 `ToolTip="..."` 또는 `<Button.ToolTip><ToolTip>...` |
 | | `Popup` | `IsOpen` (양방향), `PlacementTarget`, `Placement`, `StaysOpen` |
 | | `MessageBox` | `await MessageBox.Show(this, "Delete?", "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Warning)` → `MessageBoxResult` |
-| 구획 | `TabControl`, `TabItem` | `SelectedIndex`/`SelectedItem` (양방향), `TabStripPlacement`, `ItemsSource` + `ContentTemplate` |
+| 구획 | `TabControl`, `TabItem` | `SelectedIndex`/`SelectedItem` (양방향), `TabStripPlacement`, `ItemsSource` + `ContentTemplate`, 넘치는 탭은 휠과 양 끝 화살표로 스크롤하고 선택한 탭을 보이게 맞춤 |
 | | `Expander` | `Header`, `IsExpanded` (양방향), 높이 애니메이션 |
 | | `GroupBox`, `HeaderedContentControl` | `Header`, `HeaderTemplate` |
 | | `StatusBar`, `StatusBarItem` | `DockPanel.Dock="Right"`로 오른쪽 정렬, 세로 `Separator` |
 | | `ToolBar`, `ToolBarTray` | 평평한 버튼·토글·콤보, `Band`/`BandIndex` |
 | | `Separator` | 가로 구분선 (메뉴, 상태 표시줄, 도구 모음 안에서는 맞는 모양으로) |
-| 날짜·색 | `Calendar` | `SelectedDate` (양방향), `DisplayDate`, `FirstDayOfWeek`, 월·연·10년 보기, 키보드 |
+| 날짜·색 | `Calendar` | `SelectedDate` (양방향), `SelectionMode` (`SingleRange`, `MultipleRange`) + `SelectedDates` (양방향, 드래그·Shift+클릭으로 범위, Ctrl+클릭으로 추가), `DisplayDate`, `FirstDayOfWeek`, 월·연·10년 보기, 키보드 |
 | | `DatePicker` | `SelectedDate` (양방향), `SelectedDateFormat`, 직접 입력, F4·Alt+↓로 열기 |
 | | `ColorPicker` | `SelectedColor` (양방향) |
 | 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke`, `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
@@ -239,6 +239,20 @@ private async void OnSettings()
 - `Height`가 없으면 `AcceptsReturn`이나 `TextWrapping`을 켠 상자는 줄 수만큼 자라고, `MinLines`/`MaxLines`가 그 범위를 정합니다. `Height`를 주면 그 높이 안에서 캐럿을 따라가고 마우스 휠로도 스크롤합니다.
 - 위·아래 화살표는 열 위치를 기억하며 줄을 옮깁니다. PageUp/PageDown, 줄 단위 Home/End, Ctrl+Home/End, 세 번 클릭(줄 선택)도 WPF처럼 동작합니다.
 
+### 데이터그리드 열 자동 생성
+
+`AutoGenerateColumns`는 리플렉션 없이 동작합니다. 생성기가 `ItemsSource="{Bind People}"`의 아이템 타입(`BindableList<Person>`이면 `Person`)을 빌드 시점에 읽어서 공개 프로퍼티와 필드마다 열을 컴파일합니다.
+
+```xml
+<DataGrid ItemsSource="{Bind People}" AutoGeneratingColumn="OnGeneratingColumn" />
+```
+
+- WPF처럼 기본값이 켜짐이라 열을 하나도 적지 않은 `DataGrid`는 바로 열이 생깁니다. 열을 직접 적은 `DataGrid`는 같은 열이 두 번 나오지 않도록 꺼진 채로 시작하고, `AutoGenerateColumns="True"`를 쓰면 적은 열 뒤에 붙습니다.
+- `bool`은 체크박스 열(`bool?`은 3상태), 나머지는 텍스트 열이 됩니다. `Bindable` 멤버는 편집할 수 있고 일반 멤버는 읽기 전용입니다. 목록과 대리자 멤버는 건너뜁니다.
+- `[Browsable(false)]`, `[Display(AutoGenerateField = false)]`는 열을 빼고, `[Display(Name = "...")]`·`[DisplayName]`은 머리글을, `[Display(Order = n)]`은 순서를, `[ReadOnly(true)]`는 편집 금지를 정합니다.
+- 실행 중에는 열마다 `AutoGeneratingColumn`이 불려서 열을 고치거나 바꾸거나 `Cancel`로 뺄 수 있습니다. `AutoGenerateColumns`를 끄면 생성된 열이 사라지고 다시 켜면 새로 만듭니다.
+- 아이템 타입을 빌드 시점에 알 수 없으면(타입 없는 `IEnumerable` 등) `AutoGenerateColumns="True"`는 빌드 오류(OX0009)입니다.
+
 ### 가상화
 
 `ListBox`, `ListView`, `DataGrid`의 기본 `ItemsPanel`은 WPF처럼 `VirtualizingStackPanel`입니다. 화면에 보이는 행과 위아래 여유분에만 컨테이너를 만들고 스크롤해서 벗어난 행은 버리므로, 10만 행이어도 드는 비용은 화면에 보이는 행만큼입니다.
@@ -275,7 +289,6 @@ private async void OnSettings()
 - 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
 - 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
 - 가상화된 `TreeView`의 `ScrollIntoView`는 아직 만들어지지 않은 중첩 노드를 찾지 못합니다 (최상위 아이템과 이미 만들어진 노드만 됩니다). WPF도 같습니다
-- `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
 - 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
 - `Icon Kind`의 오타는 빌드 오류가 아니라 실행 중 물음표 아이콘으로 나타납니다
