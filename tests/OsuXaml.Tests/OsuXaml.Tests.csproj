@@ -11,8 +11,12 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\OsuXaml\OsuXaml.csproj" />
-    <ProjectReference Include="..\..\src\OsuXaml.Generator\OsuXaml.Generator.csproj" />
+    <!-- Referenced for GeneratorRunner, and run as a generator for the views in Views/. -->
+    <ProjectReference Include="..\..\src\OsuXaml.Generator\OsuXaml.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
     <ProjectReference Include="..\..\samples\TodoApp\TodoApp.csproj" />
     <ProjectReference Include="..\..\samples\Gallery\Gallery.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <AdditionalFiles Include="Views\*.xaml" />
   </ItemGroup>
 </Project>
