@@ -1,0 +1,49 @@
+<Project>
+  <!--
+    Writes XML schemas for this project's XAML after each build, so XML editors offer element, attribute and enum value
+    completion: obj/osu-xaml/catalog.xml maps the namespaces to them (see "IDE 자동완성" in the README).
+    Set OsuXamlSchema to false to skip it, or OsuXamlSchemaDirectory to write them somewhere else.
+  -->
+  <PropertyGroup>
+    <OsuXamlSchemaDirectory Condition="'$(OsuXamlSchemaDirectory)' == ''">$([System.IO.Path]::Combine($(MSBuildProjectDirectory), $(BaseIntermediateOutputPath), 'osu-xaml'))</OsuXamlSchemaDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)OsuXaml.Schema.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="OsuXamlSchemaTool" Condition="'$(OsuXamlSchema)' != 'false'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)OsuXaml.Schema.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" PropertyName="OsuXamlSchemaTool" />
+    </MSBuild>
+  </Target>
+
+  <Target Name="OsuXamlSchema" AfterTargets="Build" DependsOnTargets="OsuXamlSchemaTool"
+          Condition="'$(OsuXamlSchema)' != 'false' AND '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(IntermediateAssembly);@(AdditionalFiles);$(OsuXamlSchemaTool);$(MSBuildThisFileFullPath)"
+          Outputs="$(IntermediateOutputPath)osu-xaml-schema.stamp">
+    <PropertyGroup>
+      <_OsuXamlSchemaArguments>$(IntermediateOutputPath)osu-xaml-schema.args</_OsuXamlSchemaArguments>
+      <_OsuXamlDotnet>$(DOTNET_HOST_PATH)</_OsuXamlDotnet>
+      <_OsuXamlDotnet Condition="'$(_OsuXamlDotnet)' == ''">dotnet</_OsuXamlDotnet>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_OsuXamlSchemaLine Include="out=$(OsuXamlSchemaDirectory)" />
+      <_OsuXamlSchemaLine Include="@(IntermediateAssembly->'project=%(FullPath)')" />
+      <_OsuXamlSchemaLine Include="@(ReferencePath->'reference=%(FullPath)')" />
+      <_OsuXamlSchemaLine Include="@(AdditionalFiles->WithMetadataValue('Extension', '.xaml')->'xaml=%(FullPath)')" />
+    </ItemGroup>
+
+    <WriteLinesToFile File="$(_OsuXamlSchemaArguments)" Lines="@(_OsuXamlSchemaLine)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <!-- A schema is a convenience: if writing it fails, the build still succeeds with a warning. -->
+    <Exec Command="&quot;$(_OsuXamlDotnet)&quot; &quot;$(OsuXamlSchemaTool)&quot; &quot;$(_OsuXamlSchemaArguments)&quot;" ContinueOnError="WarnAndContinue" StandardOutputImportance="low" />
+
+    <Touch Files="$(IntermediateOutputPath)osu-xaml-schema.stamp" AlwaysCreate="true" Condition="'$(MSBuildLastTaskResult)' == 'true'" />
+
+    <ItemGroup>
+      <FileWrites Include="$(_OsuXamlSchemaArguments);$(IntermediateOutputPath)osu-xaml-schema.stamp" />
+    </ItemGroup>
+  </Target>
+</Project>

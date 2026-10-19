@@ -11,6 +11,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml.Generator` | Roslyn Incremental Source Generator. `*.xaml`을 읽어 `InitializeComponent()`를 생성 |
 | `src/OsuXaml` | 생성된 코드가 호출하는 런타임 (`XamlBinding`, `BindingScope`). 리플렉션 없음 |
 | `src/OsuXaml/Controls` | WPF식 컨트롤 (패널, 목록, 메뉴, 탭, 입력, 날짜 등. 아래 [목록](#wpf식-컨트롤)) |
+| `src/OsuXaml.Schema` | 빌드 후 IDE 자동완성용 XML 스키마를 `obj/osu-xaml/`에 쓰는 도구 (아래 [IDE 자동완성](#ide-자동완성)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
 | `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 404개 |
@@ -62,6 +63,7 @@ public partial class MainView : CompositeDrawable
 | 기능 | 표기 | 생성되는 코드 |
 | --- | --- | --- |
 | 요소 | osu!framework 타입 이름 (`FillFlowContainer`, `BasicButton`) 또는 `local:MyDrawable` | `new T()` 후 `Add` / 루트는 `AddInternal` |
+| 제네릭 요소 | `<FillFlowContainer x:TypeArguments="SpriteText">`, `<BasicDropdown x:TypeArguments="x:String">`, 타입 이름 안에서는 `local:Pair(x:String, x:Int32)` (`x:DataType`, `TargetType`, `x:TypeArguments`) | `new FillFlowContainer<SpriteText>()`. 인자 개수와 제약 조건(`where T : Drawable, new()` 등)은 빌드 시점에 검사 (OX0013) |
 | 리터럴 | `Anchor="Centre"`, `RelativeSizeAxes="X\|Y"`, `Size="28"`, `Spacing="0,14"`, `Margin="l,t,r,b"`, `Colour="#1e1e2e"` 또는 `White`, `Font="Bold,44"` | enum, `Vector2`, `MarginPadding`, `Colour4.FromHex`, `FrameworkFont.Regular.With(...)` |
 | 텍스트 내용 | `<SpriteText>Hello</SpriteText>` | `Text = "Hello"` |
 | 단방향 바인딩 | `Text="{Bind Title}"` | 바운드 카피 + `BindValueChanged` |
@@ -270,9 +272,36 @@ private async void OnSettings()
 
 뷰모델은 바운드 카피를 약한 참조로만 들고 있으므로, 생성된 코드는 카피를 `BindingScope` 필드에 모읍니다. osu!framework는 Drawable을 해제할 때 `IUnbindable` 필드를 모두 해제하므로, 뷰가 사라지면 바인딩도 자동으로 끊깁니다. 리스트의 각 행은 자기 스코프를 가지며, 행이 삭제될 때 함께 끊깁니다. (이 구조는 헤드리스 테스트가 뷰 교체 시 해제된 컨테이너를 건드리는 버그를 잡아내서 도입했습니다.)
 
+## 핫 리로드
+
+`dotnet watch --project samples/Gallery`(또는 Visual Studio·Rider의 Hot Reload)로 실행한 채 `.xaml`을 저장하면 생성기가 `InitializeComponent`를 다시 만들고, .NET이 그것을 실행 중인 앱에 적용합니다. OsuXaml은 osu!framework의 `HotReloadCallbackReceiver`와 같은 훅(`[assembly: MetadataUpdateHandler]`)으로 이를 받아서, 바뀐 클래스의 살아 있는 뷰를 모두 그 자리에서 다시 만듭니다.
+
+- 뷰 객체와 부모, 뷰모델은 그대로 둡니다. 지난번에 만든 자식과 바인딩만 걷어낸 뒤 같은 뷰모델로 `InitializeComponent`를 다시 실행하므로, 입력해 둔 값이나 선택 상태가 남습니다.
+- 다시 만든 뒤에 할 일이 있으면 코드비하인드에 `partial void OnXamlReloaded()`를 구현하거나 `XamlHotReload.ViewReloaded`를 구독하세요.
+- 핫 리로드 없이 실행하면(`MetadataUpdater.IsSupported`가 false) 아무것도 기록하지 않으며, 뷰마다 bool 검사 하나만 남습니다.
+
+## IDE 자동완성
+
+프로젝트에 아래 한 줄을 넣으면 (샘플 두 개에 들어 있습니다) 빌드할 때마다 `obj/osu-xaml/`에 XML 스키마(XSD)와 카탈로그가 생깁니다.
+
+```xml
+<Import Project="..\..\src\OsuXaml.Schema\OsuXaml.Schema.targets" />
+```
+
+스키마는 프로젝트가 실제로 참조하는 타입에서 만들어서 요소 이름, 상속받은 속성과 이벤트, `Grid.Row` 같은 첨부 속성, `HorizontalAlignment` 같은 전역 속성, enum 값, `Button.Content` 같은 속성 요소, `local:` 네임스페이스의 직접 만든 컨트롤까지 자동완성됩니다. 모르는 이름도 모두 받아 주는 느슨한 스키마라서 편집기의 빨간 줄은 참고용이고, 진짜 검사는 빌드 오류(OX00xx)입니다.
+
+- **VS Code** (Red Hat XML 확장): 이 저장소는 `.vscode/settings.json`에 샘플의 카탈로그가 등록되어 있어서, 한 번 빌드하면 바로 됩니다. 다른 프로젝트에서는 `"xml.catalogs": ["MyApp/obj/osu-xaml/catalog.xml"]`을 추가하세요. 카탈로그가 `osu-xaml`, `osu-xaml:x`, `clr-namespace:...`를 각 스키마에 이어 주므로 XAML은 고칠 필요가 없습니다.
+- **카탈로그를 읽지 않는 XML 편집기** (Visual Studio나 Rider의 XML 편집기 등): 루트 요소에 `xsi:schemaLocation`을 적으세요. 경로는 XAML 파일 기준이고, 생성기는 `xsi:` 속성을 무시합니다. `.xaml`을 WPF용 XAML 편집기로 열면 이 스키마를 쓰지 않으니 XML 편집기로 여세요.
+  ```xml
+  <Window xmlns="osu-xaml" xmlns:x="osu-xaml:x" xmlns:local="clr-namespace:MyApp"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="osu-xaml obj/osu-xaml/osu-xaml.xsd clr-namespace:MyApp obj/osu-xaml/clr-namespace.MyApp.xsd">
+  ```
+- 끄려면 `-p:OsuXamlSchema=false`, 다른 곳에 쓰려면 `OsuXamlSchemaDirectory`를 지정합니다. 새로 만든 클래스는 다음 빌드부터 자동완성에 나타납니다.
+
 ## 아직 없는 것
 
-- 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
+- 핫 리로드는 루트 요소에 직접 단 이벤트, 양방향 바인딩, 컬렉션 항목, 텍스트 내용을 처음 한 번만 적용합니다. 이 부분을 바꾸면 앱을 다시 시작해야 합니다 (안쪽 요소와 루트의 일반 속성은 다시 만들어집니다)
 - 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
 - 가상화된 `TreeView`의 `ScrollIntoView`는 아직 만들어지지 않은 중첩 노드를 찾지 못합니다 (최상위 아이템과 이미 만들어진 노드만 됩니다). WPF도 같습니다
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤

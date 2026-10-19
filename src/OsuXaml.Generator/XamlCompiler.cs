@@ -47,6 +47,11 @@ namespace OsuXaml.Generator
             "osu.Framework.Screens",
         };
 
+        internal static IReadOnlyList<string> DefaultNamespaces => default_namespaces;
+
+        /// <summary>XML Schema instance attributes (<c>xsi:schemaLocation</c>) only point IDEs at the completion schema.</summary>
+        private const string schema_instance_namespace = "http://www.w3.org/2001/XMLSchema-instance";
+
         private const string items_source = "ItemsSource";
         private const string item_template = "ItemTemplate";
 
@@ -399,7 +404,7 @@ namespace OsuXaml.Generator
 
             foreach (var attribute in element.Attributes())
             {
-                if (attribute.IsNamespaceDeclaration || directive_namespaces.Contains(attribute.Name.NamespaceName) || attribute.Name.Namespace == XNamespace.Xml)
+                if (isDirectiveOrDeclaration(attribute))
                     continue;
 
                 string member = attribute.Name.LocalName;
@@ -557,6 +562,11 @@ namespace OsuXaml.Generator
             }
         }
 
+        /// <summary>Attributes that aren't properties: xmlns declarations, x: directives, xml:space and xsi:schemaLocation.</summary>
+        private static bool isDirectiveOrDeclaration(XAttribute attribute)
+            => attribute.IsNamespaceDeclaration || directive_namespaces.Contains(attribute.Name.NamespaceName) || attribute.Name.Namespace == XNamespace.Xml
+               || attribute.Name.NamespaceName == schema_instance_namespace;
+
         /// <summary>Attribute and property element names set directly on an element; these beat style setters.</summary>
         private static HashSet<string> localPropertyNames(XElement element)
         {
@@ -564,7 +574,7 @@ namespace OsuXaml.Generator
 
             foreach (var a in element.Attributes())
             {
-                if (!a.IsNamespaceDeclaration && !directive_namespaces.Contains(a.Name.NamespaceName) && a.Name.Namespace != XNamespace.Xml)
+                if (!isDirectiveOrDeclaration(a))
                     set.Add(a.Name.LocalName);
             }
 

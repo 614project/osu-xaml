@@ -486,7 +486,7 @@ namespace OsuXaml.Generator
 
         /// <summary>A resource written as text, like <c>&lt;Colour4 x:Key="Accent"&gt;#89b4fa&lt;/Colour4&gt;</c>.</summary>
         private static bool isLiteralResource(XElement resource)
-            => !resource.HasElements && !resource.Attributes().Any(a => !a.IsNamespaceDeclaration && !directive_namespaces.Contains(a.Name.NamespaceName) && a.Name.Namespace != XNamespace.Xml);
+            => !resource.HasElements && resource.Attributes().All(isDirectiveOrDeclaration);
 
         private readonly HashSet<XElement> expanding = new HashSet<XElement>();
 

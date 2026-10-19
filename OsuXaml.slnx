@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/OsuXaml.Generator/OsuXaml.Generator.csproj" />
+    <Project Path="src/OsuXaml.Schema/OsuXaml.Schema.csproj" />
     <Project Path="src/OsuXaml/OsuXaml.csproj" />
   </Folder>
   <Folder Name="/tests/">

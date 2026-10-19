@@ -13,4 +13,6 @@
     <AdditionalFiles Include="**\*.xaml" />
     <None Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- Writes completion schemas for the XAML to obj/osu-xaml/ after each build. -->
+  <Import Project="..\..\src\OsuXaml.Schema\OsuXaml.Schema.targets" />
 </Project>
