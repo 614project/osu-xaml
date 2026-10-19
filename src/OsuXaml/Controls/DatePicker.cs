@@ -239,6 +239,8 @@ namespace OsuXaml.Controls
             return base.OnKeyDown(e);
         }
 
+        public bool ReportsMeasureChanges => true;
+
         public Vector2 Measure(Vector2 availableSize) => new Vector2(default_width, Height);
 
         protected override void LoadComplete()

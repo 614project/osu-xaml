@@ -90,8 +90,12 @@ namespace OsuXaml.Controls
         /// <summary>The outline width that takes part in layout and drawing: none while there is no visible stroke, as in WPF.</summary>
         protected float EffectiveStrokeThickness => stroke.A > 0 ? Math.Max(0, strokeThickness) : 0;
 
-        /// <summary>Rebuilds the drawn geometry before the next frame is drawn.</summary>
-        protected void InvalidateGeometry() => geometryValid = false;
+        /// <summary>Rebuilds the drawn geometry before the next frame is drawn, and has the panels around measure the shape again.</summary>
+        protected void InvalidateGeometry()
+        {
+            geometryValid = false;
+            Layout.InvalidateMeasure(this);
+        }
 
         /// <summary>Lays out the drawables that draw the shape for its current size.</summary>
         protected abstract void UpdateGeometry(Vector2 size);
@@ -100,6 +104,8 @@ namespace OsuXaml.Controls
         protected abstract void ApplyColours();
 
         public abstract Vector2 Measure(Vector2 availableSize);
+
+        public bool ReportsMeasureChanges => true;
 
         private void brushChanged(bool visibilityChanged)
         {

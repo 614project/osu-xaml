@@ -80,7 +80,10 @@ namespace OsuXaml.Controls
         /// <summary>How many times this panel has arranged its children.</summary>
         internal int ArrangeCount { get; private set; }
 
-        private bool unreported => measuredUnreported || arrangedUnreported;
+        /// <summary>Whether this panel measures and arranges every frame, because it holds an element that doesn't report its changes.</summary>
+        internal bool LaysOutEveryFrame => measuredUnreported || arrangedUnreported;
+
+        private bool unreported => LaysOutEveryFrame;
 
         public void Add(Drawable drawable) => Insert(slots.Count, drawable);
 

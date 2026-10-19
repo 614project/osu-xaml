@@ -78,6 +78,8 @@ namespace OsuXaml.Controls
 
                 if (child != null)
                     horizontal.Add(slot = new ContentSlot(child, this));
+
+                Layout.InvalidateMeasure(this);
             }
         }
 
@@ -214,6 +216,9 @@ namespace OsuXaml.Controls
             horizontal.ScrollTo(offset, animated);
         }
 
+        /// <summary>True: the content's slot passes on its changes, and changing the content or scrolling axes reports itself.</summary>
+        public bool ReportsMeasureChanges => true;
+
         public Vector2 Measure(Vector2 availableSize)
         {
             if (slot == null)
@@ -227,6 +232,8 @@ namespace OsuXaml.Controls
 
         private void applyVisibility()
         {
+            Layout.InvalidateMeasure(this);
+
             vertical.CanScroll = canScrollY;
             horizontal.CanScroll = canScrollX;
             horizontal.YieldsVerticalInput = canScrollY;

@@ -400,6 +400,7 @@ namespace OsuXaml.Controls
             {
                 panel = itemsPanel;
                 AddInternal(panel);
+                Layout.InvalidateMeasure(this);
             }
 
             public void Select(TabItem tab)
@@ -410,6 +411,8 @@ namespace OsuXaml.Controls
                 selected = tab;
                 animateNext = true;
             }
+
+            public bool ReportsMeasureChanges => true;
 
             public Vector2 Measure(Vector2 availableSize) => panel?.Measure(availableSize) ?? Vector2.Zero;
 
@@ -467,6 +470,8 @@ namespace OsuXaml.Controls
             public readonly Box Fill;
             public readonly Container Pages;
 
+            private ContentPresenter shown;
+
             public PageArea()
             {
                 Masking = true;
@@ -477,7 +482,13 @@ namespace OsuXaml.Controls
                 };
             }
 
-            public ContentPresenter Shown { get; set; }
+            public ContentPresenter Shown
+            {
+                get => shown;
+                set => Layout.SetAffectsMeasure(this, ref shown, value);
+            }
+
+            public bool ReportsMeasureChanges => true;
 
             public Vector2 Measure(Vector2 availableSize)
             {
@@ -583,7 +594,9 @@ namespace OsuXaml.Controls
             get => padding;
             set
             {
-                padding = value;
+                if (!Layout.SetAffectsMeasure(this, ref padding, value))
+                    return;
+
                 applyPadding();
             }
         }
@@ -659,6 +672,8 @@ namespace OsuXaml.Controls
             selectionRequested = false;
             return requested;
         }
+
+        public bool ReportsMeasureChanges => true;
 
         public Vector2 Measure(Vector2 availableSize)
         {

@@ -90,14 +90,14 @@ namespace OsuXaml.Controls
         public Stretch Stretch
         {
             get => stretch;
-            set => stretch = value;
+            set => Layout.SetAffectsMeasure(this, ref stretch, value);
         }
 
         /// <summary>Whether stretching may enlarge the picture, shrink it, or both (the default).</summary>
         public StretchDirection StretchDirection
         {
             get => stretchDirection;
-            set => stretchDirection = value;
+            set => Layout.SetAffectsMeasure(this, ref stretchDirection, value);
         }
 
         /// <summary>The picture's own size in layout units, or zero while there is no picture.</summary>
@@ -233,6 +233,9 @@ namespace OsuXaml.Controls
             texture = value;
             ownsTexture = owned;
             sprite.Texture = value;
+
+            // The natural size comes from the picture, which may arrive after the image was laid out.
+            Layout.InvalidateMeasure(this);
             sprite.Alpha = value != null ? 1 : 0;
         }
 
@@ -242,6 +245,9 @@ namespace OsuXaml.Controls
             explicitWidth ??= !RelativeSizeAxes.HasFlag(Axes.X) && Width > 0;
             explicitHeight ??= !RelativeSizeAxes.HasFlag(Axes.Y) && Height > 0;
         }
+
+        /// <summary>True: a new picture or stretch setting reports itself, and a size of its own is passed on by its slot.</summary>
+        public bool ReportsMeasureChanges => true;
 
         public Vector2 Measure(Vector2 availableSize)
         {

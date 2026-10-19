@@ -322,6 +322,9 @@ namespace OsuXaml.Controls
             base.Dispose(isDisposing);
         }
 
+        // The title's width and the window's size count too, and neither tells the panels around; a dialog placed in a panel is measured every frame.
+        public override bool ReportsMeasureChanges => false;
+
         public override Vector2 Measure(Vector2 availableSize)
         {
             var limit = maxSize();

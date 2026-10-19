@@ -471,6 +471,9 @@ namespace OsuXaml.Controls
         private Panel childPanel;
         private float expansion;
         private int level;
+
+        // What the last measurement went by (header indent and expansion), checked each frame as the expansion animates.
+        private Vector2 measuredFrom = new Vector2(float.NaN);
         private bool expandSubtreeOnLoad;
         private bool preparing;
 
@@ -893,6 +896,14 @@ namespace OsuXaml.Controls
         protected override void UpdateAfterChildren()
         {
             base.UpdateAfterChildren();
+
+            var from = new Vector2(headerRow.ContentOffset, expansion);
+
+            if (from != measuredFrom)
+            {
+                measuredFrom = from;
+                Layout.InvalidateMeasure(this);
+            }
 
             float header = headerHeight;
             headerRow.Height = header;

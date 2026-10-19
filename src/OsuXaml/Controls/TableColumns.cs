@@ -101,6 +101,9 @@ namespace OsuXaml.Controls
         public float[] Offsets = Array.Empty<float>();
         public float Total;
 
+        /// <summary>Goes up whenever a solve changes a width, so rows know to measure again.</summary>
+        public int Version;
+
         // The widest content each column has shown, and the Width setting it was seen under.
         private float[] widest = Array.Empty<float>();
         private GridLength[] widestFor = Array.Empty<GridLength>();
@@ -124,9 +127,11 @@ namespace OsuXaml.Controls
         public void Solve(float available, Func<int, float> desired)
         {
             int count = Columns.Count;
+            bool changed = false;
 
             if (Widths.Length != count)
             {
+                changed = true;
                 Widths = new float[count];
                 Offsets = new float[count];
                 widest = new float[count];
@@ -194,10 +199,16 @@ namespace OsuXaml.Controls
 
             for (int i = 0; i < count; i++)
             {
+                if (Columns[i].ActualWidth != Widths[i] || Offsets[i] != Total)
+                    changed = true;
+
                 Offsets[i] = Total;
                 Total += Widths[i];
                 Columns[i].ActualWidth = Widths[i];
             }
+
+            if (changed)
+                Version++;
         }
 
         /// <summary>Forgets the widths content-sized columns have seen, after the columns change.</summary>
@@ -215,7 +226,9 @@ namespace OsuXaml.Controls
         private readonly List<Slot> cells = new List<Slot>();
         private readonly List<Box> lines = new List<Box>();
         private Colour4 lineColour = Theme.Border;
+        private float rowHeight;
         private bool built;
+        private int measuredVersion = -1;
 
         internal ColumnLayout ColumnLayout { get; set; }
 
@@ -226,7 +239,11 @@ namespace OsuXaml.Controls
         protected virtual MarginPadding CellPadding => default;
 
         /// <summary>A fixed row height, or 0 to fit the tallest cell.</summary>
-        public float RowHeight { get; set; }
+        public float RowHeight
+        {
+            get => rowHeight;
+            set => Layout.SetAffectsMeasure(this, ref rowHeight, value);
+        }
 
         /// <summary>Draws a line at the right edge of every column.</summary>
         public bool ShowVerticalLines { get; set; }
@@ -283,6 +300,7 @@ namespace OsuXaml.Controls
             cells.Clear();
             lines.Clear();
             buildCells();
+            Layout.InvalidateMeasure(this);
         }
 
         private void buildCells()
@@ -322,6 +340,8 @@ namespace OsuXaml.Controls
             return cells[column].Measure(new Vector2(float.PositiveInfinity)).X + CellPadding.TotalHorizontal;
         }
 
+        public bool ReportsMeasureChanges => true;
+
         public Vector2 Measure(Vector2 availableSize)
         {
             var widths = ColumnLayout.Widths;
@@ -347,6 +367,13 @@ namespace OsuXaml.Controls
         protected override void UpdateAfterChildren()
         {
             base.UpdateAfterChildren();
+
+            // The columns are shared by every row; when a solve moved them, the panels around measure this row again.
+            if (measuredVersion != ColumnLayout.Version)
+            {
+                measuredVersion = ColumnLayout.Version;
+                Layout.InvalidateMeasure(this);
+            }
 
             var widths = ColumnLayout.Widths;
             var offsets = ColumnLayout.Offsets;
@@ -510,6 +537,9 @@ namespace OsuXaml.Controls
 
                 Content = Column.EffectiveHeader;
                 applySortIcon(150);
+
+                // The sort icon takes space.
+                Layout.InvalidateMeasure(this);
             });
         }
 

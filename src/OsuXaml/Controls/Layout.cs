@@ -235,7 +235,8 @@ namespace OsuXaml.Controls
                         break;
 
                     // Whatever changed inside content of a fixed size (or collapsed) can't change the size it asks for.
-                    case Slot slot when from != null && from == slot.Content && slot.HasFixedSize:
+                    // A change to the content itself (an attached property, say) still goes on to its panel.
+                    case Slot slot when from != null && from != drawable && from == slot.Content && slot.HasFixedSize:
                         return;
                 }
             }

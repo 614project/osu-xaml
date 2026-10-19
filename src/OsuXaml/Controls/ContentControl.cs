@@ -199,6 +199,9 @@ namespace OsuXaml.Controls
             get => Chrome.BorderThickness;
             set
             {
+                if (Chrome.BorderThickness != value)
+                    Layout.InvalidateMeasure(this);
+
                 Chrome.BorderThickness = value;
                 contentArea.Padding = Layout.Add(new MarginPadding(value), padding);
 
@@ -221,7 +224,9 @@ namespace OsuXaml.Controls
             get => padding;
             set
             {
-                padding = value;
+                if (!Layout.SetAffectsMeasure(this, ref padding, value))
+                    return;
+
                 contentArea.Padding = Layout.Add(new MarginPadding(Chrome.BorderThickness), value);
             }
         }
@@ -277,6 +282,7 @@ namespace OsuXaml.Controls
 
         private void present()
         {
+            Layout.InvalidateMeasure(this);
             detachPresented();
 
             switch (content)
@@ -357,6 +363,7 @@ namespace OsuXaml.Controls
 
         private void applyTemplate()
         {
+            Layout.InvalidateMeasure(this);
             detachPresented();
 
             if (templateSlot != null)
@@ -383,6 +390,12 @@ namespace OsuXaml.Controls
             if (root != null)
                 AddInternal(templateSlot = new Slot(root));
         }
+
+        /// <summary>
+        /// True: the content and template sit in slots, which pass on their size changes, and the properties that change the size
+        /// asked for report themselves. A derived control whose measuring reads anything else reports changes to it too.
+        /// </summary>
+        public virtual bool ReportsMeasureChanges => true;
 
         public virtual Vector2 Measure(Vector2 availableSize)
         {

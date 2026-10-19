@@ -421,6 +421,9 @@ namespace OsuXaml.Controls
         private bool isHighlighted;
         private MenuBase parentMenu;
 
+        // What the last measurement went by: the header and gesture text size themselves, so they are checked each frame.
+        private Vector3 measuredFrom = new Vector3(float.NaN);
+
         // Bindings for children of a generated item (HierarchicalDataTemplate); a field, so disposal unbinds them.
         private BindingScope generatedBindings;
         private object dataItem;
@@ -747,6 +750,22 @@ namespace OsuXaml.Controls
         {
             base.OnItemsChanged();
             updateLayout();
+        }
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+
+            var from = new Vector3(headerPresenter.DrawWidth, headerPresenter.DrawHeight, gestureText.Alpha > 0 ? gestureText.DrawWidth : -1);
+
+            if (isTopLevel)
+                from.Z = -2;
+
+            if (from != measuredFrom)
+            {
+                measuredFrom = from;
+                Layout.InvalidateMeasure(this);
+            }
         }
 
         public override Vector2 Measure(Vector2 availableSize)

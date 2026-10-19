@@ -25,6 +25,8 @@ namespace OsuXaml.Controls
         private readonly Grip grip;
         private readonly ContentPresenter header;
         private Orientation orientation = Orientation.Horizontal;
+        private int band;
+        private int bandIndex;
 
         public ToolBar()
         {
@@ -63,10 +65,18 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>The row (or column) of a <see cref="ToolBarTray"/> this toolbar goes in.</summary>
-        public int Band { get; set; }
+        public int Band
+        {
+            get => band;
+            set => Layout.SetAffectsMeasure(this, ref band, value);
+        }
 
         /// <summary>The position within its band, lowest first.</summary>
-        public int BandIndex { get; set; }
+        public int BandIndex
+        {
+            get => bandIndex;
+            set => Layout.SetAffectsMeasure(this, ref bandIndex, value);
+        }
 
         public Colour4 Background
         {
@@ -230,16 +240,27 @@ namespace OsuXaml.Controls
     /// </summary>
     public partial class ToolBarTray : Panel
     {
+        private Orientation orientation = Orientation.Horizontal;
+        private float spacing = 4;
+
         public ToolBarTray()
         {
             Background = Theme.Crust;
             Padding = new MarginPadding(4);
         }
 
-        public Orientation Orientation { get; set; } = Orientation.Horizontal;
+        public Orientation Orientation
+        {
+            get => orientation;
+            set => Layout.SetAffectsMeasure(this, ref orientation, value);
+        }
 
         /// <summary>The gap between toolbars and between bands.</summary>
-        public float Spacing { get; set; } = 4;
+        public float Spacing
+        {
+            get => spacing;
+            set => Layout.SetAffectsMeasure(this, ref spacing, value);
+        }
 
         private List<List<Slot>> bands()
             => Slots.Where(s => !Layout.IsCollapsed(s.Content))
