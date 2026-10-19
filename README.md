@@ -195,7 +195,7 @@ public partial class MainView : CompositeDrawable
 | | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
 | | `Image` | `Source` (파일 경로 또는 osu! 텍스처 이름), `Stretch`, `StretchDirection`, `ImageFailed` |
 | | `Viewbox` | 자식 하나를 비율 유지하며 늘이거나 줄임, `Stretch`, `StretchDirection` |
-| | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome), `Size`, `Foreground` |
+| | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome, 없는 이름은 비슷한 이름을 알려 주는 빌드 오류), `Size`, `Foreground` |
 | 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height`, `Visibility`, `ToolTip`, `ContextMenu` |
 
 패널과 `ItemsSource`도 함께 쓸 수 있습니다 (`<WrapPanel ItemsSource="{Bind Tags}">`). `{Bind}`처럼 경로를 비우면 아이템 자체에 바인딩됩니다.
@@ -278,7 +278,6 @@ private async void OnSettings()
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
 - 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
-- `Icon Kind`의 오타는 빌드 오류가 아니라 실행 중 물음표 아이콘으로 나타납니다
 - 모달은 `Window`(팝업 레이어) 단위입니다. 한 게임에 Window가 여럿이면 각자 따로 막힙니다
 - 여러 칸에 걸친 Grid 자식은 Auto 크기 계산에 들어가지 않습니다 (WPF는 반영합니다)
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
