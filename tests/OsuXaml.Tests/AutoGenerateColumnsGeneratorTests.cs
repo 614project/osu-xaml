@@ -48,6 +48,8 @@ namespace Demo
         [Display(AutoGenerateField = false)]
         public string Hidden { get; set; }
 
+        public string @class { get; set; }
+
         public BindableList<string> Tags { get; } = new BindableList<string>();
         public System.Action Changed;
         public static int Count;
@@ -102,6 +104,10 @@ namespace Demo
             Assert.That(source, Does.Match("Header = \"Nick\".*IsReadOnly = true"));
             Assert.That(source, Does.Match("Header = \"Id\".*IsReadOnly = true"));
             Assert.That(source, Does.Not.Match("Header = \"Name\"[^\\n]*IsReadOnly"));
+
+            // A keyword member keeps its name in the header and its @ in code.
+            Assert.That(source, Does.Contain("Header = \"class\""));
+            Assert.That(source, Does.Contain(".@class)"));
 
             foreach (string skipped in new[] { "Secret", "Hidden", "Tags", "Changed", "Count", "Internal", "this[]" })
                 Assert.That(source, Does.Not.Contain("DataGridAutoColumn(\"" + skipped + "\""), skipped);

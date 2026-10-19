@@ -439,7 +439,9 @@ namespace OsuXaml.Generator
             foreach (var column in autoColumns(itemType))
             {
                 string x = "i" + counter++;
-                string access = $"{x}.{column.Member.Name}";
+                // A member named after a keyword (@class) needs its @ back in the generated accessor.
+                string member = SyntaxFacts.GetKeywordKind(column.Member.Name) != SyntaxKind.None ? "@" + column.Member.Name : column.Member.Name;
+                string access = $"{x}.{member}";
                 string value = column.Bindable ? access + ".Value" : access;
                 string binding = $"new global::OsuXaml.ItemBinding<{typeName(itemType)}, {typeName(column.ValueType)}>({SymbolDisplay.FormatLiteral(column.Member.Name, true)}, {x} => {access}, {x} => {value})";
 
