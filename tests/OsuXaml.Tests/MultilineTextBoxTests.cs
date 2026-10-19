@@ -277,6 +277,72 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void ScrollBarShowsWhileTheLinesDontFit()
+        {
+            create(b =>
+            {
+                b.AcceptsReturn = true;
+                b.Height = 80;
+                b.Text.Value = string.Join("\n", Enumerable.Range(1, 12).Select(i => $"line {i}"));
+            });
+
+            ScrollBar bar() => box.ChildrenOfType<ScrollBar>().Single(s => s.Orientation == Orientation.Vertical);
+
+            float top = 0;
+            AddUntilStep("a vertical bar", () => bar().IsPresent && bar().DrawHeight > 50);
+            AddAssert("no horizontal one", () => !box.ChildrenOfType<ScrollBar>().Single(s => s.Orientation == Orientation.Horizontal).IsPresent);
+            AddStep("remember where the text starts", () => top = lineText.ScreenSpaceDrawQuad.TopLeft.Y);
+
+            AddStep("drag the thumb to the bottom", () =>
+            {
+                InputManager.MoveMouseTo(bar().Thumb);
+                InputManager.PressButton(MouseButton.Left);
+                InputManager.MoveMouseTo(bar().Thumb.ScreenSpaceDrawQuad.Centre + new Vector2(0, 200));
+                InputManager.ReleaseButton(MouseButton.Left);
+            });
+            AddUntilStep("scrolled to the last line", () => System.Math.Abs(lineText.ScreenSpaceDrawQuad.BottomLeft.Y - (box.ScreenSpaceDrawQuad.BottomLeft.Y - 10)) < 1);
+            AddAssert("the caret stayed put", () => box.SelectedText == string.Empty);
+
+            AddStep("wheel up", () =>
+            {
+                InputManager.MoveMouseTo(box);
+                InputManager.ScrollVerticalBy(20);
+            });
+            AddUntilStep("the bar follows", () => bar().Value.Value == 0 && System.Math.Abs(lineText.ScreenSpaceDrawQuad.TopLeft.Y - top) < 1);
+
+            AddStep("one line", () => box.Text.Value = "one");
+            AddUntilStep("bar hidden while everything fits", () => !bar().IsPresent);
+
+            AddStep("Visible", () => box.VerticalScrollBarVisibility = ScrollBarVisibility.Visible);
+            AddUntilStep("always shown", () => bar().IsPresent);
+
+            AddStep("Hidden, with lines that don't fit", () =>
+            {
+                box.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
+                box.Text.Value = string.Join("\n", Enumerable.Range(1, 12));
+            });
+            AddWaitStep("lay out", 2);
+            AddAssert("never shown", () => !bar().IsPresent);
+        }
+
+        [Test]
+        public void HorizontalScrollBarForLongLines()
+        {
+            create(b =>
+            {
+                b.AcceptsReturn = true;
+                b.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+                b.Text.Value = "short\nThe quick brown fox jumps over the lazy dog, again and again and again";
+            });
+
+            ScrollBar bar() => box.ChildrenOfType<ScrollBar>().Single(s => s.Orientation == Orientation.Horizontal);
+
+            AddUntilStep("a horizontal bar", () => bar().IsPresent && bar().DrawWidth > 200);
+            AddStep("scroll it to the end", () => bar().ScrollToMaximum());
+            AddUntilStep("the long line's end is in view", () => lineText.ScreenSpaceDrawQuad.TopRight.X <= box.ScreenSpaceDrawQuad.TopRight.X);
+        }
+
+        [Test]
         public void MinAndMaxLinesLimitGrowing()
         {
             create(b =>
