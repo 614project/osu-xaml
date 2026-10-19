@@ -139,7 +139,7 @@ namespace OsuXaml.Generator
                     return;
                 }
 
-                line(member is IEventSymbol ? $"{v}.{member.Name} += {handler};" : $"{v}.{member.Name} = {handler};");
+                line(member is IEventSymbol ? $"{firstBuildOnly(v)}{v}.{member.Name} += {handler};" : $"{v}.{member.Name} = {handler};");
                 return;
             }
 
@@ -164,7 +164,7 @@ namespace OsuXaml.Generator
 
                 if (sourceBindableValue != null && SymbolEqualityComparer.Default.Equals(sourceBindableValue, targetBindableValue))
                 {
-                    line($"global::OsuXaml.XamlBinding.TwoWay({v}.{member.Name}, {expr});");
+                    line($"{firstBuildOnly(v)}global::OsuXaml.XamlBinding.TwoWay({v}.{member.Name}, {expr});");
                     return;
                 }
 

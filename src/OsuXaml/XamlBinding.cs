@@ -58,7 +58,7 @@ namespace OsuXaml
                 updating = false;
             }, true);
 
-            target.BindValueChanged(e =>
+            Action<ValueChangedEvent<object>> writeBack = e =>
             {
                 if (updating || copy.Disabled)
                     return;
@@ -75,7 +75,10 @@ namespace OsuXaml
                     copy.Value = default;
                     updating = false;
                 }
-            });
+            };
+
+            target.ValueChanged += writeBack;
+            scope.Add(new Cleanup(() => target.ValueChanged -= writeBack));
         }
 
         /// <summary>
@@ -111,6 +114,16 @@ namespace OsuXaml
             var items = new List<T>();
             var drawables = new List<Drawable>();
             var scopes = new List<BindingScope>();
+
+            // A view rebuilt by hot reload removes the rows it made; normally they go away with the container.
+            scope.Add(new Cleanup(() =>
+            {
+                if (!XamlHotReload.IsTearingDown)
+                    return;
+
+                while (items.Count > 0)
+                    removeAt(items.Count - 1);
+            }));
 
             copy.BindCollectionChanged((_, e) =>
             {
@@ -175,6 +188,32 @@ namespace OsuXaml
                 drawables.RemoveAt(index);
                 scopes.RemoveAt(index);
             }
+        }
+
+        /// <summary>Runs an action when the scope that owns it is unbound.</summary>
+        private sealed class Cleanup : IUnbindable
+        {
+            private Action action;
+
+            public Cleanup(Action action)
+            {
+                this.action = action;
+            }
+
+            public void UnbindAll()
+            {
+                var run = action;
+                action = null;
+                run?.Invoke();
+            }
+
+            public void UnbindEvents()
+            {
+            }
+
+            public void UnbindBindings() => UnbindAll();
+
+            void IUnbindable.UnbindFrom(IUnbindable them) => throw new NotSupportedException();
         }
     }
 }

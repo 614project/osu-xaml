@@ -61,8 +61,14 @@ namespace OsuXaml.Generator
         private readonly Dictionary<string, XElement> names = new Dictionary<string, XElement>();
         private readonly List<XElement> globalDictionaries = new List<XElement>();
 
+        /// <summary>Variables of the root's own children (and drawables set on its properties), which a hot reload rebuild removes.</summary>
+        private readonly List<string> rootChildren = new List<string>();
+
         private StringBuilder body;
         private INamedTypeSymbol rootType;
+
+        /// <summary>Whether the view is wired to hot reload: its root is a drawable, which can schedule its own rebuild.</summary>
+        private bool hotReload;
         private XElement rootElement;
         private int indent;
         private int counter;
@@ -180,6 +186,9 @@ namespace OsuXaml.Generator
             loadDictionaries();
             collectNames(root);
 
+            hotReload = inherits(rootType, compilation.GetTypeByMetadataName("osu.Framework.Graphics.Drawable"))
+                        && compilation.GetTypeByMetadataName("OsuXaml.IXamlHotReloadable") != null;
+
             var elementType = resolveType(root);
 
             if (elementType != null && !inherits(rootType, elementType))
@@ -266,7 +275,7 @@ namespace OsuXaml.Generator
             if (ns != null)
                 sb.AppendLine("namespace " + ns).AppendLine("{");
 
-            sb.AppendLine("    partial class " + rootType.Name);
+            sb.AppendLine("    partial class " + rootType.Name + (hotReload ? " : global::OsuXaml.IXamlHotReloadable" : ""));
             sb.AppendLine("    {");
 
             foreach (string f in fields)
@@ -290,7 +299,28 @@ namespace OsuXaml.Generator
                 sb.Append(deferred);
             }
 
+            if (hotReload)
+            {
+                sb.AppendLine();
+                sb.AppendLine("            // Only under .NET hot reload: remember what to take down when this XAML changes.");
+                sb.AppendLine("            if (global::OsuXaml.XamlHotReload.IsEnabled)");
+                sb.AppendLine("                global::OsuXaml.XamlHotReload.Register(this, " + (dataType != null ? "dataContext" : "null") + string.Concat(rootChildren.Select(c => ", " + c)) + ");");
+            }
+
             sb.AppendLine("        }");
+
+            if (hotReload)
+            {
+                sb.AppendLine();
+                sb.AppendLine("        /// <summary>Runs after hot reload rebuilt this view from changed XAML. Implement it to redo setup that follows InitializeComponent.</summary>");
+                sb.AppendLine("        partial void OnXamlReloaded();");
+                sb.AppendLine();
+                sb.AppendLine("        void global::OsuXaml.IXamlHotReloadable.ReloadXaml() => Schedule(() => global::OsuXaml.XamlHotReload.Rebuild(this, xamlBindings, dataContext =>");
+                sb.AppendLine("        {");
+                sb.AppendLine("            InitializeComponent(" + (dataType != null ? "(" + typeName(dataType) + ")dataContext" : "") + ");");
+                sb.AppendLine("            OnXamlReloaded();");
+                sb.AppendLine("        }));");
+            }
             sb.AppendLine("    }");
 
             if (ns != null)
@@ -550,6 +580,9 @@ namespace OsuXaml.Generator
 
         private void emitAddChild(string v, INamedTypeSymbol parent, ITypeSymbol child, string c, XElement childElement, bool isRoot)
         {
+            if (isRoot)
+                rootChildren.Add(c);
+
             var containerChild = containerChildType(parent);
 
             if (containerChild != null)
@@ -627,7 +660,7 @@ namespace OsuXaml.Generator
             foreach (var item in mixedItems(element))
             {
                 if (item is string text)
-                    line($"{v}.AddText({SymbolDisplay.FormatLiteral(text, true)});");
+                    line($"{firstBuildOnly(v)}{v}.AddText({SymbolDisplay.FormatLiteral(text, true)});");
                 else
                 {
                     var child = (XElement)item;
@@ -882,7 +915,7 @@ namespace OsuXaml.Generator
                         continue;
 
                     if (findMethods(target, "Add").Any(m => !m.IsStatic && m.Parameters.Length == 1 && implicitly(itemType, m.Parameters[0].Type)))
-                        line($"{v}.{member.Name}.Add({item});");
+                        line($"{firstBuildOnly(v)}{v}.{member.Name}.Add({item});");
                     else
                         report(Diagnostics.TypeMismatch, child, itemType.ToDisplayString(), member.Name, target.ToDisplayString(), "");
                 }
@@ -937,7 +970,7 @@ namespace OsuXaml.Generator
             {
                 if (item is string text)
                 {
-                    line($"{v}.{collection.Name}.Add({SymbolDisplay.FormatLiteral(text, true)});");
+                    line($"{firstBuildOnly(v)}{v}.{collection.Name}.Add({SymbolDisplay.FormatLiteral(text, true)});");
                     continue;
                 }
 
@@ -951,7 +984,7 @@ namespace OsuXaml.Generator
                 if (!canAdd)
                     report(Diagnostics.TypeMismatch, child, childType.Name, collection.Name, collection.Type.ToDisplayString(), "");
                 else
-                    line($"{v}.{collection.Name}.Add({c});");
+                    line($"{firstBuildOnly(v)}{v}.{collection.Name}.Add({c});");
             }
         }
 
@@ -1012,7 +1045,7 @@ namespace OsuXaml.Generator
             {
                 string handler = methodHandler((INamedTypeSymbol)ev.Type, value, source);
                 if (handler != null)
-                    line($"{v}.{member.Name} += {handler};");
+                    line($"{firstBuildOnly(v)}{v}.{member.Name} += {handler};");
                 return;
             }
 
@@ -1075,8 +1108,18 @@ namespace OsuXaml.Generator
                 return;
             }
 
+            // <Window.Content><Grid /></Window.Content>: the grid is the root's child as much as a nested element would be.
+            if (v == "this")
+                rootChildren.Add(expr);
+
             assign(v, member, expr);
         }
+
+        /// <summary>
+        /// A guard for statements on the root that can't run twice (an event handler, a collection item, a two-way link
+        /// to its own bindable): when hot reload rebuilds the view, the first build's ones are still in place.
+        /// </summary>
+        private string firstBuildOnly(string v) => hotReload && v == "this" ? "if (!global::OsuXaml.XamlHotReload.IsRebuilding) " : string.Empty;
 
         /// <summary>A plain attribute value on a delegate or event names a method on the x:Class (code-behind).</summary>
         private string methodHandler(INamedTypeSymbol delegateType, string methodName, XObject source)
