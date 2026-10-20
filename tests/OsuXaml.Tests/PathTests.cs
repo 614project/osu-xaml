@@ -1,7 +1,7 @@
 using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
-using osu.Framework.Graphics.Lines;
+using osu.Framework.Graphics.Primitives;
 using osu.Framework.Testing;
 using osu.Framework.Utils;
 using OsuXaml.Controls;
@@ -124,10 +124,14 @@ namespace OsuXaml.Tests
         }
     }
 
-    /// <summary>Path at runtime: drawing its figures and stretching like an icon.</summary>
+    /// <summary>Path at runtime: drawing its figures, its fill rule and stretching like an icon.</summary>
     [HeadlessTest]
     public partial class PathTests : TestScene
     {
+        private static bool near(RectangleF a, RectangleF b, float within = 0.05f) =>
+            Precision.AlmostEquals(a.X, b.X, within) && Precision.AlmostEquals(a.Y, b.Y, within)
+            && Precision.AlmostEquals(a.Width, b.Width, within) && Precision.AlmostEquals(a.Height, b.Height, within);
+
         [Test]
         public void DrawsFiguresAtTheirCoordinates()
         {
@@ -141,14 +145,29 @@ namespace OsuXaml.Tests
                 Fill = Colour4.Pink,
             });
 
-            AddUntilStep("two strokes", () => path.ChildrenOfType<SmoothPath>().Count() == 2);
+            AddUntilStep("both figures stroked", () => path.StrokeMesh.Contains(new Vector2(30, 10)) && path.StrokeMesh.Contains(new Vector2(70, 10)));
             AddAssert("sized to its furthest point", () => path.DrawSize == new Vector2(81, 41));
-            AddAssert("closed figure returns to its start", () =>
+            AddAssert("closed figure is stroked back to its start", () => path.StrokeMesh.Contains(new Vector2(30, 25)));
+            AddAssert("the triangle is filled", () => near(path.FillMesh.Bounds, new RectangleF(10, 10, 40, 30)) && Precision.AlmostEquals(path.FillMesh.Area, 600, 0.5f));
+            AddAssert("the open line has no area", () => !path.FillMesh.Contains(new Vector2(70, 10.2f)));
+        }
+
+        [Test]
+        public void FillRuleComesFromTheMarkup()
+        {
+            Path evenOdd = null, nonzero = null;
+            const string rings = "M 0,0 L 40,0 40,40 0,40 Z M 10,10 L 30,10 30,30 10,30 Z";
+
+            AddStep("create", () =>
             {
-                var stroke = path.ChildrenOfType<SmoothPath>().First();
-                return stroke.Vertices.Count == 4 && stroke.Vertices[0] == stroke.Vertices[3];
+                var panel = new StackPanel { Orientation = Orientation.Horizontal };
+                panel.Add(evenOdd = new Path { Data = Geometry.Parse(rings), Fill = Colour4.White });
+                panel.Add(nonzero = new Path { Data = Geometry.Parse("F1 " + rings), Fill = Colour4.White });
+                Child = panel;
             });
-            AddAssert("the triangle is filled, the open line has no area", () => path.ChildrenOfType<Drawable>().Count(d => d.GetType().Name == "PolygonFill") == 1);
+
+            AddUntilStep("F0 (the default) leaves a hole", () => Precision.AlmostEquals(evenOdd.FillMesh.Area, 1200, 0.5f) && !evenOdd.FillMesh.Contains(new Vector2(20, 20)));
+            AddAssert("F1 fills it", () => Precision.AlmostEquals(nonzero.FillMesh.Area, 1600, 0.5f) && nonzero.FillMesh.Contains(new Vector2(20, 20)));
         }
 
         [Test]
@@ -163,11 +182,7 @@ namespace OsuXaml.Tests
                 Child = panel;
             });
 
-            AddUntilStep("filled across the width", () =>
-            {
-                var fill = path.ChildrenOfType<Drawable>().SingleOrDefault(d => d.GetType().Name == "PolygonFill");
-                return fill != null && Precision.AlmostEquals(fill.DrawSize, new Vector2(40, 20), 0.01f) && fill.Position == Vector2.Zero;
-            });
+            AddUntilStep("filled across the width", () => near(path.FillMesh.Bounds, new RectangleF(0, 0, 40, 20), 0.01f));
         }
     }
 }

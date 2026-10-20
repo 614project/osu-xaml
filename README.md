@@ -190,9 +190,11 @@ public partial class MainView : CompositeDrawable
 | 날짜·색 | `Calendar` | `SelectedDate` (양방향), `DisplayDate`, `FirstDayOfWeek`, 월·연·10년 보기, 키보드 |
 | | `DatePicker` | `SelectedDate` (양방향), `SelectedDateFormat`, 직접 입력, F4·Alt+↓로 열기 |
 | | `ColorPicker` | `SelectedColor` (양방향) |
-| 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke`, `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
-| | `Line`, `Polyline`, `Polygon` | `X1`/`Y1`/`X2`/`Y2`, `Points="0,0 10,20 20,0"`, `Fill` (Polygon) |
-| | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
+| 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke` (색 또는 브러시), `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
+| | `Line`, `Polyline`, `Polygon` | `X1`/`Y1`/`X2`/`Y2`, `Points="0,0 10,20 20,0"`, `Fill`, `FillRule` (`EvenOdd` 기본, `Nonzero`) |
+| | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법, 앞에 `F1`이면 `Nonzero`), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
+| | 모든 도형의 선 | `StrokeStartLineCap`/`StrokeEndLineCap`/`StrokeDashCap` (`Flat`·`Square`·`Round`·`Triangle`), `StrokeLineJoin` (`Miter`·`Bevel`·`Round`), `StrokeMiterLimit`, `StrokeDashArray="4 2"`, `StrokeDashOffset`. 기본값은 WPF처럼 `Flat`, `Miter`, 10 |
+| | `SolidColorBrush`, `LinearGradientBrush`, `RadialGradientBrush` | `GradientStop` (`Color`, `Offset`), `StartPoint`/`EndPoint`, `Center`/`GradientOrigin`/`RadiusX`/`RadiusY`, `MappingMode`, `SpreadMethod` (`Pad`·`Reflect`·`Repeat`), `Opacity`. 속성 요소나 리소스로 쓰고, 색 바인딩·`Animate`도 됩니다 |
 | | `Image` | `Source` (파일 경로 또는 osu! 텍스처 이름), `Stretch`, `StretchDirection`, `ImageFailed` |
 | | `Viewbox` | 자식 하나를 비율 유지하며 늘이거나 줄임, `Stretch`, `StretchDirection` |
 | | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome), `Size`, `Foreground` |
@@ -276,7 +278,7 @@ private async void OnSettings()
 - 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
 - 가상화된 `TreeView`의 `ScrollIntoView`는 아직 만들어지지 않은 중첩 노드를 찾지 못합니다 (최상위 아이템과 이미 만들어진 노드만 됩니다). WPF도 같습니다
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
-- 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
+- 브러시는 도형의 `Fill`/`Stroke`에만 쓸 수 있습니다. 컨트롤의 `Background`/`Foreground`는 아직 색만 받고, 브러시의 `Transform`/`RelativeTransform`, `ImageBrush`/`VisualBrush`도 없습니다
 - 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
 - `Icon Kind`의 오타는 빌드 오류가 아니라 실행 중 물음표 아이콘으로 나타납니다
 - 모달은 `Window`(팝업 레이어) 단위입니다. 한 게임에 Window가 여럿이면 각자 따로 막힙니다
