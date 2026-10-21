@@ -23,7 +23,7 @@ namespace OsuXaml.Controls
     /// With <see cref="AcceptsReturn"/>, <see cref="TextWrapping"/>, or text that contains line breaks, the box lays its text out in lines
     /// and edits it there: Up/Down, Home/End per line, Ctrl+Home/End, PageUp/PageDown, clicking and dragging across lines, and the mouse wheel.
     /// </summary>
-    public abstract partial class TextBoxBase : BasicTextBox, ILayoutElement
+    public abstract partial class TextBoxBase : BasicTextBox, ILayoutElement, IHasDefaultCursor
     {
         // osu!framework's TextBox refuses control characters, so line breaks are kept inside it as U+2028 LINE SEPARATOR
         // and turned back into '\n' wherever the text leaves it.
@@ -67,6 +67,17 @@ namespace OsuXaml.Controls
 
         private Vector2 scroll;
         private bool scrollPlaced;
+
+        // Thin bars over the box's padding, so showing one doesn't narrow the text.
+        private const float scroll_bar_thickness = 10;
+        private const float scroll_bar_inset = 3;
+
+        // Made the first time the text is in lines, since most boxes never are.
+        private ScrollBar verticalBar;
+        private ScrollBar horizontalBar;
+        private ScrollBarVisibility verticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        private ScrollBarVisibility horizontalScrollBarVisibility = ScrollBarVisibility.Hidden;
+        private bool updatingBars;
         private bool scrollPending;
         private Vector2 scrolledViewSize;
 
@@ -121,6 +132,30 @@ namespace OsuXaml.Controls
                     },
                 },
             });
+        }
+
+        /// <summary>A scroll bar over the text, which shows the arrow rather than the box's text cursor.</summary>
+        private partial class TextBoxScrollBar : ScrollBar, IHasDefaultCursor
+        {
+            Cursor IHasDefaultCursor.DefaultCursor => Cursors.Arrow;
+        }
+
+        private static ScrollBar createScrollBar(Orientation orientation)
+        {
+            bool vertical = orientation == Orientation.Vertical;
+
+            return new TextBoxScrollBar
+            {
+                Orientation = orientation,
+                ShowArrows = false,
+                Background = Colour4.Transparent,
+                Anchor = vertical ? Anchor.TopRight : Anchor.BottomLeft,
+                Origin = vertical ? Anchor.TopRight : Anchor.BottomLeft,
+                Width = scroll_bar_thickness,
+                Height = scroll_bar_thickness,
+                Depth = -2,
+                Alpha = 0,
+            };
         }
 
         /// <summary>
@@ -178,6 +213,31 @@ namespace OsuXaml.Controls
             }
         }
 
+        /// <summary>
+        /// When text in lines shows a vertical scroll bar. Auto (the default) shows it while the lines don't fit, Visible always,
+        /// and Hidden or Disabled never; the caret and the mouse wheel scroll either way.
+        /// </summary>
+        public ScrollBarVisibility VerticalScrollBarVisibility
+        {
+            get => verticalScrollBarVisibility;
+            set
+            {
+                verticalScrollBarVisibility = value;
+                updateScrollBars();
+            }
+        }
+
+        /// <summary>When text in lines that doesn't wrap shows a horizontal scroll bar; Hidden by default, as in WPF.</summary>
+        public ScrollBarVisibility HorizontalScrollBarVisibility
+        {
+            get => horizontalScrollBarVisibility;
+            set
+            {
+                horizontalScrollBarVisibility = value;
+                updateScrollBars();
+            }
+        }
+
         /// <summary>The text, with '\n' between lines. Line breaks set as "\r\n" or "\r" become '\n'.</summary>
         public override string Text
         {
@@ -215,6 +275,9 @@ namespace OsuXaml.Controls
         }
 
         private static string fromRaw(string raw) => raw.IndexOf(line_separator) < 0 ? raw : raw.Replace(line_separator, '\n');
+
+        // Read-only text is still selectable, so it keeps the text cursor, as in WPF.
+        Cursor IHasDefaultCursor.DefaultCursor => Cursors.IBeam;
 
         protected override Color4 SelectionColour => Theme.Accent;
 
@@ -314,6 +377,7 @@ namespace OsuXaml.Controls
 
             // The single row stays in step underneath, just hidden, so switching back needs nothing rebuilt.
             TextFlow.Alpha = lines ? 0 : 1;
+            updateScrollBars();
             lineContent.Alpha = lines ? 1 : 0;
 
             var anchor = lines ? Anchor.TopLeft : Anchor.CentreLeft;
@@ -668,6 +732,64 @@ namespace OsuXaml.Controls
                 lineContent.Position = position;
                 scrollPlaced = true;
             }
+
+            updateScrollBars();
+        }
+
+        private void scrollByBar(Vector2 position)
+        {
+            if (updatingBars || !lineMode)
+                return;
+
+            scroll = position;
+            applyScroll();
+        }
+
+        private static bool showsBar(ScrollBarVisibility visibility, bool overflows)
+            => visibility == ScrollBarVisibility.Visible || (visibility == ScrollBarVisibility.Auto && overflows);
+
+        private void updateScrollBars()
+        {
+            if (verticalBar == null)
+            {
+                if (!lineMode)
+                    return;
+
+                Add(verticalBar = createScrollBar(Orientation.Vertical));
+                Add(horizontalBar = createScrollBar(Orientation.Horizontal));
+
+                verticalBar.ValueChanged += value => scrollByBar(new Vector2(scroll.X, (float)value));
+                horizontalBar.ValueChanged += value => scrollByBar(new Vector2((float)value, scroll.Y));
+            }
+
+            var view = viewSize;
+            float scrollableY = Math.Max(0, contentHeight - view.Y);
+            float scrollableX = Math.Max(0, contentWidth + CaretWidth - view.X);
+
+            bool showVertical = lineMode && showsBar(verticalScrollBarVisibility, scrollableY > 0.5f);
+            bool showHorizontal = lineMode && textWrapping == TextWrapping.NoWrap && showsBar(horizontalScrollBarVisibility, scrollableX > 0.5f);
+
+            updatingBars = true;
+
+            verticalBar.Alpha = showVertical ? 1 : 0;
+            verticalBar.Position = new Vector2(-scroll_bar_inset / 2, scroll_bar_inset);
+            verticalBar.Height = Math.Max(0, DrawHeight - 2 * scroll_bar_inset - (showHorizontal ? scroll_bar_thickness : 0));
+            verticalBar.Maximum = scrollableY;
+            verticalBar.ViewportSize = view.Y;
+            verticalBar.SmallChange = FontSize + lineGap;
+            verticalBar.LargeChange = Math.Max(1, view.Y);
+            verticalBar.Value.Value = scroll.Y;
+
+            horizontalBar.Alpha = showHorizontal ? 1 : 0;
+            horizontalBar.Position = new Vector2(scroll_bar_inset, -scroll_bar_inset / 2);
+            horizontalBar.Width = Math.Max(0, DrawWidth - 2 * scroll_bar_inset - (showVertical ? scroll_bar_thickness : 0));
+            horizontalBar.Maximum = scrollableX;
+            horizontalBar.ViewportSize = view.X;
+            horizontalBar.SmallChange = FontSize;
+            horizontalBar.LargeChange = Math.Max(1, view.X);
+            horizontalBar.Value.Value = scroll.X;
+
+            updatingBars = false;
         }
 
         private void updateImeRectangle()

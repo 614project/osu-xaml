@@ -42,12 +42,13 @@ namespace OsuXaml.Controls
     /// Two star tracks stay proportional (every star track takes its current size as its weight); otherwise the
     /// non-star track gets a pixel size and the star track takes up the difference. Min/Max limits of the tracks hold.
     /// Arrow keys move a focused (clicked) or hovered splitter by <see cref="KeyboardIncrement"/>, and Escape cancels a drag.
+    /// The pointer turns into a double arrow along the direction it resizes in.
     /// </summary>
     /// <remarks>
     /// Unlike WPF, whose GridSplitter defaults to HorizontalAlignment Right, the default alignment is Stretch,
     /// so a splitter in a column of its own resizes its neighbours without further settings.
     /// </remarks>
-    public partial class GridSplitter : CompositeDrawable
+    public partial class GridSplitter : CompositeDrawable, IHasDefaultCursor
     {
         private const float default_thickness = 5;
 
@@ -179,6 +180,18 @@ namespace OsuXaml.Controls
         }
 
         private Grid grid => (Parent as Slot)?.Parent as Grid;
+
+        Cursor IHasDefaultCursor.DefaultCursor
+        {
+            get
+            {
+                if (!isEnabled)
+                    return null;
+
+                bool columns = IsDragging ? resizingColumns : EffectiveResizeDirection == GridResizeDirection.Columns;
+                return columns ? Cursors.SizeWE : Cursors.SizeNS;
+            }
+        }
 
         /// <summary>The direction this splitter resizes in, with <see cref="GridResizeDirection.Auto"/> resolved like WPF.</summary>
         public GridResizeDirection EffectiveResizeDirection

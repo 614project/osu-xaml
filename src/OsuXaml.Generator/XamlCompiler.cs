@@ -1036,7 +1036,8 @@ namespace OsuXaml.Generator
                 return;
             }
 
-            assign(v, member, literal);
+            if (checkIconName(member, value, source))
+                assign(v, member, literal);
         }
 
         /// <summary>The type a value is assigned as: the T of a Bindable&lt;T&gt; member, else the member type.</summary>

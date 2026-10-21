@@ -126,6 +126,9 @@ namespace OsuXaml
         /// </summary>
         public static IBindableList<T> ListCopy<T>(BindingScope scope, IBindableList<T> source)
         {
+            if (scope.IsReading)
+                return source;
+
             var copy = source.GetBoundCopy();
             scope.Add(copy);
             return copy;
