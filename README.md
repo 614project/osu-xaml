@@ -116,7 +116,7 @@ public partial class MainView : CompositeDrawable
 | 암시적 템플릿 | `<DataTemplate DataType="{x:Type local:Person}">` (키 없음) | 같은 아이템 타입의 ItemsControl에 자동 적용 |
 | 컬렉션 | `<local:Bag.Tags><x:String>a</x:String></local:Bag.Tags>`, `<ItemsPanelTemplate>` | 기존 컬렉션에 `Add`, 래퍼는 생략 가능 |
 | 기본 변환기 | `Converter=Not`, `BoolToVisibility`, `InverseBoolToVisibility`, `IsNull`, `IsNotNull`, `NullToVisibility` 등 | x:Class에 같은 이름이 없으면 `OsuXaml.Converters`에서 찾음 |
-| 전역 속성 | `Visibility="Collapsed"`, `HorizontalAlignment`, `ToolTip`, `ContextMenu` | `[assembly: XamlGlobalProperties(typeof(T))]`로 등록한 정적 `SetX(Drawable, 값)` |
+| 전역 속성 | `Visibility="Collapsed"`, `HorizontalAlignment`, `ToolTip`, `ContextMenu`, `Cursor` | `[assembly: XamlGlobalProperties(typeof(T))]`로 등록한 정적 `SetX(Drawable, 값)` |
 
 선택 상태(`SelectedItem`, `IsChecked`, `IsExpanded`, `IsOpen` 등)는 `Bindable<T>` 프로퍼티라서 뷰모델의 `Bindable<T>`와 양방향으로 연결됩니다. `SelectedItem`은 `Bindable<object>`지만 뷰모델의 `Bindable<Person>`과도 바로 묶입니다.
 
@@ -196,7 +196,7 @@ public partial class MainView : CompositeDrawable
 | | `Image` | `Source` (파일 경로 또는 osu! 텍스처 이름), `Stretch`, `StretchDirection`, `ImageFailed` |
 | | `Viewbox` | 자식 하나를 비율 유지하며 늘이거나 줄임, `Stretch`, `StretchDirection` |
 | | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome, 없는 이름은 비슷한 이름을 알려 주는 빌드 오류), `Size`, `Foreground` |
-| 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height`, `Visibility`, `ToolTip`, `ContextMenu` |
+| 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height`, `Visibility`, `ToolTip`, `ContextMenu`, `Cursor` |
 
 패널과 `ItemsSource`도 함께 쓸 수 있습니다 (`<WrapPanel ItemsSource="{Bind Tags}">`). `{Bind}`처럼 경로를 비우면 아이템 자체에 바인딩됩니다.
 
@@ -259,6 +259,23 @@ private async void OnSettings()
 - 선택, `ScrollIntoView`, 키보드 이동(Home/End 포함)은 컨테이너가 없는 행에도 동작합니다. 편집 중이거나 포커스를 가진 행은 화면 밖으로 나가도 남습니다.
 - `ContainerFromIndex`/`ContainerFromItem`은 컨테이너가 없는 행에 `null`을 돌려줍니다. `ListView`와 `DataGrid`의 `Auto` 열은 지금까지 보인 셀 중 가장 넓은 폭을 유지합니다.
 
+### 마우스 커서
+
+모든 요소에 WPF처럼 `Cursor`를 줄 수 있습니다. 이름은 빌드 시점에 `Cursors`의 모양과 맞춰 보므로 오타는 빌드 오류가 됩니다.
+
+```xml
+<Border Cursor="Hand" Background="#313244" Padding="16">
+  <TextBlock Text="Click the card" />
+</Border>
+<Button Content="Save" Cursor="{Bind SaveCursor}" />
+```
+
+- 포인터 아래에서 커서가 있는 가장 깊은 요소의 모양이 나옵니다. 텍스트와 테두리처럼 입력을 받지 않는 요소에 준 커서도 됩니다. 없으면 기본 화살표입니다.
+- `Hyperlink`는 손 모양, `GridSplitter`는 크기 조절 방향의 양방향 화살표, `TextBox`·`PasswordBox`·편집 가능한 `ComboBox`는 텍스트 커서, `ListView`와 `DataGrid`의 열 경계는 좌우 화살표를 스스로 씁니다. 요소에 직접 준 `Cursor`가 이깁니다. 비활성 `Hyperlink`와 `GridSplitter`는 부모의 커서를 따릅니다.
+- 끄는 동안에는 포인터가 벗어나도 끌고 있는 요소의 커서를 유지합니다. 열린 팝업이나 모달 대화상자에 가려진 요소의 커서는 나오지 않습니다.
+- `CursorService.OverrideCursor = Cursors.Wait`는 WPF의 `Mouse.OverrideCursor`처럼 앱 전체의 커서를 바꾸고, `null`로 되돌립니다. 코드에서는 `CursorService.SetCursor(element, Cursors.Hand)`로 줍니다.
+- osu!framework에는 커서 API가 없어서 SDL3로 OS 커서를 직접 바꿉니다. SDL2 백엔드나 OS 커서를 숨기고 직접 그리는 게임에서는 화면에 변화가 없습니다. `Cursors.None`은 OS 커서를 숨깁니다.
+
 ### 레이아웃 동작
 
 - 매 프레임 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 패널이 자식을 측정(Measure)하고 배치(Arrange)합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다.
@@ -278,7 +295,6 @@ private async void OnSettings()
 - 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
-- 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
 - 백그라운드 스레드에서 뷰모델을 바꿀 때의 Update 스레드 마샬링
 - 한글 글꼴: osu!framework 기본 Roboto에는 한글이 없어 샘플은 영어 UI입니다
