@@ -424,7 +424,8 @@ namespace OsuXaml.Controls
 
     /// <summary>
     /// Gradient textures shared by every shape painting the same gradient on one renderer, released when the last one lets go.
-    /// Only touched from the update thread.
+    /// Shapes acquire them on the update thread, but release them when disposed, which osu!framework may do on a background
+    /// thread, so the cache is locked.
     /// </summary>
     internal static class GradientTextures
     {
@@ -440,23 +441,26 @@ namespace OsuXaml.Controls
         {
             var cache = caches.GetOrCreateValue(renderer);
 
-            if (!cache.TryGetValue(key, out var entry))
+            lock (cache)
             {
-                // The upload owns the image and disposes it once it reaches the GPU.
-                var image = createImage();
+                if (!cache.TryGetValue(key, out var entry))
+                {
+                    // The upload owns the image and disposes it once it reaches the GPU.
+                    var image = createImage();
 
-                bool repeats = key.Contains(":" + GradientSpreadMethod.Repeat, StringComparison.Ordinal) || key.Contains(":" + GradientSpreadMethod.Reflect, StringComparison.Ordinal);
-                bool radial = key.StartsWith(nameof(RadialGradientBrush), StringComparison.Ordinal);
-                var wrap = repeats && !radial ? WrapMode.Repeat : WrapMode.ClampToEdge;
+                    bool repeats = key.Contains(":" + GradientSpreadMethod.Repeat, StringComparison.Ordinal) || key.Contains(":" + GradientSpreadMethod.Reflect, StringComparison.Ordinal);
+                    bool radial = key.StartsWith(nameof(RadialGradientBrush), StringComparison.Ordinal);
+                    var wrap = repeats && !radial ? WrapMode.Repeat : WrapMode.ClampToEdge;
 
-                var texture = renderer.CreateTexture(image.Width, image.Height, false, TextureFilteringMode.Linear, wrap, WrapMode.ClampToEdge);
-                texture.SetData(new TextureUpload(image));
+                    var texture = renderer.CreateTexture(image.Width, image.Height, false, TextureFilteringMode.Linear, wrap, WrapMode.ClampToEdge);
+                    texture.SetData(new TextureUpload(image));
 
-                cache[key] = entry = new Entry { Texture = texture };
+                    cache[key] = entry = new Entry { Texture = texture };
+                }
+
+                entry.Users++;
+                return new Lease(cache, key, entry);
             }
-
-            entry.Users++;
-            return new Lease(cache, key, entry);
         }
 
         /// <summary>One shape's hold on a texture.</summary>
@@ -477,16 +481,19 @@ namespace OsuXaml.Controls
 
             public void Dispose()
             {
-                if (entry == null)
-                    return;
-
-                if (--entry.Users == 0)
+                lock (cache)
                 {
-                    cache.Remove(key);
-                    entry.Texture.Dispose();
-                }
+                    if (entry == null)
+                        return;
 
-                entry = null;
+                    if (--entry.Users == 0)
+                    {
+                        cache.Remove(key);
+                        entry.Texture.Dispose();
+                    }
+
+                    entry = null;
+                }
             }
         }
     }
