@@ -12,7 +12,8 @@ namespace OsuXaml.Controls
     /// A FontAwesome icon from the fonts osu!framework ships: <c>&lt;Icon Kind="Solid.Check" Size="20" Foreground="#a6e3a1" /&gt;</c>.
     /// <see cref="Kind"/> names the icon as osu!framework's <c>FontAwesome</c> class does (<c>Solid.Check</c>,
     /// <c>Regular.Bell</c>, <c>Brands.Github</c>) or as FontAwesome's CSS does (<c>check-circle</c>); a name without a style
-    /// is looked up in Solid, then Regular, then Brands. An unknown name shows a question mark. 16 pixels by default.
+    /// is looked up in Solid, then Regular, then Brands. A name written in XAML that doesn't exist is a build error; one that
+    /// arrives through a binding or code shows a question mark. 16 pixels by default.
     /// It also works as a menu item's icon: <c>&lt;MenuItem.Icon&gt;&lt;Icon Kind="Solid.Save" /&gt;&lt;/MenuItem.Icon&gt;</c>.
     /// </summary>
     /// <remarks>C# files that import both osuTK and OsuXaml.Controls need an alias, as osuTK has an Icon class too.</remarks>
@@ -30,6 +31,7 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>Which icon to show, e.g. <c>Solid.Check</c>.</summary>
+        [IconName]
         public string Kind
         {
             get => kind;
