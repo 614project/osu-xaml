@@ -23,7 +23,7 @@ namespace OsuXaml.Controls
     /// With <see cref="AcceptsReturn"/>, <see cref="TextWrapping"/>, or text that contains line breaks, the box lays its text out in lines
     /// and edits it there: Up/Down, Home/End per line, Ctrl+Home/End, PageUp/PageDown, clicking and dragging across lines, and the mouse wheel.
     /// </summary>
-    public abstract partial class TextBoxBase : BasicTextBox, ILayoutElement
+    public abstract partial class TextBoxBase : BasicTextBox, ILayoutElement, IHasDefaultCursor
     {
         // osu!framework's TextBox refuses control characters, so line breaks are kept inside it as U+2028 LINE SEPARATOR
         // and turned back into '\n' wherever the text leaves it.
@@ -269,6 +269,9 @@ namespace OsuXaml.Controls
         }
 
         private static string fromRaw(string raw) => raw.IndexOf(line_separator) < 0 ? raw : raw.Replace(line_separator, '\n');
+
+        // Read-only text is still selectable, so it keeps the text cursor, as in WPF.
+        Cursor IHasDefaultCursor.DefaultCursor => Cursors.IBeam;
 
         protected override Color4 SelectionColour => Theme.Accent;
 

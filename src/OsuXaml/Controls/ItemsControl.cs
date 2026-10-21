@@ -272,9 +272,6 @@ namespace OsuXaml.Controls
         /// </summary>
         internal virtual float TypicalLength(Drawable container, float length) => length;
 
-        /// <summary>Whether a virtualizing list is still scrolling an item into view.</summary>
-        internal bool IsBringingIntoView => virtualizingPanel?.IsBringingIntoView == true;
-
         /// <summary>Called after the items change, before <see cref="ItemsChanged"/>.</summary>
         protected virtual void OnItemsChanged()
         {
@@ -314,6 +311,9 @@ namespace OsuXaml.Controls
         #region Containers for a virtualizing panel
 
         internal int ItemCount => items.Count;
+
+        /// <summary>The items, also before the control has loaded and <see cref="Items"/> is filled.</summary>
+        internal IEnumerable SourceItems => built ? items : itemsView ?? localItems;
 
         internal Drawable ContainerAt(int index) => containers[index];
 

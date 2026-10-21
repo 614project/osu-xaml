@@ -477,6 +477,10 @@ namespace OsuXaml.Controls
 
         public PopupLayer PopupLayer { get; }
 
+        // While a dialog in another window of the game is open, keys skip this window entirely, so they reach the dialog
+        // even when this window sits in front of the dialog's and something in it would take them.
+        public override bool PropagateNonPositionalInputSubTree => base.PropagateNonPositionalInputSubTree && PopupLayer.BlockingModal == null;
+
         public string Title
         {
             get => title;

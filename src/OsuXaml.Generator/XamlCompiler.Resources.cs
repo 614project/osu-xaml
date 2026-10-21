@@ -537,7 +537,7 @@ namespace OsuXaml.Generator
 
                     if (literal == null)
                         report(Diagnostics.BadLiteral, source, resource.Value, valueTarget.ToDisplayString(), hint ?? $" (from resource '{key}')");
-                    else
+                    else if (checkIconName(member, resource.Value, source))
                         assign(v, member, literal);
 
                     return;
