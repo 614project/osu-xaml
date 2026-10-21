@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Shapes;
@@ -264,6 +265,56 @@ namespace Demo
             AddStep("close", () => dialog.Close());
             AddUntilStep("hand below", () => cursor == Cursors.Hand);
         }
+
+        [Test]
+        public void LinksAmongTextShowTheHand()
+        {
+            TextBlock text = null;
+            Hyperlink inline = null;
+
+            AddStep("add text with a link", () =>
+            {
+                text = new TextBlock();
+                text.AddText("Read ");
+                text.Add(inline = new Hyperlink { Text = "the docs" });
+                text.AddText(" first.");
+                panel.Add(text);
+            });
+            AddUntilStep("laid out", () => text.DrawWidth > 0);
+
+            AddStep("hover the link", () => InputManager.MoveMouseTo(glyphCentre(text, 6)));
+            AddUntilStep("hand", () => cursor == Cursors.Hand);
+
+            AddStep("hover the plain text", () => InputManager.MoveMouseTo(glyphCentre(text, 1)));
+            AddUntilStep("arrow", () => cursor == Cursors.Arrow);
+
+            AddStep("disable the link", () => inline.IsEnabled = false);
+            AddStep("hover it", () => InputManager.MoveMouseTo(glyphCentre(text, 6)));
+            AddUntilStep("arrow over the disabled link", () => cursor == Cursors.Arrow);
+        }
+
+        [Test]
+        public void TextBoxScrollBarShowsTheArrow()
+        {
+            TextBox notes = null;
+            ScrollBar bar() => notes.ChildrenOfType<ScrollBar>().FirstOrDefault(b => b.Alpha == 1 && b.DrawHeight > 0);
+
+            AddStep("add a box with more lines than fit", () =>
+            {
+                notes = new TextBox { Width = 200, Height = 60, AcceptsReturn = true };
+                notes.Text.Value = "one\ntwo\nthree\nfour\nfive\nsix";
+                panel.Add(notes);
+            });
+            AddUntilStep("bar shown", () => bar() != null);
+
+            AddStep("hover the text", () => InputManager.MoveMouseTo(notes.ScreenSpaceDrawQuad.TopLeft + new Vector2(20, 15)));
+            AddUntilStep("text cursor", () => cursor == Cursors.IBeam);
+
+            AddStep("hover the bar", () => InputManager.MoveMouseTo(bar()));
+            AddUntilStep("arrow", () => cursor == Cursors.Arrow);
+        }
+
+        private static Vector2 glyphCentre(TextBlock text, int index) => text.ToScreenSpace(FrameworkInternals.Characters(text)[index].DrawRectangle.Centre);
 
         [Test]
         public void ADialogInAnotherWindowBlocksTheCursorsInThisOne()

@@ -30,6 +30,8 @@ namespace OsuXaml.Controls
             Padding = new MarginPadding { Bottom = 2 };
             Layout.SetHorizontalAlignment(this, HorizontalAlignment.Left);
 
+            ContentSet += () => InlineChanged?.Invoke();
+
             Chrome.Add(underline = new Box
             {
                 Anchor = Anchor.BottomLeft,
@@ -58,6 +60,7 @@ namespace OsuXaml.Controls
             {
                 hoverForeground = value;
                 underline.Colour = value;
+                InlineChanged?.Invoke();
             }
         }
 
@@ -68,6 +71,7 @@ namespace OsuXaml.Controls
             {
                 isEnabled = value;
                 this.FadeTo(value ? 1 : 0.4f, 150, Easing.OutQuint);
+                InlineChanged?.Invoke();
             }
         }
 
@@ -77,10 +81,22 @@ namespace OsuXaml.Controls
         /// <summary>Raised with <see cref="NavigateUri"/> on click. While anything handles it, the link doesn't open the browser itself.</summary>
         public event Action<string> RequestNavigate;
 
+        /// <summary>Raised when something the link's text in a TextBlock shows changes: its content, colours or whether it's enabled.</summary>
+        internal event Action InlineChanged;
+
+        // A link written among a TextBlock's text is never loaded itself, so the TextBlock lends it the host.
+        private GameHost lentHost;
+
         Cursor IHasDefaultCursor.DefaultCursor => isEnabled ? Cursors.Hand : null;
 
         /// <summary>Opens <paramref name="uri"/> when nothing handles <see cref="RequestNavigate"/>.</summary>
-        protected virtual void Navigate(string uri) => host?.OpenUrlExternally(uri);
+        protected virtual void Navigate(string uri) => (host ?? lentHost)?.OpenUrlExternally(uri);
+
+        protected override void OnForegroundChanged()
+        {
+            base.OnForegroundChanged();
+            InlineChanged?.Invoke();
+        }
 
         protected override Drawable CreateTextContent(osu.Framework.Localisation.LocalisableString text)
         {
@@ -114,10 +130,15 @@ namespace OsuXaml.Controls
 
         protected override void OnMouseUp(MouseUpEvent e) => Chrome.FadeTo(1, 200, Easing.OutQuint);
 
-        protected override bool OnClick(ClickEvent e)
+        protected override bool OnClick(ClickEvent e) => Activate(null);
+
+        /// <summary>Does what a click does. Returns false while disabled.</summary>
+        internal bool Activate(GameHost fallbackHost)
         {
             if (!isEnabled)
                 return false;
+
+            lentHost ??= fallbackHost;
 
             Click?.Invoke();
 

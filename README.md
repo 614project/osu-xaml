@@ -156,11 +156,12 @@ public partial class MainView : CompositeDrawable
 | | `Page`, `Frame` | `<Page x:Class="App.HomePage" Title="Home">` 루트, `Frame.Navigate(page)`, `GoBack()`/`GoForward()`, `CanGoBack`/`CanGoForward` (바인딩 가능), `NavigationService`, 뒤로 가기 기록 유지, 슬라이드 전환, `NavigationUIVisibility` |
 | | `Dialog` | `<Dialog x:Class="App.SettingsDialog" Title="Settings">` 루트, `await dialog.ShowDialog(this)`, `DialogResult`, `Closing`, 버튼의 `IsDefault`/`IsCancel` (Enter/Escape) |
 | | `ScrollViewer` | `VerticalScrollBarVisibility`/`HorizontalScrollBarVisibility` (`Auto`, `Visible`, `Hidden`, `Disabled`), `ScrollToEnd()`, `VerticalOffset` |
-| 텍스트 | `TextBlock` | `Text` (`\n`에서 줄바꿈), `FontSize`, `FontWeight`, `FontStyle`, `TextDecorations`, `Foreground`, `TextWrapping`, `TextTrimming`, 인라인 |
-| | `Run`, `Span`, `Bold`, `Italic`, `Underline`, `LineBreak` | `TextBlock` 안의 인라인. `Text`, `FontSize`, `FontWeight`, `FontStyle`, `TextDecorations`, `Foreground` |
+| 텍스트 | `TextBlock` | `Text` (`\n`에서 줄바꿈), `FontSize`, `FontWeight`, `FontStyle`, `FontFamily`, `TextDecorations`, `Foreground`, `TextWrapping`, `TextTrimming`, `TextAlignment`, 인라인 |
+| | `Run`, `Span`, `Bold`, `Italic`, `Underline`, `LineBreak` | `TextBlock` 안의 인라인. `Text`, `FontSize`, `FontWeight`, `FontStyle`, `FontFamily`, `TextDecorations`, `Foreground` |
+| | `Hyperlink`, `InlineUIContainer` (인라인) | 글 사이의 링크와 Drawable. 글과 함께 줄바꿈되고, 링크는 호버·클릭이 단독 `Hyperlink`와 같습니다 |
 | | `Label` | `Content="_Name"` (Alt+N 접근 키), `Target="{Binding ElementName=box}"` |
 | | `Hyperlink` | `NavigateUri`, `Click`, `RequestNavigate` |
-| | `TextBox` | `Text` (양방향), `PlaceholderText`, `MaxLength`, `IsReadOnly`, `TextChanged`, `AcceptsReturn`, `TextWrapping`, `MinLines`/`MaxLines` |
+| | `TextBox` | `Text` (양방향), `PlaceholderText`, `MaxLength`, `IsReadOnly`, `TextChanged`, `AcceptsReturn`, `TextWrapping`, `MinLines`/`MaxLines`, `VerticalScrollBarVisibility`/`HorizontalScrollBarVisibility` |
 | | `PasswordBox` | `Password` (양방향), `PasswordChar`, `PasswordChanged` |
 | 버튼 | `Button` | `Content` 또는 자식 요소, `Click`, `IsEnabled`, 호버/누름 애니메이션 |
 | | `RepeatButton` | 누르고 있으면 `Delay` 뒤 `Interval`마다 `Click` |
@@ -234,9 +235,14 @@ private async void OnSettings()
 ```
 
 - 각 줄은 그 줄에서 가장 큰 글꼴만큼 높아지고, `TextTrimming`은 줄마다 따로 말줄임표를 붙입니다.
+- `TextAlignment`(`Left`, `Center`, `Right`, `Justify`)는 자기 `Width`나 늘어난 너비, 없으면 패널이 주는 너비에 줄을 맞춥니다. 가로 `StackPanel`처럼 너비 제한이 없으면 가장 긴 줄에 맞춥니다. `Justify`는 줄바꿈된 줄만 양쪽에 맞추고 문단의 마지막 줄은 그대로 둡니다.
+- `FontFamily`는 `Roboto`(기본), `RobotoCondensed`, 또는 게임이 추가한 글꼴 이름입니다. WPF처럼 `"Segoe UI, Roboto"` 목록을 쓰면 첫 번째를 쓰고, 그 글꼴에 없는 글자는 같은 굵기의 다른 글꼴로 그립니다.
+- `TextBlock` 안에 `<Hyperlink>`를 쓰면 글의 일부가 되어 함께 줄바꿈되고, 호버하면 밝아지며 밑줄이 생기고, 클릭은 `Click`, `RequestNavigate`, `NavigateUri`를 단독 `Hyperlink`처럼 처리합니다. 링크가 없는 글은 마우스 입력을 받지 않아서 버튼 안의 글자도 그대로입니다.
+- `<InlineUIContainer>`(또는 `TextBlock` 안에 바로 쓴 `Button`, `Icon` 같은 요소)는 크기만큼 자리를 차지하고 기준선 위에 섭니다. `TextBlock` 옆의 레이어에 그려지므로 `TextBlock`의 부모가 `Container`여야 합니다 (패널 안이면 늘 그렇습니다).
 - `Text`는 인라인의 글자를 이어 붙인 값입니다. `Text`를 직접 바꾸면 인라인 대신 그 글자가 나옵니다.
 - `AcceptsReturn="True"`인 `TextBox`는 Enter로 줄을 바꾸고 붙여 넣은 줄바꿈도 남깁니다. `Text`에는 `\n`으로 들어가고, 뷰모델이 넣은 `\r\n`도 `\n`으로 맞춥니다.
 - `Height`가 없으면 `AcceptsReturn`이나 `TextWrapping`을 켠 상자는 줄 수만큼 자라고, `MinLines`/`MaxLines`가 그 범위를 정합니다. `Height`를 주면 그 높이 안에서 캐럿을 따라가고 마우스 휠로도 스크롤합니다.
+- 줄이 넘치면 오른쪽 여백 위에 얇은 세로 스크롤바가 나타나서 끌거나 트랙을 눌러 스크롤할 수 있습니다. `VerticalScrollBarVisibility`의 기본값은 WPF(`Hidden`)와 달리 `Auto`이고, `Visible`은 항상, `Hidden`/`Disabled`는 보이지 않습니다. 줄바꿈하지 않는 긴 줄에는 `HorizontalScrollBarVisibility="Auto"`로 가로 스크롤바를 켭니다 (기본 `Hidden`).
 - 위·아래 화살표는 열 위치를 기억하며 줄을 옮깁니다. PageUp/PageDown, 줄 단위 Home/End, Ctrl+Home/End, 세 번 클릭(줄 선택)도 WPF처럼 동작합니다.
 
 ### 가상화
@@ -271,7 +277,7 @@ private async void OnSettings()
 ```
 
 - 포인터 아래에서 커서가 있는 가장 깊은 요소의 모양이 나옵니다. 텍스트와 테두리처럼 입력을 받지 않는 요소에 준 커서도 됩니다. 없으면 기본 화살표입니다.
-- `Hyperlink`는 손 모양, `GridSplitter`는 크기 조절 방향의 양방향 화살표, `TextBox`·`PasswordBox`·편집 가능한 `ComboBox`는 텍스트 커서, `ListView`와 `DataGrid`의 열 경계는 좌우 화살표를 스스로 씁니다. 요소에 직접 준 `Cursor`가 이깁니다. 비활성 `Hyperlink`와 `GridSplitter`는 부모의 커서를 따릅니다.
+- `Hyperlink`(`TextBlock` 안의 인라인 링크 포함)는 손 모양, `GridSplitter`는 크기 조절 방향의 양방향 화살표, `TextBox`·`PasswordBox`·편집 가능한 `ComboBox`는 텍스트 커서(여러 줄 `TextBox`의 스크롤바 위에서는 화살표), `ListView`와 `DataGrid`의 열 경계는 좌우 화살표를 스스로 씁니다. 요소에 직접 준 `Cursor`가 이깁니다. 비활성 `Hyperlink`와 `GridSplitter`는 부모의 커서를 따릅니다.
 - 끄는 동안에는 포인터가 벗어나도 끌고 있는 요소의 커서를 유지합니다. 열린 팝업이나 모달 대화상자에 가려진 요소의 커서는 나오지 않습니다.
 - `CursorService.OverrideCursor = Cursors.Wait`는 WPF의 `Mouse.OverrideCursor`처럼 앱 전체의 커서를 바꾸고, `null`로 되돌립니다. 코드에서는 `CursorService.SetCursor(element, Cursors.Hand)`로 줍니다.
 - osu!framework에는 커서 API가 없어서 SDL3로 OS 커서를 직접 바꿉니다. SDL2 백엔드나 OS 커서를 숨기고 직접 그리는 게임에서는 화면에 변화가 없습니다. `Cursors.None`은 OS 커서를 숨깁니다.
@@ -292,7 +298,6 @@ private async void OnSettings()
 ## 아직 없는 것
 
 - 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
-- 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
