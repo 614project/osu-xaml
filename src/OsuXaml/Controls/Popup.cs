@@ -596,7 +596,8 @@ namespace OsuXaml.Controls
                 // Everything else under a provider is content its layer covers.
                 if (below != null)
                 {
-                    if (below.openModals.Count > 0 || below.popupAt(screenSpacePos) != null)
+                    // A dialog in another window of the game covers this window too.
+                    if (below.openModals.Count > 0 || below.BlockingModal != null || below.popupAt(screenSpacePos) != null)
                         return false;
 
                     underThis |= below == this;
@@ -609,6 +610,10 @@ namespace OsuXaml.Controls
         /// <summary>Whether <paramref name="top"/> (a popup root or dialog host in this layer) is on top at the position.</summary>
         private bool letsThrough(Drawable top, Vector2 screenSpacePos)
         {
+            // While a newer dialog in another window has the input, this layer's own dialogs wait under its cover.
+            if (BlockingModal != null)
+                return false;
+
             // Only the top dialog takes input; a closing one has already left the list.
             if (openModals.Count > 0)
                 return openModals[^1] == top;

@@ -78,6 +78,7 @@ namespace Demo
         private GridSplitter splitter;
         private Box right;
         private StackPanel panel;
+        private Button otherButton;
 
         private Cursor cursor => window.PopupLayer.CurrentCursor;
 
@@ -262,6 +263,57 @@ namespace Demo
 
             AddStep("close", () => dialog.Close());
             AddUntilStep("hand below", () => cursor == Cursors.Hand);
+        }
+
+        [Test]
+        public void ADialogInAnotherWindowBlocksTheCursorsInThisOne()
+        {
+            addOtherWindow();
+            AddStep("hover the card", () => InputManager.MoveMouseTo(cardText));
+            AddUntilStep("hand", () => cursor == Cursors.Hand);
+
+            AddStep("show a box over the other window", () => MessageBox.Show(otherButton, "Other", "Caption", MessageBoxButton.OK));
+            AddUntilStep("arrow", () => cursor == Cursors.Arrow);
+
+            AddStep("Enter", () => InputManager.Key(Key.Enter));
+            AddUntilStep("hand again", () => cursor == Cursors.Hand);
+        }
+
+        [Test]
+        public void AnOlderDialogShowsNoCursorsWhileOneInAnotherWindowIsNewer()
+        {
+            Border inside = null;
+
+            addOtherWindow();
+            AddStep("show a dialog", () =>
+            {
+                inside = new Border { Width = 120, Height = 40, Background = Theme.Surface };
+                CursorService.SetCursor(inside, Cursors.Hand);
+                new Dialog { Title = "Card", Content = inside }.ShowDialog(window);
+            });
+            AddUntilStep("shown", () => inside.IsLoaded && inside.DrawWidth == 120 && window.PopupLayer.OpenModals.Count == 1);
+            AddStep("hover inside it", () => InputManager.MoveMouseTo(inside));
+            AddUntilStep("hand", () => cursor == Cursors.Hand);
+
+            AddStep("then a box over the other window", () => MessageBox.Show(otherButton, "Other", "Caption", MessageBoxButton.OK));
+            AddUntilStep("arrow over the older dialog", () => cursor == Cursors.Arrow);
+
+            AddStep("Enter", () => InputManager.Key(Key.Enter));
+            AddUntilStep("hand again", () => cursor == Cursors.Hand);
+        }
+
+        /// <summary>A small second window in the bottom right corner, away from the elements the tests hover.</summary>
+        private void addOtherWindow()
+        {
+            AddStep("add a second window", () => Add(new Window
+            {
+                Anchor = Anchor.BottomRight,
+                Origin = Anchor.BottomRight,
+                Width = 200,
+                Height = 120,
+                Child = otherButton = new Button { Content = "Other" },
+            }));
+            AddUntilStep("loaded", () => otherButton.IsLoaded);
         }
 
         private static Cursor defaultCursor(Drawable control) => ((IHasDefaultCursor)control).DefaultCursor;
