@@ -14,7 +14,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml.Schema` | 빌드 후 IDE 자동완성용 XML 스키마를 `obj/osu-xaml/`에 쓰는 도구 (아래 [IDE 자동완성](#ide-자동완성)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
-| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 415개 |
+| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 541개 |
 
 ## 실행
 
@@ -302,7 +302,9 @@ private async void OnSettings()
 
 ### 레이아웃 동작
 
-- 매 프레임 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 패널이 자식을 측정(Measure)하고 배치(Arrange)합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다.
+- 패널은 바뀐 것이 있을 때만 자식을 측정(Measure)하고 배치(Arrange)합니다. 자식이 추가·제거되거나 크기가 바뀌거나, 첨부 속성(`Grid.Row`, 정렬, `Visibility` 등)이나 패널 속성(`Spacing`, `RowDefinitions` 등)이 바뀌면 그 패널과 바깥 패널들이 무효화되고, 그 프레임의 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 다시 측정하고 배치합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다. 아무것도 바뀌지 않은 프레임에는 지난 배치를 그대로 씁니다.
+- 크기를 명시한 자식(또는 접힌 자식) 안에서 생긴 변화는 그 자식이 원하는 크기를 바꾸지 못하므로 바깥 패널까지 올라가지 않습니다.
+- 직접 만든 `ILayoutElement`는 원하는 크기가 바뀔 때 `Layout.InvalidateMeasure(this)`를 부르고 `ReportsMeasureChanges`를 `true`로 두면 바뀔 때만 다시 측정됩니다. 알리지 않는 요소(기본값)가 들어 있는 패널은 예전처럼 매 프레임 측정하므로 고치지 않아도 그대로 동작합니다. `Panel`을 상속했다면 `InvalidateMeasure()`와 `InvalidateArrange()`를 쓰면 됩니다.
 - 자식마다 `Slot`이 하나씩 붙어서 정렬과 여백을 처리합니다. 기본값은 WPF처럼 `Stretch`이고, 크기를 명시한 자식은 가운데에, 텍스트처럼 내용 크기인 자식은 시작 위치에 놓입니다.
 - 다른 패널 안에 있지 않고 크기도 없는 패널은 내용 크기에 맞춰 스스로 크기를 정합니다.
 - `Grid`에서 여러 행·열에 걸친 자식은 WPF처럼 걸친 칸들을 넓혀서 들어갑니다. 걸친 칸이 모두 `Auto`면 모자란 만큼을 똑같이 나눠 늘리고, `Auto`가 아닌 칸(픽셀 칸 포함)이 섞여 있으면 그 칸이 먼저 늘어나 `Auto` 칸은 딱 맞게 남습니다. 남은 공간을 나누는 `*` 칸을 지나는 자식은 크기 계산에 들어가지 않습니다.
@@ -344,6 +346,5 @@ private async void OnSettings()
 
 - 핫 리로드는 루트 요소에 직접 단 이벤트, 양방향 바인딩, 컬렉션 항목, 텍스트 내용을 처음 한 번만 적용합니다. 이 부분을 바꾸면 앱을 다시 시작해야 합니다 (안쪽 요소와 루트의 일반 속성은 다시 만들어집니다)
 - 브러시는 도형의 `Fill`/`Stroke`에만 쓸 수 있습니다. 컨트롤의 `Background`/`Foreground`는 아직 색만 받고, 브러시의 `Transform`/`RelativeTransform`, `ImageBrush`/`VisualBrush`도 없습니다
-- 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
 - 백그라운드 스레드에서 뷰모델을 바꿀 때의 Update 스레드 마샬링
 - 한글 글꼴: osu!framework 기본 Roboto에는 한글이 없어 샘플은 영어 UI입니다

@@ -167,13 +167,19 @@ namespace OsuXaml.Controls
 
         internal RectangleF StrokeBrushBounds => strokeBounds;
 
-        /// <summary>Rebuilds the drawn geometry before the next frame is drawn.</summary>
-        protected void InvalidateGeometry() => geometryValid = false;
+        /// <summary>Rebuilds the drawn geometry before the next frame is drawn, and has the panels around measure the shape again.</summary>
+        protected void InvalidateGeometry()
+        {
+            geometryValid = false;
+            Layout.InvalidateMeasure(this);
+        }
 
         /// <summary>The figures to draw for the shape's current size, in its own coordinates.</summary>
         protected abstract ShapeOutline BuildOutline(Vector2 size);
 
         public abstract Vector2 Measure(Vector2 availableSize);
+
+        public bool ReportsMeasureChanges => true;
 
         private void setGeometry<T>(ref T field, T value)
         {

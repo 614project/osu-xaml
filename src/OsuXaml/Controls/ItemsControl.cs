@@ -303,6 +303,7 @@ namespace OsuXaml.Controls
                 host.RelativeSizeAxes = Axes.Both;
 
             AddInternal(host);
+            Layout.InvalidateMeasure(this);
 
             built = true;
             rebuild();
@@ -573,10 +574,13 @@ namespace OsuXaml.Controls
                 itemsPanel.ReorderChildren(containers);
         }
 
+        /// <summary>True: the items panel reports its own changes, and so does the host around it.</summary>
+        public virtual bool ReportsMeasureChanges => true;
+
         public virtual Vector2 Measure(Vector2 availableSize)
         {
             if (host is ILayoutElement element)
-                return element.Measure(availableSize);
+                return Layout.MeasureElement(element, availableSize);
 
             return itemsPanel?.Measure(availableSize) ?? Vector2.Zero;
         }

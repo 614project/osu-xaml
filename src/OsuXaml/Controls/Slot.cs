@@ -1,5 +1,6 @@
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Layout;
 using osuTK;
 
 namespace OsuXaml.Controls
@@ -7,6 +8,7 @@ namespace OsuXaml.Controls
     /// <summary>
     /// The rectangle a panel gives one child. The panel positions and sizes the slot;
     /// the slot applies the child's margin and alignment inside it.
+    /// When the child changes size or presence by itself, the slot tells the panels around it to lay out again.
     /// </summary>
     public partial class Slot : Container
     {
@@ -15,6 +17,12 @@ namespace OsuXaml.Controls
         private readonly bool explicitX;
         private readonly bool explicitY;
         private readonly MarginPadding margin;
+
+        // Reopened after each measure and arrange: osu!framework only passes on a child's size change while the last one has been handled.
+        private readonly LayoutValue contentSize = new LayoutValue(Invalidation.DrawSize | Invalidation.Presence, InvalidationSource.Child);
+
+        // Above zero while the slot measures or arranges its content; changes those cause are already accounted for.
+        private int laying;
 
         public Slot(Drawable content)
         {
@@ -30,7 +38,12 @@ namespace OsuXaml.Controls
             Padding = margin;
 
             Child = content;
+
+            AddLayout(contentSize);
         }
+
+        /// <summary>Whether the content asks for the same size whatever happens inside it: it has a size of its own on both axes, or is collapsed.</summary>
+        internal bool HasFixedSize => (explicitX && explicitY) || Layout.IsCollapsed(Content);
 
         /// <summary>Takes the content out of the slot without disposing it, restoring what the slot changed.</summary>
         public Drawable Detach()
@@ -41,10 +54,48 @@ namespace OsuXaml.Controls
             return Content;
         }
 
-        public Vector2 Measure(Vector2 available) => Layout.Measure(Content, available, margin, explicitX, explicitY);
+        public Vector2 Measure(Vector2 available)
+        {
+            laying++;
+
+            try
+            {
+                return Layout.Measure(Content, available, margin, explicitX, explicitY);
+            }
+            finally
+            {
+                laying--;
+                contentSize.Validate();
+            }
+        }
 
         /// <summary>Places the slot and applies alignment: Stretch fills the slot unless the child has its own size.</summary>
         public void Arrange(Vector2 position, Vector2 size)
+        {
+            laying++;
+
+            try
+            {
+                arrange(position, size);
+            }
+            finally
+            {
+                laying--;
+                contentSize.Validate();
+            }
+        }
+
+        protected override bool OnInvalidate(Invalidation invalidation, InvalidationSource source)
+        {
+            bool result = base.OnInvalidate(invalidation, source);
+
+            if (source == InvalidationSource.Child && laying == 0 && (invalidation & (Invalidation.DrawSize | Invalidation.Presence)) != 0)
+                Layout.InvalidateMeasure(this);
+
+            return result;
+        }
+
+        private void arrange(Vector2 position, Vector2 size)
         {
             Position = position;
             Size = Vector2.ComponentMax(Vector2.Zero, size);
@@ -122,7 +173,7 @@ namespace OsuXaml.Controls
 
                 if ((!stretchedX && !explicitX) || (!stretchedY && !explicitY))
                 {
-                    var desired = element.Measure(ChildSize);
+                    var desired = Layout.MeasureElement(element, ChildSize);
                     if (!stretchedX && !explicitX) Content.Width = desired.X;
                     if (!stretchedY && !explicitY) Content.Height = desired.Y;
                 }

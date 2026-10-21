@@ -431,6 +431,9 @@ namespace OsuXaml.Controls
 
                     lastTarget = null;
                     revealSelected = true;
+
+                    // Which way the strip caps its length to what it is offered.
+                    Layout.InvalidateMeasure(this);
                 }
             }
 
@@ -438,6 +441,7 @@ namespace OsuXaml.Controls
             {
                 panel = itemsPanel;
                 content.Add(panel);
+                Layout.InvalidateMeasure(this);
             }
 
             public void Select(TabItem tab)
@@ -452,6 +456,8 @@ namespace OsuXaml.Controls
 
             /// <summary>Scrolls the tabs by <paramref name="delta"/> pixels (positive towards the end).</summary>
             public void ScrollBy(float delta) => ScrollTarget = Math.Clamp(ScrollTarget + delta, 0, MaxScroll);
+
+            public bool ReportsMeasureChanges => true;
 
             public Vector2 Measure(Vector2 availableSize)
             {
@@ -721,6 +727,8 @@ namespace OsuXaml.Controls
             public readonly Box Fill;
             public readonly Container Pages;
 
+            private ContentPresenter shown;
+
             public PageArea()
             {
                 Masking = true;
@@ -731,7 +739,13 @@ namespace OsuXaml.Controls
                 };
             }
 
-            public ContentPresenter Shown { get; set; }
+            public ContentPresenter Shown
+            {
+                get => shown;
+                set => Layout.SetAffectsMeasure(this, ref shown, value);
+            }
+
+            public bool ReportsMeasureChanges => true;
 
             public Vector2 Measure(Vector2 availableSize)
             {
@@ -837,7 +851,9 @@ namespace OsuXaml.Controls
             get => padding;
             set
             {
-                padding = value;
+                if (!Layout.SetAffectsMeasure(this, ref padding, value))
+                    return;
+
                 applyPadding();
             }
         }
@@ -913,6 +929,8 @@ namespace OsuXaml.Controls
             selectionRequested = false;
             return requested;
         }
+
+        public bool ReportsMeasureChanges => true;
 
         public Vector2 Measure(Vector2 availableSize)
         {

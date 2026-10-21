@@ -87,7 +87,9 @@ namespace OsuXaml.Controls
             get => headerPadding;
             set
             {
-                headerPadding = value;
+                if (!Layout.SetAffectsMeasure(this, ref headerPadding, value))
+                    return;
+
                 headerPresenter.X = value.Left;
                 headerPresenter.Y = (value.Top - value.Bottom) / 2;
             }
@@ -96,7 +98,10 @@ namespace OsuXaml.Controls
         /// <summary>The smallest height of the header row.</summary>
         protected float MinHeaderHeight { get; set; }
 
-        /// <summary>How much of the content part is shown, from 0 (only the header) to 1. Expander animates it.</summary>
+        /// <summary>
+        /// How much of the content part is shown, from 0 (only the header) to 1. Expander animates it, calling
+        /// <see cref="Layout.InvalidateMeasure"/> on every change.
+        /// </summary>
         protected virtual float ContentFraction => 1;
 
         /// <summary>Creates the drawable for a text header.</summary>

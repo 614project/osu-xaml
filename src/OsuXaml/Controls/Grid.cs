@@ -90,11 +90,42 @@ namespace OsuXaml.Controls
             Length = length;
         }
 
-        public GridLength Length { get; set; } = GridLength.Star;
+        private GridLength length = GridLength.Star;
+        private float minLength;
+        private float maxLength = float.PositiveInfinity;
 
-        public float MinLength { get; set; }
+        public GridLength Length
+        {
+            get => length;
+            set
+            {
+                length = value;
+                Collection?.Changed();
+            }
+        }
 
-        public float MaxLength { get; set; } = float.PositiveInfinity;
+        public float MinLength
+        {
+            get => minLength;
+            set
+            {
+                minLength = value;
+                Collection?.Changed();
+            }
+        }
+
+        public float MaxLength
+        {
+            get => maxLength;
+            set
+            {
+                maxLength = value;
+                Collection?.Changed();
+            }
+        }
+
+        /// <summary>The collection this definition is in, which tells its grid to lay out again when the definition changes.</summary>
+        internal GridLengthCollection Collection { get; set; }
 
         /// <summary>The size from the most recent layout pass.</summary>
         public float ActualLength { get; internal set; }
@@ -162,6 +193,37 @@ namespace OsuXaml.Controls
     {
         public void Add(GridLength length) => Add(new DefinitionBase(length));
 
+        /// <summary>The grid using these definitions.</summary>
+        internal Grid Owner { get; set; }
+
+        internal void Changed() => Owner?.InvalidateMeasure();
+
+        protected override void InsertItem(int index, DefinitionBase item)
+        {
+            base.InsertItem(index, item);
+            item.Collection = this;
+            Changed();
+        }
+
+        protected override void SetItem(int index, DefinitionBase item)
+        {
+            base.SetItem(index, item);
+            item.Collection = this;
+            Changed();
+        }
+
+        protected override void RemoveItem(int index)
+        {
+            base.RemoveItem(index);
+            Changed();
+        }
+
+        protected override void ClearItems()
+        {
+            base.ClearItems();
+            Changed();
+        }
+
         public static GridLengthCollection Parse(string text)
         {
             var result = new GridLengthCollection();
@@ -180,20 +242,60 @@ namespace OsuXaml.Controls
     /// with children placed by the Grid.Row / Grid.Column / Grid.RowSpan / Grid.ColumnSpan attached properties.
     /// A child spanning several tracks widens them to fit, with WPF's rules. Definitions are written compactly
     /// (<c>ColumnDefinitions="Auto,*,2*"</c>) or as WPF elements with limits
-    /// (<c>&lt;ColumnDefinition Width="2*" MinWidth="40" /&gt;</c>). The grid lays out every frame, so lengths changed
-    /// at runtime (by code or a <see cref="GridSplitter"/>) apply on the next frame.
+    /// (<c>&lt;ColumnDefinition Width="2*" MinWidth="40" /&gt;</c>). Lengths changed at runtime (by code or a
+    /// <see cref="GridSplitter"/>) apply on the next frame.
     /// </summary>
     public partial class Grid : Panel
     {
+        private GridLengthCollection rowDefinitions;
+        private GridLengthCollection columnDefinitions;
+        private float rowSpacing;
+        private float columnSpacing;
+
+        public Grid()
+        {
+            RowDefinitions = new GridLengthCollection();
+            ColumnDefinitions = new GridLengthCollection();
+        }
+
         /// <summary>The rows, top to bottom. Without any, the grid has one star row.</summary>
-        public GridLengthCollection RowDefinitions { get; set; } = new GridLengthCollection();
+        public GridLengthCollection RowDefinitions
+        {
+            get => rowDefinitions;
+            set => useDefinitions(ref rowDefinitions, value);
+        }
 
         /// <summary>The columns, left to right. Without any, the grid has one star column.</summary>
-        public GridLengthCollection ColumnDefinitions { get; set; } = new GridLengthCollection();
+        public GridLengthCollection ColumnDefinitions
+        {
+            get => columnDefinitions;
+            set => useDefinitions(ref columnDefinitions, value);
+        }
 
-        public float RowSpacing { get; set; }
+        public float RowSpacing
+        {
+            get => rowSpacing;
+            set => Layout.SetAffectsMeasure(this, ref rowSpacing, value);
+        }
 
-        public float ColumnSpacing { get; set; }
+        public float ColumnSpacing
+        {
+            get => columnSpacing;
+            set => Layout.SetAffectsMeasure(this, ref columnSpacing, value);
+        }
+
+        private void useDefinitions(ref GridLengthCollection field, GridLengthCollection value)
+        {
+            if (field?.Owner == this)
+                field.Owner = null;
+
+            field = value;
+
+            if (value != null)
+                value.Owner = this;
+
+            InvalidateMeasure();
+        }
 
         public static void SetRow(Drawable drawable, int value) => Layout.Get(drawable).Row = value;
 

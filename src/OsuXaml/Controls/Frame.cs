@@ -101,6 +101,7 @@ namespace OsuXaml.Controls
             bar.Alpha = visible ? 1 : 0;
             pageArea.Padding = new MarginPadding { Top = visible ? bar_height : 0 };
             bar.Refresh();
+            Layout.InvalidateMeasure(this);
         }
 
         /// <summary>Navigates the frame; pages hosted by it get this as <see cref="Page.NavigationService"/>.</summary>
@@ -238,6 +239,7 @@ namespace OsuXaml.Controls
             content = newContent;
             current = newContent == null ? null : presenterFor(newContent);
             syncCanNavigate();
+            Layout.InvalidateMeasure(this);
 
             bool animate = IsLoaded && outgoing != current;
             int direction = mode == NavigationMode.Back ? -1 : 1;
@@ -456,6 +458,8 @@ namespace OsuXaml.Controls
 
             return false;
         }
+
+        public bool ReportsMeasureChanges => true;
 
         public Vector2 Measure(Vector2 availableSize)
         {

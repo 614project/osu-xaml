@@ -42,6 +42,9 @@ namespace OsuXaml.Controls
                 },
             });
 
+            // The panels around measure the expander again as its height animates.
+            expansion.BindValueChanged(_ => Layout.InvalidateMeasure(this));
+
             IsExpanded.BindValueChanged(e =>
             {
                 double duration = IsLoaded ? 250 : 0;

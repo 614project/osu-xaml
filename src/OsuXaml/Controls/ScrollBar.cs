@@ -206,6 +206,7 @@ namespace OsuXaml.Controls
                 }
 
                 applyOrientation();
+                Layout.InvalidateMeasure(this);
             }
         }
 
@@ -215,7 +216,9 @@ namespace OsuXaml.Controls
             get => showArrows;
             set
             {
-                showArrows = value;
+                if (!Layout.SetAffectsMeasure(this, ref showArrows, value))
+                    return;
+
                 decreaseButton.Alpha = increaseButton.Alpha = value ? 1 : 0;
                 layoutParts();
             }
@@ -302,6 +305,8 @@ namespace OsuXaml.Controls
                 return travel > 0 ? range / travel : 0;
             }
         }
+
+        public bool ReportsMeasureChanges => true;
 
         public Vector2 Measure(Vector2 availableSize)
         {

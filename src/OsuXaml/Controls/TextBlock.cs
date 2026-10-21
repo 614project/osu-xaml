@@ -185,6 +185,7 @@ namespace OsuXaml.Controls
                 MaxWidth = float.PositiveInfinity;
 
             FrameworkInternals.Invalidate(this, true, true);
+            Layout.InvalidateMeasure(this);
         }
 
         private void onInlinesChanged()
@@ -203,7 +204,10 @@ namespace OsuXaml.Controls
 
             // A change that keeps the text the same (a run turning bold) still needs the glyphs laid out again.
             if (Text.ToString() == text)
+            {
                 FrameworkInternals.Invalidate(this, true, false);
+                Layout.InvalidateMeasure(this);
+            }
             else
                 Text = text;
         }
@@ -237,6 +241,9 @@ namespace OsuXaml.Controls
             if (hoveredLink != null && !hasLinks)
                 setHoveredLink(null);
         }
+
+        /// <summary>True: every change to the text or its style resizes the text, which its slot passes on.</summary>
+        public bool ReportsMeasureChanges => true;
 
         public Vector2 Measure(Vector2 availableSize)
         {

@@ -55,6 +55,9 @@ namespace OsuXaml.Controls
         private bool updatingText;
         private bool updatingValue;
 
+        // What the last measurement went by: the shown item and placeholder size themselves, so they are checked each frame.
+        private Vector3 measuredFrom = new Vector3(float.NaN);
+
         public ComboBox()
         {
             AddInternal(popup = new Popup
@@ -383,16 +386,38 @@ namespace OsuXaml.Controls
         /// <summary>Highlights the item a container shows, as hovering it does.</summary>
         public void HighlightContainer(Drawable container) => setHighlight(IndexFromContainer(container));
 
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+
+            var content = contentSize;
+            var from = new Vector3(content.X, content.Y, selectionArea.Padding.Left);
+
+            if (from != measuredFrom)
+            {
+                measuredFrom = from;
+                Layout.InvalidateMeasure(this);
+            }
+        }
+
+        /// <summary>The size of what the closed box shows.</summary>
+        private Vector2 contentSize
+        {
+            get
+            {
+                if (isEditable)
+                    return new Vector2(80, 20);
+
+                if (selectionPresenter.Content != null)
+                    return selectionPresenter.DrawSize;
+
+                return placeholder.Alpha > 0 ? placeholder.DrawSize : Vector2.Zero;
+            }
+        }
+
         public override Vector2 Measure(Vector2 availableSize)
         {
-            Vector2 content;
-
-            if (isEditable)
-                content = new Vector2(80, 20);
-            else if (selectionPresenter.Content != null)
-                content = selectionPresenter.DrawSize;
-            else
-                content = placeholder.Alpha > 0 ? placeholder.DrawSize : Vector2.Zero;
+            var content = contentSize;
 
             return new Vector2(
                 Math.Max(min_width, selectionArea.Padding.Left + content.X + chevron_width),

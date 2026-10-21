@@ -173,6 +173,7 @@ namespace OsuXaml.Controls
                 acceptsReturn = value;
                 applyLineMode();
                 applyOwnHeight();
+                Layout.InvalidateMeasure(this);
             }
         }
 
@@ -188,6 +189,7 @@ namespace OsuXaml.Controls
                 textWrapping = value;
                 applyLineMode();
                 applyOwnHeight();
+                Layout.InvalidateMeasure(this);
             }
         }
 
@@ -346,6 +348,8 @@ namespace OsuXaml.Controls
 
             base.Height = growsWithLines ? 0 : default_height;
         }
+
+        public bool ReportsMeasureChanges => true;
 
         public Vector2 Measure(Vector2 availableSize)
         {
@@ -513,7 +517,7 @@ namespace OsuXaml.Controls
             lineCaret.Height = FontSize;
 
             int shown = Math.Clamp(lines.Count, minLines, Math.Max(minLines, maxLines));
-            autoHeight = verticalPadding * 2 + shown * FontSize + (shown - 1) * lineGap;
+            Layout.SetAffectsMeasure(this, ref autoHeight, verticalPadding * 2 + shown * FontSize + (shown - 1) * lineGap);
 
             if (growsWithLines && !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.Y))
                 base.Height = autoHeight;

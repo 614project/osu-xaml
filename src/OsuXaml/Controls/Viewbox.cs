@@ -48,12 +48,28 @@ namespace OsuXaml.Controls
 
                 if (value != null)
                     scaler.Add(slot = new Slot(value));
+
+                Layout.InvalidateMeasure(this);
             }
         }
 
-        public Stretch Stretch { get; set; } = Stretch.Uniform;
+        private Stretch stretch = Stretch.Uniform;
+        private StretchDirection stretchDirection = StretchDirection.Both;
 
-        public StretchDirection StretchDirection { get; set; } = StretchDirection.Both;
+        public Stretch Stretch
+        {
+            get => stretch;
+            set => Layout.SetAffectsMeasure(this, ref stretch, value);
+        }
+
+        public StretchDirection StretchDirection
+        {
+            get => stretchDirection;
+            set => Layout.SetAffectsMeasure(this, ref stretchDirection, value);
+        }
+
+        /// <summary>True: the child's slot passes on its changes, and so do the stretch settings.</summary>
+        public bool ReportsMeasureChanges => true;
 
         /// <summary>The child's natural size, including its margin.</summary>
         public Vector2 ContentSize => slot?.Measure(new Vector2(float.PositiveInfinity)) ?? Vector2.Zero;
