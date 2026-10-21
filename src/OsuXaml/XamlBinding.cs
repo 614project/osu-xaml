@@ -82,11 +82,56 @@ namespace OsuXaml
         }
 
         /// <summary>
+        /// Links a control's <c>Bindable&lt;T?&gt;</c> (for example <c>CheckBox.IsChecked</c>, a <c>bool?</c>) to a view model
+        /// <c>Bindable&lt;T&gt;</c>. Null, which the source can't hold (an indeterminate check box), is not written back.
+        /// </summary>
+        public static void TwoWayNullable<T>(BindingScope scope, Bindable<T?> target, Bindable<T> source)
+            where T : struct
+        {
+            var copy = source.GetBoundCopy();
+            scope.Add(copy);
+
+            bool updating = false;
+
+            copy.BindValueChanged(e =>
+            {
+                if (updating)
+                    return;
+
+                updating = true;
+                target.Value = e.NewValue;
+                updating = false;
+            }, true);
+
+            target.BindValueChanged(e =>
+            {
+                if (updating || copy.Disabled || !(e.NewValue is T value))
+                    return;
+
+                updating = true;
+                copy.Value = value;
+                updating = false;
+            });
+
+            // A source the view model locks locks the control too, as BindTo would.
+            copy.BindDisabledChanged(disabled => target.Disabled = disabled, true);
+        }
+
+        /// <summary>
+        /// Links a control's own list (for example <c>Calendar.SelectedDates</c>) to a view model list in both directions:
+        /// the control takes the view model's items, and changes on either side reach the other.
+        /// </summary>
+        public static void TwoWayList<T>(BindableList<T> target, BindableList<T> source) => target.BindTo(source);
+
+        /// <summary>
         /// A bound copy of a view model list for an <c>IEnumerable</c> property such as <c>ItemsControl.ItemsSource</c>.
         /// The copy raises the same change notifications and is unbound with the view, so the view model never holds the control.
         /// </summary>
         public static IBindableList<T> ListCopy<T>(BindingScope scope, IBindableList<T> source)
         {
+            if (scope.IsReading)
+                return source;
+
             var copy = source.GetBoundCopy();
             scope.Add(copy);
             return copy;

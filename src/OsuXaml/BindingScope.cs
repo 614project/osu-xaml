@@ -12,6 +12,14 @@ namespace OsuXaml
     {
         private readonly List<IUnbindable> bindings = new List<IUnbindable>();
 
+        /// <summary>
+        /// A scope for reading a template's lists right away, without keeping them: <see cref="XamlBinding.ListCopy{T}"/> hands back
+        /// the view model's own list instead of a bound copy, so walking a large tree (to find an item in it) copies nothing.
+        /// </summary>
+        internal static BindingScope ForReading() => new BindingScope { IsReading = true };
+
+        internal bool IsReading { get; private init; }
+
         public void Add(IUnbindable bindable) => bindings.Add(bindable);
 
         public void Remove(IUnbindable bindable) => bindings.Remove(bindable);

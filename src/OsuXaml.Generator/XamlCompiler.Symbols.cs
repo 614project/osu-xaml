@@ -318,6 +318,8 @@ namespace OsuXaml.Generator
                     {
                         case IPropertySymbol p when p.SetMethod != null && canAccess(p.SetMethod):
                         case IPropertySymbol pb when pb.GetMethod != null && canAccess(pb.GetMethod) && bindableClassValueType(pb.Type) != null:
+                        // A control's own list (Calendar.SelectedDates) takes a two-way list binding.
+                        case IPropertySymbol pl when pl.GetMethod != null && canAccess(pl.GetMethod) && isBindableListClass(pl.Type):
                         case IFieldSymbol f when !f.IsReadOnly && !f.IsConst && canAccess(f):
                         case IEventSymbol e when canAccess(e):
                             return m;
@@ -430,6 +432,18 @@ namespace OsuXaml.Generator
             }
 
             return null;
+        }
+
+        /// <summary>Whether the type is or derives from the <c>BindableList&lt;T&gt;</c> class, which two-way list bindings link with BindTo.</summary>
+        private static bool isBindableListClass(ITypeSymbol type)
+        {
+            for (var t = type as INamedTypeSymbol; t != null; t = t.BaseType)
+            {
+                if (t.IsGenericType && t.OriginalDefinition.ToDisplayString() == "osu.Framework.Bindables.BindableList<T>")
+                    return true;
+            }
+
+            return false;
         }
 
         private static ITypeSymbol genericInterfaceArgument(ITypeSymbol type, string definition)

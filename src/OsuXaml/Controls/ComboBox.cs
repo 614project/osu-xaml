@@ -783,9 +783,11 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>A borderless text box for <see cref="IsEditable"/> that re-lays out its text on resize without reporting edits.</summary>
-        private partial class EditableTextBox : BasicTextBox
+        private partial class EditableTextBox : BasicTextBox, IHasDefaultCursor
         {
             private float laidOutWidth = -1;
+
+            Cursor IHasDefaultCursor.DefaultCursor => Cursors.IBeam;
 
             public EditableTextBox()
             {

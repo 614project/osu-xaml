@@ -174,6 +174,14 @@ namespace OsuXaml.Generator
                     return;
                 }
 
+                // CheckBox.IsChecked is a bool? as in WPF, and still binds two-way to a view model's Bindable<bool>.
+                if (sourceBindableValue != null && targetBindableValue is INamedTypeSymbol { OriginalDefinition: { SpecialType: SpecialType.System_Nullable_T } } nullable
+                    && SymbolEqualityComparer.Default.Equals(nullable.TypeArguments[0], sourceBindableValue))
+                {
+                    line($"global::OsuXaml.XamlBinding.TwoWayNullable({scope.Bindings}, {v}.{member.Name}, {expr});");
+                    return;
+                }
+
                 if (twoWay || (sourceBindableValue != null && !implicitly(sourceBindableValue, targetBindableValue)))
                 {
                     report(Diagnostics.TypeMismatch, source, describe(sourceType), member.Name, target.ToDisplayString(),
@@ -193,6 +201,14 @@ namespace OsuXaml.Generator
 
             // ItemsSource="{Bind People}": the control gets a bound copy of the list, owned by the view.
             var listItem = bindableListItemType(sourceType);
+
+            // A control's own list (Calendar.SelectedDates) links to a view model list of the same type in both directions.
+            if (listItem != null && !oneWay && isBindableListClass(target) && isBindableListClass(sourceType)
+                && SymbolEqualityComparer.Default.Equals(bindableListItemType(target), listItem))
+            {
+                line($"global::OsuXaml.XamlBinding.TwoWayList({v}.{member.Name}, {expr});");
+                return;
+            }
 
             if (listItem != null && isEnumerable(assignTo) && bind.Get("Converter") == null)
             {
@@ -236,7 +252,8 @@ namespace OsuXaml.Generator
                     line($"global::OsuXaml.XamlBinding.OneWay({scope.Bindings}, {expr}, (x, initial) =>");
                     line("{");
                     indent++;
-                    line($"var value = {converted};");
+                    // Typed as the property, so a Colour4 animating a Brush property transforms as a Brush.
+                    line($"{typeName(assignTo)} value = {converted};");
                     line($"if (initial) {assignTarget} = value;");
                     line($"else global::osu.Framework.Graphics.TransformableExtensions.TransformTo({v}, nameof({v}.{member.Name}), value, {literalDouble(duration)}, global::osu.Framework.Graphics.Easing.{easing});");
                     indent--;

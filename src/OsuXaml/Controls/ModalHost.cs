@@ -9,14 +9,15 @@ namespace OsuXaml.Controls
     /// <summary>
     /// One modal dialog in a <see cref="PopupLayer"/>: a dimmed backdrop over the whole layer that takes every click, hover,
     /// wheel turn and key press, the dialog centred above it, and a popup layer of its own so drop-downs, menus and tooltips
-    /// inside the dialog open above the dialog. Clicking the backdrop does nothing. Hosts stack; only the top one takes input.
+    /// inside the dialog open above the dialog. Clicking the backdrop does nothing. Hosts stack; only the top one takes input, and the
+    /// top one is the newest in the whole game: the layers of other windows are covered meanwhile (<see cref="PopupLayer.BlockingModal"/>).
     /// <see cref="Dialog.ShowDialog(Drawable)"/> and <see cref="MessageBox.Show(Drawable, string, string, MessageBoxButton, MessageBoxImage, MessageBoxResult)"/> create them.
     /// </summary>
     public partial class ModalHost : CompositeDrawable, IPopupLayerProvider
     {
-        private const double open_duration = 250;
-        private const double close_duration = 150;
-        private const float dim = 0.5f;
+        internal const double OpenDuration = 250;
+        internal const double CloseDuration = 150;
+        internal const float Dim = 0.5f;
 
         private readonly Box backdrop;
         private readonly PopupLayer layer;
@@ -51,6 +52,9 @@ namespace OsuXaml.Controls
         /// <summary>Whether the dialog has closed and is animating out; a closing host takes no input.</summary>
         public bool IsClosing { get; private set; }
 
+        /// <summary>Whether the host is gone without closing: its window was disposed with the dialog still open.</summary>
+        internal bool WasDisposed => IsDisposed;
+
         public override bool PropagatePositionalInputSubTree => !IsClosing && base.PropagatePositionalInputSubTree;
 
         public override bool PropagateNonPositionalInputSubTree => !IsClosing && base.PropagateNonPositionalInputSubTree;
@@ -61,9 +65,9 @@ namespace OsuXaml.Controls
 
             previousFocus = GetContainingInputManager()?.FocusedDrawable;
 
-            backdrop.FadeTo(dim, open_duration, Easing.OutQuint);
-            Dialog.FadeInFromZero(open_duration * 0.6, Easing.OutQuint);
-            Dialog.ScaleTo(0.94f).ScaleTo(1, open_duration, Easing.OutQuint);
+            backdrop.FadeTo(Dim, OpenDuration, Easing.OutQuint);
+            Dialog.FadeInFromZero(OpenDuration * 0.6, Easing.OutQuint);
+            Dialog.ScaleTo(0.94f).ScaleTo(1, OpenDuration, Easing.OutQuint);
         }
 
         protected override void Update()
@@ -88,7 +92,7 @@ namespace OsuXaml.Controls
             {
                 var focus = GetContainingInputManager()?.FocusedDrawable;
 
-                if (focus != null && !isWithin(focus, this))
+                if (focus != null && !IsWithin(focus, this))
                     GetContainingFocusManager()?.ChangeFocus(Dialog);
             }
         }
@@ -100,12 +104,12 @@ namespace OsuXaml.Controls
                 return;
 
             IsClosing = true;
-            layer.CloseModal(this, close_duration);
+            layer.CloseModal(this, CloseDuration);
 
             var input = GetContainingInputManager();
             var focus = input?.FocusedDrawable;
 
-            if (focus == null || isWithin(focus, this))
+            if (focus == null || IsWithin(focus, this))
             {
                 if (previousFocus != null && previousFocus.IsLoaded && previousFocus.AcceptsFocus && isInTree(previousFocus))
                     GetContainingFocusManager()?.ChangeFocus(previousFocus);
@@ -115,14 +119,46 @@ namespace OsuXaml.Controls
 
             PopupLayer.DismissAll();
 
-            backdrop.FadeOut(close_duration, Easing.OutQuint);
-            Dialog.ScaleTo(0.96f, close_duration, Easing.OutQuint).FadeOut(close_duration, Easing.OutQuint);
+            backdrop.FadeOut(CloseDuration, Easing.OutQuint);
+            Dialog.ScaleTo(0.96f, CloseDuration, Easing.OutQuint).FadeOut(CloseDuration, Easing.OutQuint);
         }
 
         internal void ScheduleClose() => Schedule(Close);
 
-        /// <summary>Whether this is the dialog that takes input: the newest in its layer, with none open above it from inside.</summary>
-        private bool isTopModal => layer.OpenModals.Count > 0 && layer.OpenModals[^1] == this && PopupLayer.OpenModals.Count == 0;
+        /// <summary>
+        /// Whether this is the dialog that takes input: the newest open in the game, in any window. Outside a game, the newest in its
+        /// layer with none open above it from inside.
+        /// </summary>
+        private bool isTopModal => PopupLayer.TopModal(this) is ModalHost top
+            ? top == this
+            : layer.OpenModals.Count > 0 && layer.OpenModals[^1] == this && PopupLayer.OpenModals.Count == 0;
+
+        /// <summary>
+        /// What the backdrop dims: the area of the outermost popup layer the dialog is in, which is its window (or the whole game,
+        /// for the game's own layer). Dialogs opened from inside a dialog dim the same window.
+        /// </summary>
+        internal Drawable Region
+        {
+            get
+            {
+                Drawable outer = layer;
+
+                for (var d = layer.Parent; d != null; d = d.Parent)
+                {
+                    if (d is PopupLayer p)
+                        outer = p;
+                }
+
+                return outer.Parent;
+            }
+        }
+
+        /// <summary>Moves focus into the dialog, as clicking its backdrop does.</summary>
+        internal void FocusDialog()
+        {
+            if (Dialog.AcceptsFocus)
+                GetContainingFocusManager()?.ChangeFocus(Dialog);
+        }
 
         private bool isInTree(Drawable drawable)
         {
@@ -137,7 +173,8 @@ namespace OsuXaml.Controls
             return top == ownTop;
         }
 
-        private static bool isWithin(Drawable drawable, Drawable ancestor)
+        /// <summary>Whether <paramref name="drawable"/> is <paramref name="ancestor"/> or inside it.</summary>
+        internal static bool IsWithin(Drawable drawable, Drawable ancestor)
         {
             for (var d = drawable; d != null; d = d.Parent)
             {
@@ -154,9 +191,7 @@ namespace OsuXaml.Controls
         protected override bool OnClick(ClickEvent e)
         {
             // Clicking the backdrop (or an empty part of the dialog) keeps focus in the dialog instead of clearing it.
-            if (Dialog.AcceptsFocus)
-                GetContainingFocusManager()?.ChangeFocus(Dialog);
-
+            FocusDialog();
             return true;
         }
 

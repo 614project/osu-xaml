@@ -14,7 +14,7 @@ osu!framework 타입 이름을 그대로 쓰는 XAML을 빌드 시점에 C#으�
 | `src/OsuXaml.Schema` | 빌드 후 IDE 자동완성용 XML 스키마를 `obj/osu-xaml/`에 쓰는 도구 (아래 [IDE 자동완성](#ide-자동완성)) |
 | `samples/TodoApp` | XAML 한 파일 + 뷰모델로 만든 할 일 앱 (osu!framework 기본 컨트롤 사용) |
 | `samples/Gallery` | WPF식 컨트롤 갤러리 (메뉴·도구 모음·상태 표시줄이 있는 Window와 Layout, Lists, Inputs, Shapes, Dialogs 탭) |
-| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 404개 |
+| `tests/OsuXaml.Tests` | 생성기, 레이아웃 기하, 헤드리스 컨트롤과 갤러리 테스트 415개 |
 
 ## 실행
 
@@ -118,9 +118,9 @@ public partial class MainView : CompositeDrawable
 | 암시적 템플릿 | `<DataTemplate DataType="{x:Type local:Person}">` (키 없음) | 같은 아이템 타입의 ItemsControl에 자동 적용 |
 | 컬렉션 | `<local:Bag.Tags><x:String>a</x:String></local:Bag.Tags>`, `<ItemsPanelTemplate>` | 기존 컬렉션에 `Add`, 래퍼는 생략 가능 |
 | 기본 변환기 | `Converter=Not`, `BoolToVisibility`, `InverseBoolToVisibility`, `IsNull`, `IsNotNull`, `NullToVisibility` 등 | x:Class에 같은 이름이 없으면 `OsuXaml.Converters`에서 찾음 |
-| 전역 속성 | `Visibility="Collapsed"`, `HorizontalAlignment`, `ToolTip`, `ContextMenu` | `[assembly: XamlGlobalProperties(typeof(T))]`로 등록한 정적 `SetX(Drawable, 값)` |
+| 전역 속성 | `Visibility="Collapsed"`, `HorizontalAlignment`, `ToolTip`, `ContextMenu`, `Cursor` | `[assembly: XamlGlobalProperties(typeof(T))]`로 등록한 정적 `SetX(Drawable, 값)` |
 
-선택 상태(`SelectedItem`, `IsChecked`, `IsExpanded`, `IsOpen` 등)는 `Bindable<T>` 프로퍼티라서 뷰모델의 `Bindable<T>`와 양방향으로 연결됩니다. `SelectedItem`은 `Bindable<object>`지만 뷰모델의 `Bindable<Person>`과도 바로 묶입니다.
+선택 상태(`SelectedItem`, `IsChecked`, `IsExpanded`, `IsOpen` 등)는 `Bindable<T>` 프로퍼티라서 뷰모델의 `Bindable<T>`와 양방향으로 연결됩니다. `SelectedItem`은 `Bindable<object>`지만 뷰모델의 `Bindable<Person>`과도 바로 묶입니다. `CheckBox.IsChecked`는 WPF처럼 `bool?`이지만 뷰모델의 `Bindable<bool>`과도 양방향으로 묶이고, 미정(null)일 때는 뷰모델 값을 그대로 둡니다. `Calendar.SelectedDates`처럼 컨트롤이 가진 `BindableList<T>`는 같은 타입의 뷰모델 목록과 양방향으로 묶입니다.
 
 ## WPF식 컨트롤
 
@@ -158,16 +158,17 @@ public partial class MainView : CompositeDrawable
 | | `Page`, `Frame` | `<Page x:Class="App.HomePage" Title="Home">` 루트, `Frame.Navigate(page)`, `GoBack()`/`GoForward()`, `CanGoBack`/`CanGoForward` (바인딩 가능), `NavigationService`, 뒤로 가기 기록 유지, 슬라이드 전환, `NavigationUIVisibility` |
 | | `Dialog` | `<Dialog x:Class="App.SettingsDialog" Title="Settings">` 루트, `await dialog.ShowDialog(this)`, `DialogResult`, `Closing`, 버튼의 `IsDefault`/`IsCancel` (Enter/Escape) |
 | | `ScrollViewer` | `VerticalScrollBarVisibility`/`HorizontalScrollBarVisibility` (`Auto`, `Visible`, `Hidden`, `Disabled`), `ScrollToEnd()`, `VerticalOffset` |
-| 텍스트 | `TextBlock` | `Text` (`\n`에서 줄바꿈), `FontSize`, `FontWeight`, `FontStyle`, `TextDecorations`, `Foreground`, `TextWrapping`, `TextTrimming`, 인라인 |
-| | `Run`, `Span`, `Bold`, `Italic`, `Underline`, `LineBreak` | `TextBlock` 안의 인라인. `Text`, `FontSize`, `FontWeight`, `FontStyle`, `TextDecorations`, `Foreground` |
+| 텍스트 | `TextBlock` | `Text` (`\n`에서 줄바꿈), `FontSize`, `FontWeight`, `FontStyle`, `FontFamily`, `TextDecorations`, `Foreground`, `TextWrapping`, `TextTrimming`, `TextAlignment`, 인라인 |
+| | `Run`, `Span`, `Bold`, `Italic`, `Underline`, `LineBreak` | `TextBlock` 안의 인라인. `Text`, `FontSize`, `FontWeight`, `FontStyle`, `FontFamily`, `TextDecorations`, `Foreground` |
+| | `Hyperlink`, `InlineUIContainer` (인라인) | 글 사이의 링크와 Drawable. 글과 함께 줄바꿈되고, 링크는 호버·클릭이 단독 `Hyperlink`와 같습니다 |
 | | `Label` | `Content="_Name"` (Alt+N 접근 키), `Target="{Binding ElementName=box}"` |
 | | `Hyperlink` | `NavigateUri`, `Click`, `RequestNavigate` |
-| | `TextBox` | `Text` (양방향), `PlaceholderText`, `MaxLength`, `IsReadOnly`, `TextChanged`, `AcceptsReturn`, `TextWrapping`, `MinLines`/`MaxLines` |
+| | `TextBox` | `Text` (양방향), `PlaceholderText`, `MaxLength`, `IsReadOnly`, `TextChanged`, `AcceptsReturn`, `TextWrapping`, `MinLines`/`MaxLines`, `VerticalScrollBarVisibility`/`HorizontalScrollBarVisibility` |
 | | `PasswordBox` | `Password` (양방향), `PasswordChar`, `PasswordChanged` |
 | 버튼 | `Button` | `Content` 또는 자식 요소, `Click`, `IsEnabled`, 호버/누름 애니메이션 |
 | | `RepeatButton` | 누르고 있으면 `Delay` 뒤 `Interval`마다 `Click` |
 | | `ToggleButton` | `IsChecked` (양방향), `Checked`/`Unchecked` |
-| | `CheckBox` | `IsChecked` (양방향), `Content`, Space로 전환 |
+| | `CheckBox` | `IsChecked` (양방향, WPF처럼 `bool?`), `IsThreeState` (체크 → 미정 → 해제), `Indeterminate`, `Content`, Space로 전환 |
 | | `RadioButton` | `IsChecked` (양방향), `GroupName` (없으면 같은 부모끼리 한 그룹) |
 | 범위 | `Slider` | `Value` (양방향), `Minimum`, `Maximum`, `Orientation`, `TickFrequency`, `TickPlacement`, `IsSnapToTickEnabled`, 키보드 |
 | | `ProgressBar` | `Value`, `Minimum`, `Maximum`, `IsIndeterminate`, `Orientation` |
@@ -175,7 +176,7 @@ public partial class MainView : CompositeDrawable
 | 목록 | `ItemsControl` | `ItemsSource`, `ItemTemplate`, `DisplayMemberPath`, `ItemsPanel` (`VirtualizingStackPanel`이면 가상화) |
 | | `ListBox` | `SelectedItem`/`SelectedIndex` (양방향), `SelectionMode`, `SelectedItems`, 키보드, `ScrollIntoView`, 가상화 |
 | | `ListView` + `GridView` | `GridViewColumn` (`Header`, `DisplayMemberBinding`, `CellTemplate`, `Width`, `SortMemberPath`), 머리글 클릭 정렬, 경계 드래그로 열 너비 조절 |
-| | `DataGrid` | `DataGridTextColumn`/`DataGridCheckBoxColumn`/`DataGridTemplateColumn`, 더블클릭·F2 편집, `AlternatingRowBackground`, `IsReadOnly`, 정렬 |
+| | `DataGrid` | `DataGridTextColumn`/`DataGridCheckBoxColumn`/`DataGridTemplateColumn`, `AutoGenerateColumns` ([빌드 시점 생성](#데이터그리드-열-자동-생성)), 더블클릭·F2 편집, `AlternatingRowBackground`, `IsReadOnly`, 정렬 |
 | | `TreeView` | `HierarchicalDataTemplate`, `TreeViewItem`, `SelectedItem` (양방향), `IsExpandedBinding`, 키보드, 가상화 (`IsVirtualizing="True"`일 때) |
 | | `ComboBox` | `SelectedItem`/`SelectedIndex`/`SelectedValue` (양방향), `IsDropDownOpen`, `IsEditable` + `Text`, `PlaceholderText`, 키보드 |
 | 메뉴·팝업 | `Menu`, `MenuItem` | `Header="_File"`, `Click`, `InputGestureText`, `IsCheckable`/`IsChecked`, 하위 메뉴, Alt 접근 키 |
@@ -183,28 +184,30 @@ public partial class MainView : CompositeDrawable
 | | `ToolTip` | 모든 요소에 `ToolTip="..."` 또는 `<Button.ToolTip><ToolTip>...` |
 | | `Popup` | `IsOpen` (양방향), `PlacementTarget`, `Placement`, `StaysOpen` |
 | | `MessageBox` | `await MessageBox.Show(this, "Delete?", "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Warning)` → `MessageBoxResult` |
-| 구획 | `TabControl`, `TabItem` | `SelectedIndex`/`SelectedItem` (양방향), `TabStripPlacement`, `ItemsSource` + `ContentTemplate` |
+| 구획 | `TabControl`, `TabItem` | `SelectedIndex`/`SelectedItem` (양방향), `TabStripPlacement`, `ItemsSource` + `ContentTemplate`, 넘치는 탭은 휠과 양 끝 화살표로 스크롤하고 선택한 탭을 보이게 맞춤 |
 | | `Expander` | `Header`, `IsExpanded` (양방향), 높이 애니메이션 |
 | | `GroupBox`, `HeaderedContentControl` | `Header`, `HeaderTemplate` |
 | | `StatusBar`, `StatusBarItem` | `DockPanel.Dock="Right"`로 오른쪽 정렬, 세로 `Separator` |
 | | `ToolBar`, `ToolBarTray` | 평평한 버튼·토글·콤보, `Band`/`BandIndex` |
 | | `Separator` | 가로 구분선 (메뉴, 상태 표시줄, 도구 모음 안에서는 맞는 모양으로) |
-| 날짜·색 | `Calendar` | `SelectedDate` (양방향), `DisplayDate`, `FirstDayOfWeek`, 월·연·10년 보기, 키보드 |
+| 날짜·색 | `Calendar` | `SelectedDate` (양방향), `SelectionMode` (`SingleRange`, `MultipleRange`) + `SelectedDates` (양방향, 드래그·Shift+클릭으로 범위, Ctrl+클릭으로 추가), `DisplayDate`, `FirstDayOfWeek`, 월·연·10년 보기, 키보드 |
 | | `DatePicker` | `SelectedDate` (양방향), `SelectedDateFormat`, 직접 입력, F4·Alt+↓로 열기 |
 | | `ColorPicker` | `SelectedColor` (양방향) |
-| 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke`, `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
-| | `Line`, `Polyline`, `Polygon` | `X1`/`Y1`/`X2`/`Y2`, `Points="0,0 10,20 20,0"`, `Fill` (Polygon) |
-| | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
+| 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke` (색 또는 브러시), `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
+| | `Line`, `Polyline`, `Polygon` | `X1`/`Y1`/`X2`/`Y2`, `Points="0,0 10,20 20,0"`, `Fill`, `FillRule` (`EvenOdd` 기본, `Nonzero`) |
+| | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법, 앞에 `F1`이면 `Nonzero`), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
+| | 모든 도형의 선 | `StrokeStartLineCap`/`StrokeEndLineCap`/`StrokeDashCap` (`Flat`·`Square`·`Round`·`Triangle`), `StrokeLineJoin` (`Miter`·`Bevel`·`Round`), `StrokeMiterLimit`, `StrokeDashArray="4 2"`, `StrokeDashOffset`. 기본값은 WPF처럼 `Flat`, `Miter`, 10 |
+| | `SolidColorBrush`, `LinearGradientBrush`, `RadialGradientBrush` | `GradientStop` (`Color`, `Offset`), `StartPoint`/`EndPoint`, `Center`/`GradientOrigin`/`RadiusX`/`RadiusY`, `MappingMode`, `SpreadMethod` (`Pad`·`Reflect`·`Repeat`), `Opacity`. 속성 요소나 리소스로 쓰고, 색 바인딩·`Animate`도 됩니다 |
 | | `Image` | `Source` (파일 경로 또는 osu! 텍스처 이름), `Stretch`, `StretchDirection`, `ImageFailed` |
 | | `Viewbox` | 자식 하나를 비율 유지하며 늘이거나 줄임, `Stretch`, `StretchDirection` |
-| | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome), `Size`, `Foreground` |
-| 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height`, `Visibility`, `ToolTip`, `ContextMenu` |
+| | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome, 없는 이름은 비슷한 이름을 알려 주는 빌드 오류), `Size`, `Foreground` |
+| 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height`, `Visibility`, `ToolTip`, `ContextMenu`, `Cursor` |
 
 패널과 `ItemsSource`도 함께 쓸 수 있습니다 (`<WrapPanel ItemsSource="{Bind Tags}">`). `{Bind}`처럼 경로를 비우면 아이템 자체에 바인딩됩니다.
 
 ### 대화상자와 페이지 이동
 
-WPF의 `MessageBox.Show`와 `ShowDialog()`는 결과가 나올 때까지 호출한 스레드를 막지만, osu!framework의 Update 스레드는 막을 수 없습니다. 그래서 같은 이름의 메서드가 `Task`를 돌려주고, 코드비하인드에서는 `await`로 씁니다. 대화상자는 창 전체를 어둡게 덮고 아래 입력을 막는 모달로 열립니다.
+WPF의 `MessageBox.Show`와 `ShowDialog()`는 결과가 나올 때까지 호출한 스레드를 막지만, osu!framework의 Update 스레드는 막을 수 없습니다. 그래서 같은 이름의 메서드가 `Task`를 돌려주고, 코드비하인드에서는 `await`로 씁니다. 대화상자는 창 전체를 어둡게 덮고 아래 입력을 막는 모달로 열립니다. WPF처럼 앱 전체에 모달이라서, 한 게임에 `Window`가 여럿이면 다른 Window도 함께 어두워지고 클릭·키·메뉴·툴팁을 받지 않습니다. 여러 Window에 대화상자가 열려 있으면 가장 나중에 연 것이 입력을 받습니다.
 
 ```csharp
 private async void OnDelete()
@@ -236,10 +239,29 @@ private async void OnSettings()
 ```
 
 - 각 줄은 그 줄에서 가장 큰 글꼴만큼 높아지고, `TextTrimming`은 줄마다 따로 말줄임표를 붙입니다.
+- `TextAlignment`(`Left`, `Center`, `Right`, `Justify`)는 자기 `Width`나 늘어난 너비, 없으면 패널이 주는 너비에 줄을 맞춥니다. 가로 `StackPanel`처럼 너비 제한이 없으면 가장 긴 줄에 맞춥니다. `Justify`는 줄바꿈된 줄만 양쪽에 맞추고 문단의 마지막 줄은 그대로 둡니다.
+- `FontFamily`는 `Roboto`(기본), `RobotoCondensed`, 또는 게임이 추가한 글꼴 이름입니다. WPF처럼 `"Segoe UI, Roboto"` 목록을 쓰면 첫 번째를 쓰고, 그 글꼴에 없는 글자는 같은 굵기의 다른 글꼴로 그립니다.
+- `TextBlock` 안에 `<Hyperlink>`를 쓰면 글의 일부가 되어 함께 줄바꿈되고, 호버하면 밝아지며 밑줄이 생기고, 클릭은 `Click`, `RequestNavigate`, `NavigateUri`를 단독 `Hyperlink`처럼 처리합니다. 링크가 없는 글은 마우스 입력을 받지 않아서 버튼 안의 글자도 그대로입니다.
+- `<InlineUIContainer>`(또는 `TextBlock` 안에 바로 쓴 `Button`, `Icon` 같은 요소)는 크기만큼 자리를 차지하고 기준선 위에 섭니다. `TextBlock` 옆의 레이어에 그려지므로 `TextBlock`의 부모가 `Container`여야 합니다 (패널 안이면 늘 그렇습니다).
 - `Text`는 인라인의 글자를 이어 붙인 값입니다. `Text`를 직접 바꾸면 인라인 대신 그 글자가 나옵니다.
 - `AcceptsReturn="True"`인 `TextBox`는 Enter로 줄을 바꾸고 붙여 넣은 줄바꿈도 남깁니다. `Text`에는 `\n`으로 들어가고, 뷰모델이 넣은 `\r\n`도 `\n`으로 맞춥니다.
 - `Height`가 없으면 `AcceptsReturn`이나 `TextWrapping`을 켠 상자는 줄 수만큼 자라고, `MinLines`/`MaxLines`가 그 범위를 정합니다. `Height`를 주면 그 높이 안에서 캐럿을 따라가고 마우스 휠로도 스크롤합니다.
+- 줄이 넘치면 오른쪽 여백 위에 얇은 세로 스크롤바가 나타나서 끌거나 트랙을 눌러 스크롤할 수 있습니다. `VerticalScrollBarVisibility`의 기본값은 WPF(`Hidden`)와 달리 `Auto`이고, `Visible`은 항상, `Hidden`/`Disabled`는 보이지 않습니다. 줄바꿈하지 않는 긴 줄에는 `HorizontalScrollBarVisibility="Auto"`로 가로 스크롤바를 켭니다 (기본 `Hidden`).
 - 위·아래 화살표는 열 위치를 기억하며 줄을 옮깁니다. PageUp/PageDown, 줄 단위 Home/End, Ctrl+Home/End, 세 번 클릭(줄 선택)도 WPF처럼 동작합니다.
+
+### 데이터그리드 열 자동 생성
+
+`AutoGenerateColumns`는 리플렉션 없이 동작합니다. 생성기가 `ItemsSource="{Bind People}"`의 아이템 타입(`BindableList<Person>`이면 `Person`)을 빌드 시점에 읽어서 공개 프로퍼티와 필드마다 열을 컴파일합니다.
+
+```xml
+<DataGrid ItemsSource="{Bind People}" AutoGeneratingColumn="OnGeneratingColumn" />
+```
+
+- WPF처럼 기본값이 켜짐이라 열을 하나도 적지 않은 `DataGrid`는 바로 열이 생깁니다. 열을 직접 적은 `DataGrid`는 같은 열이 두 번 나오지 않도록 꺼진 채로 시작하고, `AutoGenerateColumns="True"`를 쓰면 적은 열 뒤에 붙습니다.
+- `bool`은 체크박스 열(`bool?`은 3상태), 나머지는 텍스트 열이 됩니다. `Bindable` 멤버는 편집할 수 있고 일반 멤버는 읽기 전용입니다. 목록과 대리자 멤버는 건너뜁니다.
+- `[Browsable(false)]`, `[Display(AutoGenerateField = false)]`는 열을 빼고, `[Display(Name = "...")]`·`[DisplayName]`은 머리글을, `[Display(Order = n)]`은 순서를, `[ReadOnly(true)]`는 편집 금지를 정합니다.
+- 실행 중에는 열마다 `AutoGeneratingColumn`이 불려서 열을 고치거나 바꾸거나 `Cancel`로 뺄 수 있습니다. `AutoGenerateColumns`를 끄면 생성된 열이 사라지고 다시 켜면 새로 만듭니다.
+- 아이템 타입을 빌드 시점에 알 수 없으면(타입 없는 `IEnumerable` 등) `AutoGenerateColumns="True"`는 빌드 오류(OX0009)입니다.
 
 ### 가상화
 
@@ -256,15 +278,34 @@ private async void OnSettings()
 
 - `VirtualizationMode="Recycling"`은 벗어난 행의 컨테이너를 버리지 않고 새로 보이는 행에 다시 씁니다. `IsVirtualizing="False"`는 예전처럼 모든 행을 미리 만듭니다. WPF처럼 `VirtualizingStackPanel.IsVirtualizing`이라고 써도 됩니다.
 - `TreeView`는 WPF처럼 `IsVirtualizing="True"`를 줄 때만 가상화합니다. 그러면 펼친 단계마다 보이는 노드만 만들고, 선택된 노드와 그 조상은 화면 밖에서도 남습니다. 스크롤해서 사라졌다 돌아온 노드는 펼침 상태를 그대로 가지고 (`IsExpandedBinding`이 있으면 뷰모델에서, 없으면 아이템별로 기억합니다), `ExpandSubtree()`는 하위 노드를 화면에 나타날 때 펼칩니다.
+- `TreeView.ScrollIntoView`는 아직 만들어지지 않은 중첩 노드도 찾습니다. 아이템과 그 자식을 `HierarchicalDataTemplate`으로 따라가며 깊이 우선으로 찾은 뒤, 조상을 펼치고 그 경로의 노드를 만들어 스크롤합니다. 가상화 여부와 상관없이 동작합니다 (WPF는 이미 만들어진 노드만 찾습니다).
 - 한 번 보인 행은 잰 높이를, 아직 안 보인 행은 그 평균을 씁니다 (트리 노드는 펼쳐져 있어도 머리글 높이로 셉니다). 행 높이가 같으면 스크롤 범위가 정확하고, 다르면 스크롤하면서 맞춰집니다. 위쪽 추정치가 고쳐질 때는 스크롤 위치를 같이 옮겨서 보고 있는 행이 움직이지 않습니다.
 - 선택, `ScrollIntoView`, 키보드 이동(Home/End 포함)은 컨테이너가 없는 행에도 동작합니다. 편집 중이거나 포커스를 가진 행은 화면 밖으로 나가도 남습니다.
 - `ContainerFromIndex`/`ContainerFromItem`은 컨테이너가 없는 행에 `null`을 돌려줍니다. `ListView`와 `DataGrid`의 `Auto` 열은 지금까지 보인 셀 중 가장 넓은 폭을 유지합니다.
+
+### 마우스 커서
+
+모든 요소에 WPF처럼 `Cursor`를 줄 수 있습니다. 이름은 빌드 시점에 `Cursors`의 모양과 맞춰 보므로 오타는 빌드 오류가 됩니다.
+
+```xml
+<Border Cursor="Hand" Background="#313244" Padding="16">
+  <TextBlock Text="Click the card" />
+</Border>
+<Button Content="Save" Cursor="{Bind SaveCursor}" />
+```
+
+- 포인터 아래에서 커서가 있는 가장 깊은 요소의 모양이 나옵니다. 텍스트와 테두리처럼 입력을 받지 않는 요소에 준 커서도 됩니다. 없으면 기본 화살표입니다.
+- `Hyperlink`(`TextBlock` 안의 인라인 링크 포함)는 손 모양, `GridSplitter`는 크기 조절 방향의 양방향 화살표, `TextBox`·`PasswordBox`·편집 가능한 `ComboBox`는 텍스트 커서(여러 줄 `TextBox`의 스크롤바 위에서는 화살표), `ListView`와 `DataGrid`의 열 경계는 좌우 화살표를 스스로 씁니다. 요소에 직접 준 `Cursor`가 이깁니다. 비활성 `Hyperlink`와 `GridSplitter`는 부모의 커서를 따릅니다.
+- 끄는 동안에는 포인터가 벗어나도 끌고 있는 요소의 커서를 유지합니다. 열린 팝업이나 모달 대화상자에 가려진 요소의 커서는 나오지 않습니다.
+- `CursorService.OverrideCursor = Cursors.Wait`는 WPF의 `Mouse.OverrideCursor`처럼 앱 전체의 커서를 바꾸고, `null`로 되돌립니다. 코드에서는 `CursorService.SetCursor(element, Cursors.Hand)`로 줍니다.
+- osu!framework에는 커서 API가 없어서 SDL3로 OS 커서를 직접 바꿉니다. SDL2 백엔드나 OS 커서를 숨기고 직접 그리는 게임에서는 화면에 변화가 없습니다. `Cursors.None`은 OS 커서를 숨깁니다.
 
 ### 레이아웃 동작
 
 - 매 프레임 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 패널이 자식을 측정(Measure)하고 배치(Arrange)합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다.
 - 자식마다 `Slot`이 하나씩 붙어서 정렬과 여백을 처리합니다. 기본값은 WPF처럼 `Stretch`이고, 크기를 명시한 자식은 가운데에, 텍스트처럼 내용 크기인 자식은 시작 위치에 놓입니다.
 - 다른 패널 안에 있지 않고 크기도 없는 패널은 내용 크기에 맞춰 스스로 크기를 정합니다.
+- `Grid`에서 여러 행·열에 걸친 자식은 WPF처럼 걸친 칸들을 넓혀서 들어갑니다. 걸친 칸이 모두 `Auto`면 모자란 만큼을 똑같이 나눠 늘리고, `Auto`가 아닌 칸(픽셀 칸 포함)이 섞여 있으면 그 칸이 먼저 늘어나 `Auto` 칸은 딱 맞게 남습니다. 남은 공간을 나누는 `*` 칸을 지나는 자식은 크기 계산에 들어가지 않습니다.
 - 첨부 속성은 생성기가 `Grid.SetRow(element, 1)` 같은 정적 메서드 호출로 바꿉니다. `Set이름(Drawable, 값)` 형태의 정적 메서드만 있으면 직접 만든 첨부 속성도 똑같이 동작합니다.
 - `RowDefinitions` 문법 오류는 빌드 오류로 나옵니다. 정적 `Parse(string)` 메서드가 있는 타입은 모두 문자열로 쓸 수 있습니다.
 
@@ -302,14 +343,7 @@ private async void OnSettings()
 ## 아직 없는 것
 
 - 핫 리로드는 루트 요소에 직접 단 이벤트, 양방향 바인딩, 컬렉션 항목, 텍스트 내용을 처음 한 번만 적용합니다. 이 부분을 바꾸면 앱을 다시 시작해야 합니다 (안쪽 요소와 루트의 일반 속성은 다시 만들어집니다)
-- 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
-- 가상화된 `TreeView`의 `ScrollIntoView`는 아직 만들어지지 않은 중첩 노드를 찾지 못합니다 (최상위 아이템과 이미 만들어진 노드만 됩니다). WPF도 같습니다
-- `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
-- 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
-- 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
-- `Icon Kind`의 오타는 빌드 오류가 아니라 실행 중 물음표 아이콘으로 나타납니다
-- 모달은 `Window`(팝업 레이어) 단위입니다. 한 게임에 Window가 여럿이면 각자 따로 막힙니다
-- 여러 칸에 걸친 Grid 자식은 Auto 크기 계산에 들어가지 않습니다 (WPF는 반영합니다)
+- 브러시는 도형의 `Fill`/`Stroke`에만 쓸 수 있습니다. 컨트롤의 `Background`/`Foreground`는 아직 색만 받고, 브러시의 `Transform`/`RelativeTransform`, `ImageBrush`/`VisualBrush`도 없습니다
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
 - 백그라운드 스레드에서 뷰모델을 바꿀 때의 Update 스레드 마샬링
 - 한글 글꼴: osu!framework 기본 Roboto에는 한글이 없어 샘플은 영어 UI입니다

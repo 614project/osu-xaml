@@ -8,6 +8,7 @@ namespace OsuXaml.Controls
     /// <summary>
     /// A shape drawn from WPF's path markup: <c>&lt;Path Data="M 0,10 L 6,16 L 18,2" Stroke="#a6e3a1" StrokeThickness="3" /&gt;</c>.
     /// Every figure is filled with <see cref="Shape.Fill"/> (open ones as if closed, like WPF) and outlined with the stroke.
+    /// Overlapping figures follow the markup's fill rule, so an inner figure cuts a hole unless the markup starts with F1.
     /// With <c>Stretch="Uniform"</c> and a size it scales like a vector icon. See <see cref="Geometry"/> for the markup.
     /// </summary>
     public partial class Path : FigureShape
@@ -26,29 +27,40 @@ namespace OsuXaml.Controls
         }
 
         protected override IReadOnlyList<ShapeFigure> GetFigures() => data?.Figures ?? Array.Empty<ShapeFigure>();
+
+        protected override FillRule FigureFillRule => data?.FillRule ?? FillRule.EvenOdd;
     }
 
     /// <summary>
     /// Figures parsed from WPF/SVG path markup, curves already flattened into short straight segments.
     /// Supports M (move), L (line), H and V (horizontal and vertical lines), C and S (cubic curves), Q and T (quadratic
     /// curves), A (elliptical arcs) and Z (close), in upper case for absolute and lower case for relative coordinates,
-    /// with repeated coordinates continuing the last command. A leading fill rule (F0 or F1) is accepted; overlapping
-    /// figures fill as one area, so holes need separate shapes.
+    /// with repeated coordinates continuing the last command. A leading F0 (even-odd, the default) or F1 (nonzero) sets the
+    /// <see cref="FillRule"/>.
     /// </summary>
     public sealed class Geometry
     {
         private readonly string text;
 
-        private Geometry(string text, IReadOnlyList<ShapeFigure> figures)
+        private Geometry(string text, IReadOnlyList<ShapeFigure> figures, FillRule fillRule)
         {
             this.text = text;
             Figures = figures;
+            FillRule = fillRule;
         }
 
         public IReadOnlyList<ShapeFigure> Figures { get; }
 
+        /// <summary>How overlapping figures fill: EvenOdd unless the markup starts with F1, as in WPF.</summary>
+        public FillRule FillRule { get; }
+
         /// <exception cref="FormatException">The markup has an unknown command or a missing number.</exception>
-        public static Geometry Parse(string data) => new Geometry(data, new PathMarkupParser(data).Parse());
+        public static Geometry Parse(string data)
+        {
+            var parser = new PathMarkupParser(data);
+            var figures = parser.Parse();
+            return new Geometry(data, figures, parser.FillRule);
+        }
 
         /// <summary>Path markup converts on assignment, so a view model's string can bind to <c>Data</c>.</summary>
         public static implicit operator Geometry(string data) => data == null ? null : Parse(data);
@@ -63,6 +75,8 @@ namespace OsuXaml.Controls
 
             private int position;
             private List<Vector2> figure;
+
+            public FillRule FillRule { get; private set; }
             private Vector2 current;
             private Vector2 figureStart;
             private Vector2? lastCubicControl;
@@ -80,6 +94,7 @@ namespace OsuXaml.Controls
                 // F0 (even-odd) or F1 (non-zero) may lead the markup.
                 if (position < text.Length - 1 && (text[position] == 'F' || text[position] == 'f') && (text[position + 1] == '0' || text[position + 1] == '1'))
                 {
+                    FillRule = text[position + 1] == '1' ? FillRule.Nonzero : FillRule.EvenOdd;
                     position += 2;
                     skipSeparators();
                 }

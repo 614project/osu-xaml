@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -20,11 +21,28 @@ namespace OsuXaml.Controls
         Decade,
     }
 
+    /// <summary>How many dates a <see cref="Calendar"/> lets the user select, like WPF's CalendarSelectionMode.</summary>
+    public enum CalendarSelectionMode
+    {
+        /// <summary>One date.</summary>
+        SingleDate,
+
+        /// <summary>One run of dates: drag across them, or Shift+click (Shift+arrows) to extend from the last date picked.</summary>
+        SingleRange,
+
+        /// <summary>Several runs: as SingleRange, and Ctrl+click toggles a date (Ctrl+drag adds a run) without clearing the rest.</summary>
+        MultipleRange,
+
+        /// <summary>The user can't select dates; code and bindings still can.</summary>
+        None,
+    }
+
     /// <summary>
     /// A month grid for picking a date, like WPF's Calendar: a weekday header, previous/next buttons, today's date
     /// ringed and the selected date filled. <see cref="SelectedDate"/> binds two-way; <see cref="DisplayDate"/> is the month shown.
     /// Clicking the title zooms out to the months of the year and then to a decade. Once focused, the arrow keys move the
     /// selection (Page Up/Down by month, Home/End to the month's ends, Ctrl+Up zooms out, Enter zooms back in).
+    /// <see cref="SelectionMode"/> allows a range or several ranges of dates, held in <see cref="SelectedDates"/>.
     /// Like WPF it keeps its natural size and centres itself in a larger slot.
     /// </summary>
     public partial class Calendar : CompositeDrawable
@@ -58,6 +76,17 @@ namespace OsuXaml.Controls
         private bool isTodayHighlighted = true;
         private DateTime? displayDateStart;
         private DateTime? displayDateEnd;
+
+        private CalendarSelectionMode selectionMode;
+        private HashSet<DateTime> selectedSet = new HashSet<DateTime>();
+        private bool updatingSelection;
+
+        // Where Shift ranges start, and the keyboard position, in the range modes.
+        private DateTime? anchor;
+        private DateTime? currentDate;
+
+        // The selection a drag adds its run to (empty unless Ctrl+drag in MultipleRange); null when not dragging.
+        private List<DateTime> dragBase;
 
         public Calendar()
         {
@@ -118,18 +147,49 @@ namespace OsuXaml.Controls
             };
 
             SelectedDate.BindValueChanged(onSelectedDateChanged);
+            SelectedDates.BindCollectionChanged((_, _) => onSelectedDatesChanged());
             DisplayDate.BindValueChanged(onDisplayDateChanged);
 
             refreshView();
         }
 
-        /// <summary>The selected date, or null. Binds two-way: <c>SelectedDate="{Bind Birthday}"</c> with a <c>Bindable&lt;DateTime?&gt;</c>.</summary>
+        /// <summary>
+        /// The selected date, or null. Binds two-way: <c>SelectedDate="{Bind Birthday}"</c> with a <c>Bindable&lt;DateTime?&gt;</c>.
+        /// With several dates selected it is the first of <see cref="SelectedDates"/>; setting it to another date selects only that date.
+        /// </summary>
         public Bindable<DateTime?> SelectedDate { get; } = new Bindable<DateTime?>();
+
+        /// <summary>
+        /// Every selected date, in the order picked (a range runs from where it started). Binds two-way to a view model's
+        /// <c>BindableList&lt;DateTime&gt;</c>: <c>SelectedDates="{Bind Days}"</c>.
+        /// </summary>
+        public BindableList<DateTime> SelectedDates { get; } = new BindableList<DateTime>();
+
+        /// <summary>
+        /// Whether the user picks one date (the default), one range, several ranges, or none. Switching to SingleDate keeps only
+        /// the first selected date.
+        /// </summary>
+        public CalendarSelectionMode SelectionMode
+        {
+            get => selectionMode;
+            set
+            {
+                if (selectionMode == value)
+                    return;
+
+                selectionMode = value;
+
+                if (value == CalendarSelectionMode.SingleDate && SelectedDates.Count > 1)
+                    setSelection(new List<DateTime> { SelectedDates[0] });
+
+                refreshStates();
+            }
+        }
 
         /// <summary>A date in the month (or year, or decade) being shown. Selecting a date in another month moves it there.</summary>
         public Bindable<DateTime> DisplayDate { get; } = new Bindable<DateTime>(DateTime.Today);
 
-        /// <summary>Raised when <see cref="SelectedDate"/> changes, with the new date.</summary>
+        /// <summary>Raised when the selection changes, with the new <see cref="SelectedDate"/>.</summary>
         public event Action<DateTime?> SelectedDatesChanged;
 
         /// <summary>Raised when the shown month, year or decade changes.</summary>
@@ -219,6 +279,8 @@ namespace OsuXaml.Controls
 
         private bool isSelectable(DateTime date) => (displayDateStart == null || date >= displayDateStart) && (displayDateEnd == null || date <= displayDateEnd);
 
+        private bool selectsRanges => selectionMode == CalendarSelectionMode.SingleRange || selectionMode == CalendarSelectionMode.MultipleRange;
+
         private DateTime clamp(DateTime date)
         {
             if (displayDateStart is DateTime start && date < start)
@@ -239,12 +301,180 @@ namespace OsuXaml.Controls
                 return;
             }
 
+            if (updatingSelection)
+                return;
+
+            // Set from outside: as in WPF it selects just that date, unless it already is the first selected one.
+            if (e.NewValue is DateTime date)
+            {
+                anchor = currentDate = date;
+
+                if (SelectedDates.Count == 0 || SelectedDates[0] != date)
+                    setSelection(new List<DateTime> { date });
+            }
+            else
+                setSelection(new List<DateTime>());
+        }
+
+        /// <summary>SelectedDates was changed from outside (code, or a bound view model list): SelectedDate follows its first date.</summary>
+        private void onSelectedDatesChanged()
+        {
+            if (updatingSelection)
+                return;
+
+            updatingSelection = true;
+            SelectedDate.Value = SelectedDates.Count > 0 ? SelectedDates[0].Date : null;
+            updatingSelection = false;
+
+            selectionChanged(true);
+        }
+
+        /// <summary>
+        /// Makes <paramref name="dates"/> the selection in one change, with SelectedDate its first date. A selection set from
+        /// outside brings that date into view; <paramref name="showFirst"/> is false for the user's own clicks and keys, which
+        /// show the date they reached instead, so removing the first date of a run doesn't jump to another month.
+        /// </summary>
+        private void setSelection(List<DateTime> dates, bool showFirst = true)
+        {
+            if (dates.SequenceEqual(SelectedDates))
+                return;
+
+            updatingSelection = true;
+            SelectedDates.ReplaceRange(0, SelectedDates.Count, dates);
+            SelectedDate.Value = dates.Count > 0 ? dates[0] : null;
+            updatingSelection = false;
+
+            selectionChanged(showFirst);
+        }
+
+        private void selectionChanged(bool showFirst)
+        {
+            selectedSet = new HashSet<DateTime>(SelectedDates.Select(d => d.Date));
+
             // Show the selected date's month (or year, or decade).
-            if (e.NewValue is DateTime date && !samePeriod(date, DisplayDate.Value, displayMode))
+            if (showFirst && SelectedDate.Value is DateTime date && !samePeriod(date, DisplayDate.Value, displayMode))
                 DisplayDate.Value = date;
 
             refreshView();
-            SelectedDatesChanged?.Invoke(e.NewValue);
+            SelectedDatesChanged?.Invoke(SelectedDate.Value);
+        }
+
+        /// <summary>The selectable dates from <paramref name="from"/> to <paramref name="to"/>, starting at <paramref name="from"/>.</summary>
+        private List<DateTime> run(DateTime from, DateTime to)
+        {
+            var dates = new List<DateTime>();
+            int step = to >= from ? 1 : -1;
+
+            for (var d = from; step > 0 ? d <= to : d >= to; d = d.AddDays(step))
+            {
+                if (isSelectable(d))
+                    dates.Add(d);
+            }
+
+            return dates;
+        }
+
+        /// <summary><paramref name="first"/> followed by the dates of <paramref name="second"/> it doesn't have.</summary>
+        private static List<DateTime> union(IEnumerable<DateTime> first, IEnumerable<DateTime> second)
+        {
+            var dates = first.ToList();
+            var seen = new HashSet<DateTime>(dates);
+            dates.AddRange(second.Where(seen.Add));
+            return dates;
+        }
+
+        /// <summary>A day was clicked: select it (or extend, toggle or add a range, by mode and modifier keys).</summary>
+        private void dayClicked(DateTime date, UIEvent e)
+        {
+            if (!isSelectable(date))
+                return;
+
+            bool shift = e?.ShiftPressed == true;
+            bool control = e?.ControlPressed == true;
+
+            switch (selectionMode)
+            {
+                case CalendarSelectionMode.None:
+                    return;
+
+                case CalendarSelectionMode.SingleDate:
+                    pick(date);
+                    return;
+
+                case CalendarSelectionMode.SingleRange when shift && anchor != null:
+                    setSelection(run(anchor.Value, date), false);
+                    break;
+
+                case CalendarSelectionMode.MultipleRange when shift && anchor != null:
+                    setSelection(control ? union(SelectedDates, run(anchor.Value, date)) : run(anchor.Value, date), false);
+                    break;
+
+                case CalendarSelectionMode.MultipleRange when control:
+                    anchor = date;
+                    setSelection(selectedSet.Contains(date) ? SelectedDates.Where(d => d.Date != date).ToList() : union(SelectedDates, new[] { date }), false);
+                    break;
+
+                default:
+                    anchor = date;
+                    setSelection(new List<DateTime> { date }, false);
+                    break;
+            }
+
+            currentDate = date;
+
+            // A day of the next or previous month opens that month, as in single-date mode.
+            if (!sameMonth(date, DisplayDate.Value))
+                DisplayDate.Value = date;
+
+            refreshStates();
+            DatePicked?.Invoke(date);
+        }
+
+        /// <summary>The day cell under <paramref name="screenSpacePosition"/> in the month view.</summary>
+        private CalendarDayButton dayAt(osuTK.Vector2 screenSpacePosition)
+            => cells.OfType<CalendarDayButton>().FirstOrDefault(c => c.ReceivePositionalInputAt(screenSpacePosition));
+
+        protected override bool OnDragStart(DragStartEvent e)
+        {
+            if (!selectsRanges || displayMode != CalendarMode.Month || e.Button != MouseButton.Left)
+                return false;
+
+            var start = dayAt(e.ScreenSpaceMouseDownPosition);
+            if (start == null || !isSelectable(start.Date))
+                return false;
+
+            dragBase = selectionMode == CalendarSelectionMode.MultipleRange && e.ControlPressed ? SelectedDates.ToList() : new List<DateTime>();
+            anchor = currentDate = start.Date;
+            dragTo(start.Date);
+            return true;
+        }
+
+        protected override void OnDrag(DragEvent e)
+        {
+            // The month view doesn't change during a drag, so a pointer past its edges keeps the last day it was over.
+            if (dragBase != null && dayAt(e.ScreenSpaceMousePosition) is CalendarDayButton day)
+                dragTo(day.Date);
+        }
+
+        protected override void OnDragEnd(DragEndEvent e) => dragBase = null;
+
+        private void dragTo(DateTime date)
+        {
+            currentDate = date;
+            setSelection(union(dragBase, run(anchor.Value, date)), false);
+            refreshStates();
+        }
+
+        protected override void OnFocus(FocusEvent e)
+        {
+            base.OnFocus(e);
+            refreshStates();
+        }
+
+        protected override void OnFocusLost(FocusLostEvent e)
+        {
+            base.OnFocusLost(e);
+            refreshStates();
         }
 
         private void onDisplayDateChanged(ValueChangedEvent<DateTime> e)
@@ -386,7 +616,7 @@ namespace OsuXaml.Controls
             for (int i = 0; i < 42; i++)
             {
                 var date = start.AddDays(i);
-                days.Add(place(new CalendarDayButton(date, pick), i % 7, i / 7, 7, 6));
+                days.Add(place(new CalendarDayButton(date, dayClicked), i % 7, i / 7, 7, 6));
             }
 
             return new Container
@@ -404,8 +634,8 @@ namespace OsuXaml.Controls
             for (int i = 0; i < 12; i++)
             {
                 var cell = displayMode == CalendarMode.Year
-                    ? new CalendarButton(period.AddMonths(i), culture.DateTimeFormat.AbbreviatedMonthNames[i], CalendarMode.Year, zoomIn)
-                    : new CalendarButton(period.AddYears(i - 1), (period.Year + i - 1).ToString(culture), CalendarMode.Decade, zoomIn);
+                    ? new CalendarButton(period.AddMonths(i), culture.DateTimeFormat.AbbreviatedMonthNames[i], CalendarMode.Year, (d, _) => zoomIn(d))
+                    : new CalendarButton(period.AddYears(i - 1), (period.Year + i - 1).ToString(culture), CalendarMode.Decade, (d, _) => zoomIn(d));
 
                 grid.Add(place(cell, i % 4, i / 4, 4, 3));
             }
@@ -434,18 +664,19 @@ namespace OsuXaml.Controls
             {
                 if (cell is CalendarDayButton day)
                 {
-                    day.IsSelected = SelectedDate.Value == day.Date;
+                    day.IsSelected = selectedSet.Contains(day.Date);
                     day.IsToday = isTodayHighlighted && day.Date == today;
                     day.IsInactive = !sameMonth(day.Date, shownPeriod);
                     day.IsEnabled = isSelectable(day.Date);
-                    day.IsHighlighted = false;
+                    // With ranges the keyboard position isn't always a selected date, so it gets the ring the other views use.
+                    day.IsHighlighted = selectsRanges && HasFocus && day.Date == currentDate;
                     continue;
                 }
 
                 var first = periodStart(cell.Date, cell.Mode == CalendarMode.Year ? CalendarMode.Month : CalendarMode.Year);
                 var last = periodEnd(cell.Date, cell.Mode == CalendarMode.Year ? CalendarMode.Month : CalendarMode.Year);
 
-                cell.IsSelected = SelectedDate.Value is DateTime selected && selected >= first && selected <= last;
+                cell.IsSelected = selectedSet.Any(selected => selected >= first && selected <= last);
                 cell.IsToday = isTodayHighlighted && today >= first && today <= last;
                 cell.IsInactive = cell.Mode == CalendarMode.Decade && !samePeriod(cell.Date, shownPeriod, CalendarMode.Decade);
                 cell.IsEnabled = (displayDateStart == null || last >= displayDateStart) && (displayDateEnd == null || first <= displayDateEnd);
@@ -470,7 +701,7 @@ namespace OsuXaml.Controls
 
         private bool monthKey(KeyDownEvent e)
         {
-            var cursor = SelectedDate.Value ?? DisplayDate.Value.Date;
+            var cursor = (selectionMode == CalendarSelectionMode.SingleDate ? SelectedDate.Value : currentDate ?? SelectedDate.Value) ?? DisplayDate.Value.Date;
 
             switch (e.Key)
             {
@@ -513,14 +744,48 @@ namespace OsuXaml.Controls
                 case Key.Enter:
                 case Key.KeypadEnter:
                 case Key.Space:
-                    pick(cursor);
+                    // Ctrl+Space toggles the date in MultipleRange; otherwise it is picked as a plain click would.
+                    dayClicked(cursor, e.ControlPressed && selectionMode == CalendarSelectionMode.MultipleRange ? e : null);
                     return true;
 
                 default:
                     return false;
             }
 
-            SelectedDate.Value = clamp(cursor);
+            cursor = clamp(cursor);
+
+            switch (selectionMode)
+            {
+                case CalendarSelectionMode.SingleDate:
+                    SelectedDate.Value = cursor;
+                    return true;
+
+                case CalendarSelectionMode.None:
+                    break;
+
+                // Shift+arrows extend from where the range started; plain arrows move a one-date selection.
+                case CalendarSelectionMode.SingleRange:
+                case CalendarSelectionMode.MultipleRange:
+                    if (e.ShiftPressed)
+                    {
+                        anchor ??= currentDate ?? cursor;
+                        setSelection(run(anchor.Value, cursor), false);
+                    }
+                    else
+                    {
+                        anchor = cursor;
+                        setSelection(new List<DateTime> { cursor }, false);
+                    }
+
+                    break;
+            }
+
+            currentDate = cursor;
+
+            if (!sameMonth(cursor, DisplayDate.Value))
+                DisplayDate.Value = cursor;
+
+            refreshStates();
             return true;
         }
 
@@ -584,7 +849,7 @@ namespace OsuXaml.Controls
         private readonly Container face;
         private readonly Box fill;
         private readonly TextBlock text;
-        private readonly Action<DateTime> clicked;
+        private readonly Action<DateTime, UIEvent> clicked;
 
         private bool isSelected;
         private bool isToday;
@@ -592,7 +857,7 @@ namespace OsuXaml.Controls
         private bool isEnabled = true;
         private bool isHighlighted;
 
-        internal CalendarButton(DateTime date, string label, CalendarMode mode, Action<DateTime> clicked)
+        internal CalendarButton(DateTime date, string label, CalendarMode mode, Action<DateTime, UIEvent> clicked)
         {
             Date = date;
             Mode = mode;
@@ -679,7 +944,7 @@ namespace OsuXaml.Controls
         protected override bool OnClick(ClickEvent e)
         {
             if (isEnabled)
-                clicked?.Invoke(Date);
+                clicked?.Invoke(Date, e);
 
             return true;
         }
@@ -703,7 +968,7 @@ namespace OsuXaml.Controls
     /// <summary>One day in a <see cref="Calendar"/>'s month view.</summary>
     public partial class CalendarDayButton : CalendarButton
     {
-        internal CalendarDayButton(DateTime date, Action<DateTime> clicked)
+        internal CalendarDayButton(DateTime date, Action<DateTime, UIEvent> clicked)
             : base(date, date.Day.ToString(CultureInfo.CurrentCulture), CalendarMode.Month, clicked)
         {
         }

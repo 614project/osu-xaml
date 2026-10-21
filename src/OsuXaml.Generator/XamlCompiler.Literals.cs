@@ -110,6 +110,9 @@ namespace OsuXaml.Generator
                 case "osu.Framework.Graphics.Colour4":
                 case "osu.Framework.Graphics.Colour.ColourInfo":
                 case "osuTK.Graphics.Color4":
+                // Brushes take a colour the way WPF's do, through their implicit conversion from Colour4.
+                case "OsuXaml.Controls.Brush":
+                case "OsuXaml.Controls.SolidColorBrush":
                     return colour(s, out hint);
 
                 case "osu.Framework.Graphics.Sprites.FontUsage":
@@ -119,6 +122,19 @@ namespace OsuXaml.Generator
             if (full == "OsuXaml.Controls.GridLengthCollection" && !validGridLengths(s))
             {
                 hint = " (use a comma-separated list of Auto, pixels, * or 2*)";
+                return null;
+            }
+
+            // Cursor="Hand" names one of the shapes in Cursors, as in WPF, so a misspelt name fails the build.
+            if (full == "OsuXaml.Controls.Cursor")
+            {
+                var shapes = compilation.GetTypeByMetadataName("OsuXaml.Controls.Cursors")?.GetMembers().OfType<IPropertySymbol>()
+                                        .Where(m => m.IsStatic).Select(m => m.Name).ToList() ?? new List<string>();
+
+                if (shapes.Contains(s))
+                    return $"global::OsuXaml.Controls.Cursors.{s}";
+
+                hint = ". Valid values: " + string.Join(", ", shapes);
                 return null;
             }
 
