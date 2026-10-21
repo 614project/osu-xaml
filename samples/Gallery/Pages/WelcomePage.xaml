@@ -16,6 +16,11 @@
       and <Run Foreground="#f9e2af">coloured</Run> runs,
       <LineBreak />
       and <Run Text="{Bind Name}" FontWeight="Bold" Foreground="#cba6f7" /> breaks onto a new line.
+      Links like <Hyperlink NavigateUri="https://github.com/ppy/osu-framework">osu!framework</Hyperlink> wrap with the text,
+      and so do drawables <InlineUIContainer><Icon Kind="Solid.Star" Size="12" Foreground="#f9e2af" /></InlineUIContainer> among it.
+    </TextBlock>
+    <TextBlock TextAlignment="Center" FontFamily="RobotoCondensed" Foreground="#a6adc8" FontSize="14">
+      Centred, in RobotoCondensed.
     </TextBlock>
     <Button Content="Show the people" Click="OnPeople" HorizontalAlignment="Left" />
   </StackPanel>

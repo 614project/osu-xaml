@@ -1,0 +1,8 @@
+{
+  // XAML completion from the schemas each sample's build writes to obj/osu-xaml/ (Red Hat XML extension).
+  "files.associations": { "*.xaml": "xml" },
+  "xml.catalogs": [
+    "samples/TodoApp/obj/osu-xaml/catalog.xml",
+    "samples/Gallery/obj/osu-xaml/catalog.xml"
+  ]
+}

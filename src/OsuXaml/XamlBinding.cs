@@ -58,7 +58,7 @@ namespace OsuXaml
                 updating = false;
             }, true);
 
-            target.BindValueChanged(e =>
+            Action<ValueChangedEvent<object>> writeBack = e =>
             {
                 if (updating || copy.Disabled)
                     return;
@@ -75,8 +75,53 @@ namespace OsuXaml
                     copy.Value = default;
                     updating = false;
                 }
-            });
+            };
+
+            target.ValueChanged += writeBack;
+            scope.Add(new Cleanup(() => target.ValueChanged -= writeBack));
         }
+
+        /// <summary>
+        /// Links a control's <c>Bindable&lt;T?&gt;</c> (for example <c>CheckBox.IsChecked</c>, a <c>bool?</c>) to a view model
+        /// <c>Bindable&lt;T&gt;</c>. Null, which the source can't hold (an indeterminate check box), is not written back.
+        /// </summary>
+        public static void TwoWayNullable<T>(BindingScope scope, Bindable<T?> target, Bindable<T> source)
+            where T : struct
+        {
+            var copy = source.GetBoundCopy();
+            scope.Add(copy);
+
+            bool updating = false;
+
+            copy.BindValueChanged(e =>
+            {
+                if (updating)
+                    return;
+
+                updating = true;
+                target.Value = e.NewValue;
+                updating = false;
+            }, true);
+
+            target.BindValueChanged(e =>
+            {
+                if (updating || copy.Disabled || !(e.NewValue is T value))
+                    return;
+
+                updating = true;
+                copy.Value = value;
+                updating = false;
+            });
+
+            // A source the view model locks locks the control too, as BindTo would.
+            copy.BindDisabledChanged(disabled => target.Disabled = disabled, true);
+        }
+
+        /// <summary>
+        /// Links a control's own list (for example <c>Calendar.SelectedDates</c>) to a view model list in both directions:
+        /// the control takes the view model's items, and changes on either side reach the other.
+        /// </summary>
+        public static void TwoWayList<T>(BindableList<T> target, BindableList<T> source) => target.BindTo(source);
 
         /// <summary>
         /// A bound copy of a view model list for an <c>IEnumerable</c> property such as <c>ItemsControl.ItemsSource</c>.
@@ -84,6 +129,9 @@ namespace OsuXaml
         /// </summary>
         public static IBindableList<T> ListCopy<T>(BindingScope scope, IBindableList<T> source)
         {
+            if (scope.IsReading)
+                return source;
+
             var copy = source.GetBoundCopy();
             scope.Add(copy);
             return copy;
@@ -111,6 +159,16 @@ namespace OsuXaml
             var items = new List<T>();
             var drawables = new List<Drawable>();
             var scopes = new List<BindingScope>();
+
+            // A view rebuilt by hot reload removes the rows it made; normally they go away with the container.
+            scope.Add(new Cleanup(() =>
+            {
+                if (!XamlHotReload.IsTearingDown)
+                    return;
+
+                while (items.Count > 0)
+                    removeAt(items.Count - 1);
+            }));
 
             copy.BindCollectionChanged((_, e) =>
             {
@@ -175,6 +233,32 @@ namespace OsuXaml
                 drawables.RemoveAt(index);
                 scopes.RemoveAt(index);
             }
+        }
+
+        /// <summary>Runs an action when the scope that owns it is unbound.</summary>
+        private sealed class Cleanup : IUnbindable
+        {
+            private Action action;
+
+            public Cleanup(Action action)
+            {
+                this.action = action;
+            }
+
+            public void UnbindAll()
+            {
+                var run = action;
+                action = null;
+                run?.Invoke();
+            }
+
+            public void UnbindEvents()
+            {
+            }
+
+            public void UnbindBindings() => UnbindAll();
+
+            void IUnbindable.UnbindFrom(IUnbindable them) => throw new NotSupportedException();
         }
     }
 }

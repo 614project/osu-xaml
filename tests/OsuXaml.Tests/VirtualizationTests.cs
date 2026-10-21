@@ -572,6 +572,93 @@ namespace OsuXaml.Tests
             AddAssert("other roots untouched", () => nodeOf(tree, roots[1]) == null || !nodeOf(tree, roots[1]).IsExpanded.Value);
         }
 
+        [Test]
+        public void ScrollIntoViewReachesNestedNodesThatDontExistYet([Values] bool virtualizing)
+        {
+            TreeView tree = null;
+            List<Node> roots = null;
+            Node target = null;
+
+            AddStep("create", () =>
+            {
+                roots = nodes("R", virtualizing ? 2000 : 200, a => nodes(a + "/", 10, b => nodes(b + "/", 10)));
+                target = roots[^50].Children[3].Children[7];
+                tree = virtualizingTree(roots, bindExpanded: true);
+                VirtualizingPanel.SetIsVirtualizing(tree, virtualizing);
+                Child = tree;
+            });
+            AddUntilStep("realized", () => tree.ContainerFromIndex(0) != null);
+            AddAssert("the target's node doesn't exist", () => nodeOf(tree, target) == null && nodeOf(tree, roots[^50].Children[3]) == null);
+
+            AddStep("ScrollIntoView a grandchild", () => tree.ScrollIntoView(target));
+            AddUntilStep("in view", () => headerInView(tree, target));
+            AddAssert("its ancestors are expanded", () => roots[^50].IsExpanded.Value && roots[^50].Children[3].IsExpanded.Value && !target.IsExpanded.Value);
+            AddAssert("its siblings show around it", () => headerInView(tree, roots[^50].Children[3].Children[6]));
+            AddWaitStep("let the nodes around it lay out", 10);
+            AddAssert("still in view", () => headerInView(tree, target));
+
+            if (virtualizing)
+                AddAssert("still only a screenful", () => nodeCount(tree) < 60);
+
+            AddStep("ScrollIntoView the first root", () => tree.ScrollIntoView(roots[0]));
+            AddUntilStep("back at the top", () => headerInView(tree, roots[0]));
+        }
+
+        [Test]
+        public void ScrollIntoViewReachesDeclaredNodesInCollapsedParents()
+        {
+            TreeView tree = null;
+            TreeViewItem file = null, folder = null;
+
+            AddStep("create 30 folders, each with a subfolder and a file", () =>
+            {
+                tree = new TreeView { Size = new Vector2(200, 100) };
+
+                for (int i = 0; i < 30; i++)
+                {
+                    var f = new TreeViewItem { Header = $"Folder {i}" };
+                    var sub = new TreeViewItem { Header = $"Sub {i}" };
+                    var leaf = new TreeViewItem { Header = $"File {i}" };
+                    sub.Add(leaf);
+                    f.Add(sub);
+                    tree.Add(f);
+
+                    if (i == 25)
+                        (folder, file) = (f, leaf);
+                }
+
+                // Before the tree loads: it scrolls once it has.
+                tree.ScrollIntoView(file);
+                Child = tree;
+            });
+            AddUntilStep("in view", () =>
+            {
+                var header = file.HeaderRow.ScreenSpaceDrawQuad;
+                var viewport = scroll(tree).ScreenSpaceDrawQuad;
+                return file.IsLoaded && header.TopLeft.Y >= viewport.TopLeft.Y - 1 && header.BottomLeft.Y <= viewport.BottomLeft.Y + 1;
+            });
+            AddAssert("its folders are expanded", () => folder.IsExpanded.Value && file.ParentItem.IsExpanded.Value && file.ParentItem.ParentItem == folder);
+        }
+
+        [Test]
+        public void ScrollIntoViewIgnoresItemsNotInTheTree()
+        {
+            TreeView tree = null;
+            List<Node> roots = null;
+
+            AddStep("create, with a node that contains itself", () =>
+            {
+                roots = nodes("R", 100, a => nodes(a + "/", 3));
+                roots[0].Children.Add(roots[0]);
+                Child = tree = virtualizingTree(roots);
+            });
+            AddUntilStep("realized", () => tree.ContainerFromIndex(0) != null);
+
+            AddStep("ScrollIntoView an unknown item", () => tree.ScrollIntoView(new Node("elsewhere")));
+            AddWaitStep("wait", 5);
+            AddAssert("nothing moved or expanded", () => scroll(tree).VerticalOffset == 0 && tree.VisibleItems.All(n => !n.IsExpanded.Value));
+        }
+
         #endregion
     }
 }

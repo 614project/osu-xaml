@@ -12,4 +12,6 @@
     <!-- Every .xaml file is compiled by the OsuXaml source generator. -->
     <AdditionalFiles Include="**\*.xaml" />
   </ItemGroup>
+  <!-- Writes completion schemas for the XAML to obj/osu-xaml/ after each build. -->
+  <Import Project="..\..\src\OsuXaml.Schema\OsuXaml.Schema.targets" />
 </Project>

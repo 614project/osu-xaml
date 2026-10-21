@@ -71,6 +71,91 @@
 
       <Border Style="{StaticResource Card}">
         <StackPanel Spacing="12">
+          <TextBlock Text="BRUSHES AND PENS" Style="{StaticResource Heading}" />
+          <WrapPanel Spacing="18">
+            <StackPanel Spacing="6">
+              <Rectangle Width="80" Height="60" RadiusX="10" RadiusY="10">
+                <Rectangle.Fill>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="{Bind Tint}" Offset="0" />
+                    <GradientStop Color="#94e2d5" Offset="1" />
+                  </LinearGradientBrush>
+                </Rectangle.Fill>
+              </Rectangle>
+              <TextBlock Text="Linear" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Ellipse Width="60" Height="60" HorizontalAlignment="Center">
+                <Ellipse.Fill>
+                  <RadialGradientBrush GradientOrigin="0.35,0.3">
+                    <GradientStop Color="White" Offset="0" />
+                    <GradientStop Color="#89b4fa" Offset="0.45" />
+                    <GradientStop Color="#1e1e2e" Offset="1" />
+                  </RadialGradientBrush>
+                </Ellipse.Fill>
+              </Ellipse>
+              <TextBlock Text="Radial" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Rectangle Width="80" Height="60">
+                <Rectangle.Fill>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="0.2,0.2" SpreadMethod="Reflect">
+                    <GradientStop Color="#f9e2af" Offset="0" />
+                    <GradientStop Color="#fab387" Offset="1" />
+                  </LinearGradientBrush>
+                </Rectangle.Fill>
+              </Rectangle>
+              <TextBlock Text="Reflect" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Ellipse Width="80" Height="60" StrokeThickness="6">
+                <Ellipse.Stroke>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                    <GradientStop Color="#89b4fa" Offset="0" />
+                    <GradientStop Color="#f38ba8" Offset="1" />
+                  </LinearGradientBrush>
+                </Ellipse.Stroke>
+              </Ellipse>
+              <TextBlock Text="Stroke" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Rectangle Width="80" Height="60" RadiusX="8" RadiusY="8" Stroke="#cdd6f4" StrokeThickness="2" StrokeDashArray="4 2" />
+              <TextBlock Text="Dashes" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Line X1="6" Y1="30" X2="74" Y2="30" Width="80" Height="60" Stroke="#a6e3a1" StrokeThickness="6" StrokeDashArray="0 2" StrokeDashCap="Round" />
+              <TextBlock Text="Dots" Style="{StaticResource Caption}" />
+            </StackPanel>
+          </WrapPanel>
+          <WrapPanel Spacing="18">
+            <StackPanel Spacing="6">
+              <Polyline Points="8,46 24,16 40,46 56,16 72,46" Width="80" Height="60" Stroke="#fab387" StrokeThickness="8" />
+              <TextBlock Text="Miter, flat" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Polyline Points="8,46 24,16 40,46 56,16 72,46" Width="80" Height="60" Stroke="#fab387" StrokeThickness="8"
+                        StrokeLineJoin="Bevel" StrokeStartLineCap="Square" StrokeEndLineCap="Square" />
+              <TextBlock Text="Bevel, square" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Polyline Points="8,46 24,16 40,46 56,16 72,46" Width="80" Height="60" Stroke="#fab387" StrokeThickness="8"
+                        StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Triangle" />
+              <TextBlock Text="Round, triangle" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Polygon Points="40,2 63,58 3,22 77,22 17,58" Width="80" Height="60" Fill="#f9e2af" />
+              <TextBlock Text="EvenOdd" Style="{StaticResource Caption}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Polygon Points="40,2 63,58 3,22 77,22 17,58" Width="80" Height="60" Fill="#f9e2af" FillRule="Nonzero" />
+              <TextBlock Text="Nonzero" Style="{StaticResource Caption}" />
+            </StackPanel>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="12">
           <TextBlock Text="ICONS" Style="{StaticResource Heading}" />
           <StackPanel Orientation="Horizontal" Spacing="18">
             <Icon Kind="Solid.Check" Size="24" Foreground="#a6e3a1" />

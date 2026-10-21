@@ -4,8 +4,10 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Primitives;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Events;
 using osu.Framework.Localisation;
+using osu.Framework.Utils;
 using osuTK;
 using osuTK.Input;
 
@@ -349,28 +351,62 @@ namespace OsuXaml.Controls
             return false;
         }
 
-        /// <summary>The tab headers, a line between them and the page, and the animated marker under the selected tab.</summary>
-        private partial class TabStrip : CompositeDrawable, ILayoutElement
+        /// <summary>
+        /// The tab headers, a line between them and the page, and the animated marker under the selected tab. Tabs that don't
+        /// fit scroll: the mouse wheel moves them, arrow buttons appear at both ends, and the selected tab is kept in view.
+        /// </summary>
+        internal partial class TabStrip : CompositeDrawable, ILayoutElement
         {
             public readonly Box Divider;
             public readonly Circle Indicator;
 
             private const float indicator_thickness = 3;
+            private const float button_size = 24;
+            private const float wheel_step = 80;
+
+            private readonly Container viewport;
+            private readonly Container content;
+            private readonly TabStripScrollButton back;
+            private readonly TabStripScrollButton forward;
 
             private Panel panel;
             private Dock placement;
             private TabItem selected;
             private bool animateNext;
             private RectangleF? lastTarget;
+            private bool revealSelected;
+            private float viewportLength;
 
             public TabStrip()
             {
                 InternalChildren = new Drawable[]
                 {
                     Divider = new Box { Colour = Theme.Border },
-                    Indicator = new Circle { Colour = Theme.Accent, Alpha = 0, Depth = -1 },
+                    viewport = new Container
+                    {
+                        Child = content = new Container
+                        {
+                            Child = Indicator = new Circle { Colour = Theme.Accent, Alpha = 0, Depth = -1 },
+                        },
+                    },
+                    back = new TabStripScrollButton(this, -1) { Alpha = 0 },
+                    forward = new TabStripScrollButton(this, 1) { Alpha = 0 },
                 };
             }
+
+            private bool horizontal => placement == Dock.Top || placement == Dock.Bottom;
+
+            /// <summary>Whether the tabs are longer than the strip, so they scroll.</summary>
+            public bool Overflows { get; private set; }
+
+            /// <summary>How far the tabs are scrolled, in pixels along the strip.</summary>
+            public float ScrollOffset { get; private set; }
+
+            /// <summary>Where <see cref="ScrollOffset"/> is heading.</summary>
+            public float ScrollTarget { get; private set; }
+
+            /// <summary>The furthest the tabs can scroll.</summary>
+            public float MaxScroll { get; private set; }
 
             public Dock Placement
             {
@@ -378,8 +414,6 @@ namespace OsuXaml.Controls
                 set
                 {
                     placement = value;
-
-                    bool horizontal = value == Dock.Top || value == Dock.Bottom;
 
                     // One pixel thick, full length.
                     Divider.RelativeSizeAxes = horizontal ? Axes.X : Axes.Y;
@@ -392,14 +426,21 @@ namespace OsuXaml.Controls
                         _ => Anchor.TopLeft,
                     };
 
+                    back.Icon = horizontal ? FontAwesome.Solid.ChevronLeft : FontAwesome.Solid.ChevronUp;
+                    forward.Icon = horizontal ? FontAwesome.Solid.ChevronRight : FontAwesome.Solid.ChevronDown;
+
                     lastTarget = null;
+                    revealSelected = true;
+
+                    // Which way the strip caps its length to what it is offered.
+                    Layout.InvalidateMeasure(this);
                 }
             }
 
             public void SetPanel(Panel itemsPanel)
             {
                 panel = itemsPanel;
-                AddInternal(panel);
+                content.Add(panel);
                 Layout.InvalidateMeasure(this);
             }
 
@@ -410,32 +451,121 @@ namespace OsuXaml.Controls
 
                 selected = tab;
                 animateNext = true;
+                revealSelected = true;
             }
+
+            /// <summary>Scrolls the tabs by <paramref name="delta"/> pixels (positive towards the end).</summary>
+            public void ScrollBy(float delta) => ScrollTarget = Math.Clamp(ScrollTarget + delta, 0, MaxScroll);
 
             public bool ReportsMeasureChanges => true;
 
-            public Vector2 Measure(Vector2 availableSize) => panel?.Measure(availableSize) ?? Vector2.Zero;
+            public Vector2 Measure(Vector2 availableSize)
+            {
+                if (panel == null)
+                    return Vector2.Zero;
+
+                // Tabs that don't fit scroll, so the strip never asks for more length than it is offered.
+                var desired = panel.Measure(availableSize);
+                return horizontal ? new Vector2(Math.Min(desired.X, availableSize.X), desired.Y) : new Vector2(desired.X, Math.Min(desired.Y, availableSize.Y));
+            }
+
+            protected override bool OnScroll(ScrollEvent e)
+            {
+                if (!Overflows)
+                    return false;
+
+                // A vertical wheel scrolls a horizontal strip too; a sideways wheel scrolls it directly.
+                float delta = horizontal && e.ScrollDelta.X != 0 ? e.ScrollDelta.X : e.ScrollDelta.Y;
+                ScrollBy(-delta * wheel_step);
+                return true;
+            }
+
+            protected override void Update()
+            {
+                base.Update();
+
+                if (panel == null)
+                    return;
+
+                float length = horizontal ? DrawWidth : DrawHeight;
+                float cross = horizontal ? DrawHeight : DrawWidth;
+
+                // Measured with the strip's own length, so a wrapping items panel wraps instead of scrolling.
+                var desired = panel.Measure(along(length, cross));
+                float extent = horizontal ? desired.X : desired.Y;
+                bool overflows = length > 0 && extent > length + 0.5f;
+
+                if (overflows != Overflows)
+                {
+                    Overflows = overflows;
+                    revealSelected = true;
+                    back.FadeTo(overflows ? 1 : 0, 150, Easing.OutQuint);
+                    forward.FadeTo(overflows ? 1 : 0, 150, Easing.OutQuint);
+                }
+
+                float buttons = overflows ? button_size : 0;
+                float newLength = Math.Max(0, length - buttons * 2);
+
+                if (newLength != viewportLength)
+                {
+                    viewportLength = newLength;
+                    revealSelected = true;
+                }
+
+                viewport.Position = along(buttons, 0);
+                viewport.Size = along(viewportLength, cross);
+                viewport.Masking = overflows;
+
+                // The panel gets at least the viewport, so tabs that fit lay out as before.
+                content.Size = along(Math.Max(extent, viewportLength), cross);
+
+                back.Size = forward.Size = along(button_size, cross);
+                forward.Position = along(length - button_size, 0);
+
+                MaxScroll = overflows ? Math.Max(0, extent - viewportLength) : 0;
+                ScrollTarget = Math.Clamp(ScrollTarget, 0, MaxScroll);
+                ScrollOffset = Math.Clamp((float)Interpolation.DampContinuously(ScrollOffset, ScrollTarget, 40, Time.Elapsed), 0, MaxScroll);
+
+                if (Precision.AlmostEquals(ScrollOffset, ScrollTarget, 0.5f))
+                    ScrollOffset = ScrollTarget;
+
+                content.Position = along(-ScrollOffset, 0);
+
+                back.IsEnabled = ScrollTarget > 0;
+                forward.IsEnabled = ScrollTarget < MaxScroll;
+            }
 
             protected override void UpdateAfterChildren()
             {
                 base.UpdateAfterChildren();
 
-                if (selected == null || selected.Parent == null || selected.DrawWidth <= 0 || selected.DrawHeight <= 0)
+                bool hasSelected = selected != null && selected.Parent != null && selected.DrawWidth > 0 && selected.DrawHeight > 0;
+
+                // The panel has arranged the tabs by now, so the selected one's place is known.
+                if (revealSelected && hasSelected)
+                {
+                    revealSelected = false;
+                    reveal(selected);
+                }
+
+                if (!hasSelected)
                 {
                     Indicator.FadeOut(100);
                     lastTarget = null;
                     return;
                 }
 
-                var topLeft = selected.ToSpaceOfOtherDrawable(Vector2.Zero, this);
+                // The marker lives in the scrolled content, so it moves with its tab.
+                var topLeft = selected.ToSpaceOfOtherDrawable(Vector2.Zero, content);
                 var size = selected.DrawSize;
+                float contentWidth = content.DrawWidth, contentHeight = content.DrawHeight;
                 const float inset = 10;
 
                 var target = placement switch
                 {
-                    Dock.Top => new RectangleF(topLeft.X + inset, DrawHeight - indicator_thickness, Math.Max(0, size.X - inset * 2), indicator_thickness),
+                    Dock.Top => new RectangleF(topLeft.X + inset, contentHeight - indicator_thickness, Math.Max(0, size.X - inset * 2), indicator_thickness),
                     Dock.Bottom => new RectangleF(topLeft.X + inset, 0, Math.Max(0, size.X - inset * 2), indicator_thickness),
-                    Dock.Left => new RectangleF(DrawWidth - indicator_thickness, topLeft.Y + 6, indicator_thickness, Math.Max(0, size.Y - 12)),
+                    Dock.Left => new RectangleF(contentWidth - indicator_thickness, topLeft.Y + 6, indicator_thickness, Math.Max(0, size.Y - 12)),
                     _ => new RectangleF(0, topLeft.Y + 6, indicator_thickness, Math.Max(0, size.Y - 12)),
                 };
 
@@ -462,6 +592,133 @@ namespace OsuXaml.Controls
                 animateNext = false;
                 lastTarget = target;
             }
+
+            /// <summary>Scrolls just enough to show all of <paramref name="tab"/>.</summary>
+            private void reveal(TabItem tab)
+            {
+                if (!Overflows)
+                    return;
+
+                var position = tab.ToSpaceOfOtherDrawable(Vector2.Zero, content);
+                float start = horizontal ? position.X : position.Y;
+                float end = start + (horizontal ? tab.DrawWidth : tab.DrawHeight);
+
+                if (start < ScrollTarget)
+                    ScrollTarget = start;
+                else if (end > ScrollTarget + viewportLength)
+                    ScrollTarget = end - viewportLength;
+
+                ScrollTarget = Math.Clamp(ScrollTarget, 0, MaxScroll);
+            }
+
+            private Vector2 along(float length, float cross) => horizontal ? new Vector2(length, cross) : new Vector2(cross, length);
+        }
+
+        /// <summary>
+        /// An arrow at one end of an overflowing tab strip: a click scrolls the tabs by about half the strip, and holding it
+        /// keeps them moving.
+        /// </summary>
+        internal partial class TabStripScrollButton : CompositeDrawable
+        {
+            private const double hold_delay = 300;
+            private const float hold_speed = 0.6f;
+
+            private readonly TabStrip strip;
+            private readonly int direction;
+            private readonly Box highlight;
+            private readonly SpriteIcon icon;
+            private bool isEnabled = true;
+            private bool held;
+            private double heldSince;
+
+            public TabStripScrollButton(TabStrip strip, int direction)
+            {
+                this.strip = strip;
+                this.direction = direction;
+
+                Masking = true;
+                CornerRadius = 4;
+
+                InternalChildren = new Drawable[]
+                {
+                    highlight = new Box { RelativeSizeAxes = Axes.Both, Colour = Theme.Text, Alpha = 0 },
+                    icon = new SpriteIcon
+                    {
+                        Anchor = Anchor.Centre,
+                        Origin = Anchor.Centre,
+                        Size = new Vector2(10),
+                        Colour = Theme.SubtleText,
+                    },
+                };
+            }
+
+            /// <summary>-1 for the button that scrolls back towards the first tab, 1 for the other.</summary>
+            public int Direction => direction;
+
+            public IconUsage Icon
+            {
+                set => icon.Icon = value;
+            }
+
+            /// <summary>False at the end the button scrolls towards.</summary>
+            public bool IsEnabled
+            {
+                get => isEnabled;
+                set
+                {
+                    if (isEnabled == value)
+                        return;
+
+                    isEnabled = value;
+                    icon.FadeTo(value ? 1 : 0.3f, 150, Easing.OutQuint);
+                }
+            }
+
+            protected override bool OnHover(HoverEvent e)
+            {
+                highlight.FadeTo(0.08f, 150, Easing.OutQuint);
+                return true;
+            }
+
+            protected override void OnHoverLost(HoverLostEvent e) => highlight.FadeOut(150, Easing.OutQuint);
+
+            protected override bool OnMouseDown(MouseDownEvent e)
+            {
+                if (e.Button != MouseButton.Left || Alpha == 0)
+                    return false;
+
+                strip.ScrollBy(direction * Math.Max(40, pageLength()));
+                held = true;
+                heldSince = Time.Current;
+                highlight.FadeTo(0.2f, 60, Easing.OutQuint);
+                return true;
+            }
+
+            protected override void OnMouseUp(MouseUpEvent e)
+            {
+                if (e.Button == MouseButton.Left)
+                {
+                    held = false;
+                    highlight.FadeTo(IsHovered ? 0.08f : 0, 150, Easing.OutQuint);
+                }
+
+                base.OnMouseUp(e);
+            }
+
+            // Clicks stop here rather than reaching a tab underneath.
+            protected override bool OnClick(ClickEvent e) => true;
+
+            protected override bool OnDragStart(DragStartEvent e) => true;
+
+            protected override void Update()
+            {
+                base.Update();
+
+                if (held && Time.Current - heldSince > hold_delay)
+                    strip.ScrollBy(direction * hold_speed * (float)Time.Elapsed);
+            }
+
+            private float pageLength() => (strip.Placement == Dock.Top || strip.Placement == Dock.Bottom ? strip.DrawWidth : strip.DrawHeight) / 2;
         }
 
         /// <summary>Holds the pages; only the shown one is visible and counts for measuring.</summary>

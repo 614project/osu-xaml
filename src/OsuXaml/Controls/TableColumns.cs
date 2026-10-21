@@ -578,7 +578,7 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>The draggable right edge of a header.</summary>
-        private partial class ResizeGrip : CompositeDrawable
+        private partial class ResizeGrip : CompositeDrawable, IHasDefaultCursor
         {
             private readonly TableColumnHeader header;
             private readonly Box indicator;
@@ -605,6 +605,8 @@ namespace OsuXaml.Controls
             }
 
             private bool canResize => header.Column.CanUserResize && header.owner.CanResize();
+
+            Cursor IHasDefaultCursor.DefaultCursor => canResize ? Cursors.SizeWE : null;
 
             protected override bool OnHover(HoverEvent e)
             {

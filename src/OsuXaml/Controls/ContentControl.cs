@@ -1,3 +1,4 @@
+using System;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -92,6 +93,9 @@ namespace OsuXaml.Controls
             };
         }
 
+        /// <summary>Raised after <see cref="Content"/> changes.</summary>
+        internal event Action ContentSet;
+
         /// <summary>
         /// What the control shows: a string becomes a <see cref="TextBlock"/>, a drawable is shown as is,
         /// and other objects go through <see cref="ContentTemplate"/> (or their ToString()).
@@ -106,6 +110,7 @@ namespace OsuXaml.Controls
 
                 content = value;
                 contentChanged();
+                ContentSet?.Invoke();
             }
         }
 
@@ -484,6 +489,10 @@ namespace OsuXaml.Controls
         }
 
         public PopupLayer PopupLayer { get; }
+
+        // While a dialog in another window of the game is open, keys skip this window entirely, so they reach the dialog
+        // even when this window sits in front of the dialog's and something in it would take them.
+        public override bool PropagateNonPositionalInputSubTree => base.PropagateNonPositionalInputSubTree && PopupLayer.BlockingModal == null;
 
         public string Title
         {

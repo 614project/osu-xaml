@@ -19,7 +19,8 @@ namespace OsuXaml.Tests
             var bare = new CheckBox();
             Layout.SetHorizontalAlignment(bare, HorizontalAlignment.Left);
 
-            withText.IsChecked.BindTo(bound);
+            // A view model's Bindable<bool> binds to the bool? IsChecked as generated XAML does.
+            XamlBinding.TwoWayNullable(new BindingScope(), withText.IsChecked, bound);
             withText.Checked += () => events.Add("checked");
             withText.Unchecked += () => events.Add("unchecked");
 
@@ -47,7 +48,7 @@ namespace OsuXaml.Tests
             AddAssert("events", () => string.Join(",", events) == "checked,unchecked");
 
             AddStep("view model checks it", () => bound.Value = true);
-            AddAssert("follows", () => withText.IsChecked.Value);
+            AddAssert("follows", () => withText.IsChecked.Value == true);
 
             AddStep("disable and click", () =>
             {
@@ -55,6 +56,57 @@ namespace OsuXaml.Tests
                 InputManager.Click(MouseButton.Left);
             });
             AddAssert("unchanged", () => bound.Value);
+        }
+    
+
+        [Test]
+        public void ThreeStateCyclesThroughIndeterminate()
+        {
+            var events = new List<string>();
+            var nullable = new Bindable<bool?>(false);
+            var plain = new BindableBool(true);
+            CheckBox threeState = null;
+            CheckBox twoState = null;
+
+            AddStep("create", () =>
+            {
+                events.Clear();
+                threeState = new CheckBox { Content = "Select all", IsThreeState = true };
+                twoState = new CheckBox { Content = "Bound to a bool" };
+
+                threeState.IsChecked.BindTo(nullable);
+                threeState.Checked += () => events.Add("checked");
+                threeState.Unchecked += () => events.Add("unchecked");
+                threeState.Indeterminate += () => events.Add("indeterminate");
+
+                XamlBinding.TwoWayNullable(new BindingScope(), twoState.IsChecked, plain);
+
+                var panel = new StackPanel { Spacing = 10 };
+                panel.Add(threeState);
+                panel.Add(twoState);
+                Child = panel;
+            });
+            AddUntilStep("laid out", () => threeState.DrawWidth > 0);
+
+            AddStep("click three times", () =>
+            {
+                threeState.TriggerClick();
+                threeState.TriggerClick();
+                threeState.TriggerClick();
+            });
+            AddAssert("unchecked, checked, indeterminate, unchecked", () => string.Join(",", events) == "checked,indeterminate,unchecked" && nullable.Value == false);
+
+            AddStep("view model sets indeterminate", () => nullable.Value = null);
+            AddAssert("box is indeterminate", () => threeState.IsChecked.Value == null && events[^1] == "indeterminate");
+
+            AddStep("two-state box shown indeterminate from code", () => twoState.IsChecked.Value = null);
+            AddAssert("bool source keeps its value", () => plain.Value);
+            AddStep("click it", () => twoState.TriggerClick());
+            AddAssert("indeterminate goes to unchecked, as in WPF", () => twoState.IsChecked.Value == false && !plain.Value);
+            AddStep("click again", () => twoState.TriggerClick());
+            AddAssert("checked, never indeterminate", () => twoState.IsChecked.Value == true && plain.Value);
+            AddStep("click again", () => twoState.TriggerClick());
+            AddAssert("unchecked", () => twoState.IsChecked.Value == false && !plain.Value);
         }
     }
 }

@@ -122,6 +122,37 @@ namespace Demo
         }
 
         [Test]
+        public void AlignmentFamilyLinksAndDrawablesAmongTheText()
+        {
+            string source = compiles(@"
+  <TextBlock TextAlignment=""Center"" FontFamily=""RobotoCondensed"" TextWrapping=""Wrap"">
+    Read <Hyperlink NavigateUri=""https://example.com"">the docs</Hyperlink>
+    <Run FontFamily=""Roboto"">or</Run>
+    <InlineUIContainer><Icon Kind=""Solid.Star"" /></InlineUIContainer>
+    <Button Content=""Go"" />
+  </TextBlock>");
+
+            inOrder(source,
+                "e0.TextAlignment = global::OsuXaml.Controls.TextAlignment.Center;",
+                "e0.FontFamily = \"RobotoCondensed\";",
+                "e0.AddText(\"Read \");",
+                "e1.NavigateUri = \"https://example.com\";", "e0.Add(e1);",
+                "e2.FontFamily = \"Roboto\";", "e0.Add(e2);",
+                "new global::OsuXaml.Controls.InlineUIContainer();", "e3.Add(e4);", "e0.Add(e3);",
+                "new global::OsuXaml.Controls.Button();", "e0.Add(e5);");
+        }
+
+        [Test]
+        public void MultilineTextBoxScrollBars()
+        {
+            string source = compiles(@"
+  <TextBox AcceptsReturn=""True"" Height=""120"" VerticalScrollBarVisibility=""Visible"" HorizontalScrollBarVisibility=""Auto"" />");
+
+            Assert.That(source, Does.Contain("e0.VerticalScrollBarVisibility = global::OsuXaml.Controls.ScrollBarVisibility.Visible;"));
+            Assert.That(source, Does.Contain("e0.HorizontalScrollBarVisibility = global::OsuXaml.Controls.ScrollBarVisibility.Auto;"));
+        }
+
+        [Test]
         public void MultilineTextBox()
         {
             string source = compiles(@"

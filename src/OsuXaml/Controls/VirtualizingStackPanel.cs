@@ -65,9 +65,6 @@ namespace OsuXaml.Controls
         /// <summary>Creates the container for <paramref name="index"/> now if needed, without scrolling. It goes again once out of view.</summary>
         internal abstract void Realize(int index);
 
-        /// <summary>Whether a <see cref="BringIndexIntoView"/> request is still settling.</summary>
-        internal abstract bool IsBringingIntoView { get; }
-
         private sealed class Settings
         {
             public bool? IsVirtualizing;
@@ -90,9 +87,6 @@ namespace OsuXaml.Controls
         private const float cache_length = 0.5f;
         private const float min_cache = 48;
 
-        // How many frames a bring-into-view request keeps correcting the scroll position while row sizes settle.
-        private const int max_bring_into_view_frames = 120;
-
         private readonly ItemSizeCache sizes = new ItemSizeCache();
         private readonly List<int> realized = new List<int>();
 
@@ -102,11 +96,10 @@ namespace OsuXaml.Controls
         private int anchorIndex = -1;
         private double anchorOffset;
 
+        // The item being scrolled into view, kept realized until the scroll viewer's request settles.
         private int bringIntoView = -1;
-        private Func<Drawable, Drawable> bringIntoViewPart;
-        private int bringIntoViewFrames;
-        private int bringIntoViewStill;
-        private int bringIntoViewRequests;
+        private ScrollViewer bringIntoViewViewer;
+        private int bringIntoViewRequest;
 
         // The extent and widest item at the last arrange; when arranging changes them, the panel's desired size changed.
         private Vector2 arrangedExtent = new Vector2(float.NaN);
@@ -211,13 +204,22 @@ namespace OsuXaml.Controls
             if (Owner == null || index < 0 || index >= sizes.Count)
                 return;
 
-            bringIntoView = index;
-            bringIntoViewPart = part;
-            bringIntoViewFrames = 0;
-            bringIntoViewStill = 0;
-
-            // Created now, so the caller can use the container straight away; arranging it and scrolling happen this frame.
+            // Created now, so the caller can use the container straight away; it is arranged, and scrolled to, this frame.
             realize(index);
+
+            bringIntoViewViewer = scrollViewer();
+            bringIntoView = bringIntoViewViewer == null ? -1 : index;
+
+            // The row was placed by estimate, so the viewer keeps scrolling as the rows around it are measured. The index moves
+            // with item changes, so the row is looked up each frame.
+            if (bringIntoViewViewer != null)
+            {
+                bringIntoViewRequest = bringIntoViewViewer.BringIntoView(() =>
+                {
+                    var container = bringIntoView < 0 ? null : Owner?.ContainerAt(bringIntoView);
+                    return (container == null ? null : part?.Invoke(container) ?? container, true);
+                });
+            }
         }
 
         internal override void Realize(int index)
@@ -225,8 +227,6 @@ namespace OsuXaml.Controls
             if (Owner != null && index >= 0 && index < sizes.Count)
                 realize(index);
         }
-
-        internal override bool IsBringingIntoView => bringIntoView >= 0;
 
         protected override Vector2 MeasureOverride(Vector2 available)
         {
@@ -307,8 +307,6 @@ namespace OsuXaml.Controls
                 arrangedExtent = extent;
                 InvalidateMeasure();
             }
-
-            continueBringIntoView();
         }
 
         private void updateRealized()
@@ -340,6 +338,9 @@ namespace OsuXaml.Controls
             }
 
             var focused = focusedContainer();
+
+            if (bringIntoView >= 0 && !bringIntoViewViewer.IsBringingIntoView(bringIntoViewRequest))
+                bringIntoView = -1;
 
             for (int i = realized.Count - 1; i >= 0; i--)
             {
@@ -427,40 +428,6 @@ namespace OsuXaml.Controls
 
             if (Math.Abs(delta) > 0.01)
                 scrollViewer()?.OffsetScroll(Make((float)delta, 0, Orientation));
-        }
-
-        private void continueBringIntoView()
-        {
-            if (bringIntoView < 0)
-                return;
-
-            var container = Owner.ContainerAt(bringIntoView);
-            var viewer = scrollViewer();
-
-            if (container == null || viewer == null)
-            {
-                bringIntoView = -1;
-                return;
-            }
-
-            // Someone else scrolled since last frame: they win.
-            if (bringIntoViewFrames > 0 && viewer.ScrollRequests != bringIntoViewRequests)
-            {
-                bringIntoView = -1;
-                return;
-            }
-
-            // The row was placed by estimate; as rows around it are measured (and, in a tree, the nodes around it come into view
-            // and lay out) it may move, so this repeats until the scroll has stayed put for a couple of frames.
-            var target = viewer.ScrollTarget;
-            viewer.ScrollIntoView(bringIntoViewPart?.Invoke(container) ?? container);
-            bringIntoViewRequests = viewer.ScrollRequests;
-
-            bool still = (viewer.ScrollTarget - target).Length < 0.5 && !viewer.IsScrollAnimating;
-            bringIntoViewStill = still ? bringIntoViewStill + 1 : 0;
-
-            if (bringIntoViewStill >= 2 || ++bringIntoViewFrames >= max_bring_into_view_frames)
-                bringIntoView = -1;
         }
 
         private void itemsChanged()
