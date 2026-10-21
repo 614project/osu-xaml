@@ -6,6 +6,7 @@ using osu.Framework;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input.Events;
 using osuTK;
 using osuTK.Input;
@@ -36,6 +37,8 @@ namespace OsuXaml.Controls
     /// The layer also shows tooltips (<see cref="ToolTipService"/>) and opens context menus on right-click (<see cref="ContextMenuService"/>).
     /// Modal dialogs (<see cref="Dialog"/>, <see cref="MessageBox"/>) open above the popups in a <see cref="ModalHost"/> each; while one
     /// is open nothing below it takes input, and the layer shows no tooltips or context menus for the app underneath.
+    /// A dialog is modal for the whole game, as WPF's are for the whole app: while it is open the layers of the game's other windows
+    /// dim and take no input either (see <see cref="BlockingModal"/>), and the newest dialog in the game is the one that takes input.
     /// </summary>
     public partial class PopupLayer : CompositeDrawable
     {
@@ -44,12 +47,17 @@ namespace OsuXaml.Controls
         // Loaded layers, newest last, for dialogs shown without an owner.
         private static readonly List<WeakReference<PopupLayer>> loaded_layers = new List<WeakReference<PopupLayer>>();
 
+        // Open modal dialogs of every game and window, oldest first. The newest one in a game takes the input of the whole game.
+        private static readonly List<WeakReference<ModalHost>> open_modals = new List<WeakReference<ModalHost>>();
+
         private readonly Container<PopupRoot> roots;
         private readonly Container contextMenus;
         private readonly Container<ModalHost> modals;
         private readonly ToolTipHost toolTips;
         private readonly List<Popup> open = new List<Popup>();
         private readonly List<ModalHost> openModals = new List<ModalHost>();
+
+        private bool wasBlocked;
 
         public PopupLayer()
         {
@@ -62,6 +70,8 @@ namespace OsuXaml.Controls
                 contextMenus = new Container { RelativeSizeAxes = Axes.Both },
                 roots = new Container<PopupRoot> { RelativeSizeAxes = Axes.Both },
                 modals = new Container<ModalHost> { RelativeSizeAxes = Axes.Both },
+                // Above this layer's own dialogs, which wait under it while a newer dialog in another window takes the input.
+                new ModalCover(this),
                 toolTips = new ToolTipHost(this),
             };
         }
@@ -71,6 +81,64 @@ namespace OsuXaml.Controls
 
         /// <summary>Open modal dialogs, bottom first; the last one takes the input. Closing dialogs leave the list at once.</summary>
         public IReadOnlyList<ModalHost> OpenModals => openModals;
+
+        /// <summary>
+        /// The dialog in another window of the game that has the input while it is open, if any. Meanwhile this layer closes its
+        /// popups and shows no tooltips or context menus, and a window's layer dims the window and keeps clicks, hover, the wheel
+        /// and keys from reaching it. A dialog inside what owns this layer (its own window, or anywhere for the game's own layer)
+        /// doesn't block it.
+        /// </summary>
+        public ModalHost BlockingModal
+        {
+            get
+            {
+                var top = TopModal(this);
+                return top == null || ModalHost.IsWithin(this, top) || ModalHost.IsWithin(top, Parent) ? null : top;
+            }
+        }
+
+        /// <summary>
+        /// The dialog that takes input in the game <paramref name="drawable"/> is in: the newest one open in any of its windows.
+        /// Dialogs of a window that was taken out of the game don't count. Call from the update thread.
+        /// </summary>
+        internal static ModalHost TopModal(Drawable drawable)
+        {
+            lock (open_modals)
+            {
+                if (open_modals.Count == 0)
+                    return null;
+
+                var game = gameOf(drawable);
+                if (game == null)
+                    return null;
+
+                for (int i = open_modals.Count - 1; i >= 0; i--)
+                {
+                    // The window may have been disposed with the dialog still open; such hosts never close.
+                    if (!open_modals[i].TryGetTarget(out var host) || host.WasDisposed || host.IsClosing)
+                    {
+                        open_modals.RemoveAt(i);
+                        continue;
+                    }
+
+                    if (gameOf(host) == game)
+                        return host;
+                }
+            }
+
+            return null;
+        }
+
+        private static Game gameOf(Drawable drawable)
+        {
+            for (var d = drawable; d != null; d = d.Parent)
+            {
+                if (d is Game game)
+                    return game;
+            }
+
+            return null;
+        }
 
         /// <summary>
         /// The layer popups opened from <paramref name="from"/> go to: the nearest <see cref="IPopupLayerProvider"/>
@@ -168,6 +236,19 @@ namespace OsuXaml.Controls
                 loaded_layers.Add(new WeakReference<PopupLayer>(this));
         }
 
+        protected override void Update()
+        {
+            base.Update();
+
+            // A dialog opened in another window closes this one's drop-downs and menus, as switching windows does.
+            bool blocked = BlockingModal != null;
+
+            if (blocked && !wasBlocked)
+                DismissAll();
+
+            wasBlocked = blocked;
+        }
+
         /// <summary>Shows a modal dialog above everything in this layer, closing the popups that don't stay open.</summary>
         internal void OpenModal(ModalHost host)
         {
@@ -176,6 +257,9 @@ namespace OsuXaml.Controls
 
             openModals.Add(host);
             modals.Add(host);
+
+            lock (open_modals)
+                open_modals.Add(new WeakReference<ModalHost>(host));
         }
 
         internal void ScheduleOpenModal(ModalHost host) => Schedule(() => OpenModal(host));
@@ -187,6 +271,9 @@ namespace OsuXaml.Controls
         internal void CloseModal(ModalHost host, double removeAfter)
         {
             openModals.Remove(host);
+
+            lock (open_modals)
+                open_modals.RemoveAll(r => !r.TryGetTarget(out var h) || h == host);
 
             Scheduler.AddDelayed(() =>
             {
@@ -274,7 +361,8 @@ namespace OsuXaml.Controls
         internal Drawable FindTarget(IEnumerable<Drawable> candidates, Vector2 screenSpacePos)
         {
             // A modal dialog covers everything this layer serves; elements inside the dialog belong to the dialog's own layer.
-            if (openModals.Count > 0)
+            // A dialog in another window does too.
+            if (openModals.Count > 0 || BlockingModal != null)
                 return null;
 
             PopupRoot over = null;
@@ -410,6 +498,66 @@ namespace OsuXaml.Controls
 
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Covers a window while a dialog in another window of the game has the input: it dims the window as the dialog's backdrop
+        /// dims the dialog's own, and takes its clicks, hover and wheel turns so nothing in it reacts. Clicking it keeps focus in the
+        /// dialog. A window the dialog's backdrop already dims (one below a dialog in the game's own layer) isn't dimmed twice. Only a
+        /// window's outermost layer covers; the layers of the window's own dialogs are under it.
+        /// </summary>
+        internal partial class ModalCover : CompositeDrawable
+        {
+            private readonly PopupLayer layer;
+            private readonly Box dim;
+            private bool dimmed;
+
+            public ModalCover(PopupLayer layer)
+            {
+                this.layer = layer;
+                RelativeSizeAxes = Axes.Both;
+                InternalChild = dim = new Box { RelativeSizeAxes = Axes.Both, Colour = Colour4.Black, Alpha = 0 };
+            }
+
+            /// <summary>The dialog this layer is covered for, if any.</summary>
+            private ModalHost covering => layer.isTopLevelInGame() ? layer.BlockingModal : null;
+
+            public override bool ReceivePositionalInputAt(Vector2 screenSpacePos) => covering != null && base.ReceivePositionalInputAt(screenSpacePos);
+
+            protected override void Update()
+            {
+                base.Update();
+
+                bool shouldDim = covering is ModalHost modal && !ModalHost.IsWithin(layer, modal.Region);
+
+                if (shouldDim == dimmed)
+                    return;
+
+                dimmed = shouldDim;
+
+                if (dimmed)
+                    dim.FadeTo(ModalHost.Dim, ModalHost.OpenDuration, Easing.OutQuint);
+                else
+                    dim.FadeOut(ModalHost.CloseDuration, Easing.OutQuint);
+            }
+
+            protected override bool OnMouseDown(MouseDownEvent e) => true;
+
+            protected override bool OnClick(ClickEvent e)
+            {
+                covering?.FocusDialog();
+                return true;
+            }
+
+            protected override bool OnDoubleClick(DoubleClickEvent e) => true;
+
+            protected override bool OnDragStart(DragStartEvent e) => true;
+
+            protected override bool OnScroll(ScrollEvent e) => true;
+
+            protected override bool OnHover(HoverEvent e) => true;
+
+            protected override bool OnMouseMove(MouseMoveEvent e) => true;
         }
     }
 
