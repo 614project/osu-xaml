@@ -252,7 +252,8 @@ namespace OsuXaml.Generator
                     line($"global::OsuXaml.XamlBinding.OneWay({scope.Bindings}, {expr}, (x, initial) =>");
                     line("{");
                     indent++;
-                    line($"var value = {converted};");
+                    // Typed as the property, so a Colour4 animating a Brush property transforms as a Brush.
+                    line($"{typeName(assignTo)} value = {converted};");
                     line($"if (initial) {assignTarget} = value;");
                     line($"else global::osu.Framework.Graphics.TransformableExtensions.TransformTo({v}, nameof({v}.{member.Name}), value, {literalDouble(duration)}, global::osu.Framework.Graphics.Easing.{easing});");
                     indent--;

@@ -191,9 +191,11 @@ public partial class MainView : CompositeDrawable
 | 날짜·색 | `Calendar` | `SelectedDate` (양방향), `SelectionMode` (`SingleRange`, `MultipleRange`) + `SelectedDates` (양방향, 드래그·Shift+클릭으로 범위, Ctrl+클릭으로 추가), `DisplayDate`, `FirstDayOfWeek`, 월·연·10년 보기, 키보드 |
 | | `DatePicker` | `SelectedDate` (양방향), `SelectedDateFormat`, 직접 입력, F4·Alt+↓로 열기 |
 | | `ColorPicker` | `SelectedColor` (양방향) |
-| 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke`, `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
-| | `Line`, `Polyline`, `Polygon` | `X1`/`Y1`/`X2`/`Y2`, `Points="0,0 10,20 20,0"`, `Fill` (Polygon) |
-| | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
+| 도형·이미지 | `Rectangle`, `Ellipse` | `Fill`, `Stroke` (색 또는 브러시), `StrokeThickness`, `RadiusX`/`RadiusY`, `Stretch` |
+| | `Line`, `Polyline`, `Polygon` | `X1`/`Y1`/`X2`/`Y2`, `Points="0,0 10,20 20,0"`, `Fill`, `FillRule` (`EvenOdd` 기본, `Nonzero`) |
+| | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법, 앞에 `F1`이면 `Nonzero`), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
+| | 모든 도형의 선 | `StrokeStartLineCap`/`StrokeEndLineCap`/`StrokeDashCap` (`Flat`·`Square`·`Round`·`Triangle`), `StrokeLineJoin` (`Miter`·`Bevel`·`Round`), `StrokeMiterLimit`, `StrokeDashArray="4 2"`, `StrokeDashOffset`. 기본값은 WPF처럼 `Flat`, `Miter`, 10 |
+| | `SolidColorBrush`, `LinearGradientBrush`, `RadialGradientBrush` | `GradientStop` (`Color`, `Offset`), `StartPoint`/`EndPoint`, `Center`/`GradientOrigin`/`RadiusX`/`RadiusY`, `MappingMode`, `SpreadMethod` (`Pad`·`Reflect`·`Repeat`), `Opacity`. 속성 요소나 리소스로 쓰고, 색 바인딩·`Animate`도 됩니다 |
 | | `Image` | `Source` (파일 경로 또는 osu! 텍스처 이름), `Stretch`, `StretchDirection`, `ImageFailed` |
 | | `Viewbox` | 자식 하나를 비율 유지하며 늘이거나 줄임, `Stretch`, `StretchDirection` |
 | | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome, 없는 이름은 비슷한 이름을 알려 주는 빌드 오류), `Size`, `Foreground` |
@@ -312,7 +314,7 @@ private async void OnSettings()
 ## 아직 없는 것
 
 - 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
-- 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
+- 브러시는 도형의 `Fill`/`Stroke`에만 쓸 수 있습니다. 컨트롤의 `Background`/`Foreground`는 아직 색만 받고, 브러시의 `Transform`/`RelativeTransform`, `ImageBrush`/`VisualBrush`도 없습니다
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
 - 백그라운드 스레드에서 뷰모델을 바꿀 때의 Update 스레드 마샬링
 - 한글 글꼴: osu!framework 기본 Roboto에는 한글이 없어 샘플은 영어 UI입니다

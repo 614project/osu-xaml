@@ -4,34 +4,46 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Globalization;
 using System.Linq;
-using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
-using osu.Framework.Graphics.Lines;
 using osu.Framework.Graphics.Primitives;
-using osu.Framework.Graphics.Rendering;
-using osu.Framework.Graphics.Shaders;
-using osu.Framework.Graphics.Shapes;
-using osu.Framework.Graphics.Textures;
 using osuTK;
-using Triangle = osu.Framework.Graphics.Primitives.Triangle;
 
 namespace OsuXaml.Controls
 {
     /// <summary>
-    /// Base for WPF-style shapes: <see cref="Fill"/>, <see cref="Stroke"/>, <see cref="StrokeThickness"/> and
-    /// <see cref="Stretch"/>. Like WPF, the stroke lies inside the shape's bounds, and both brushes are transparent
-    /// until set. A shape without a size stretches in its panel cell like any other element.
+    /// Base for WPF-style shapes: <see cref="Fill"/> and <see cref="Stroke"/> brushes, the stroke's pen settings and
+    /// <see cref="Stretch"/>. Like WPF, the stroke lies inside the shape's bounds, there's no fill or stroke until a brush is set,
+    /// and a shape without a size stretches in its panel cell like any other element.
     /// </summary>
     public abstract partial class Shape : CompositeDrawable, ILayoutElement
     {
-        private Colour4 fill = Colour4.Transparent;
-        private Colour4 stroke = Colour4.Transparent;
+        private Brush fill;
+        private Brush stroke;
         private float strokeThickness = 1;
+        private PenLineCap strokeStartLineCap;
+        private PenLineCap strokeEndLineCap;
+        private PenLineCap strokeDashCap;
+        private PenLineJoin strokeLineJoin;
+        private float strokeMiterLimit = 10;
+        private DoubleCollection strokeDashArray;
+        private float strokeDashOffset;
         private Stretch stretch;
 
+        private readonly ShapeLayer fillLayer;
+        private readonly ShapeLayer strokeLayer;
+
+        private bool fillVisible;
+        private bool strokeVisible;
+
         private bool geometryValid;
+        private bool brushesValid;
         private Vector2 geometrySize = new Vector2(-1);
+
+        private ShapeMesh fillMesh = ShapeMesh.Empty;
+        private ShapeMesh strokeMesh = ShapeMesh.Empty;
+        private RectangleF fillBounds;
+        private RectangleF strokeBounds;
 
         private bool sizeToContentX;
         private bool sizeToContentY;
@@ -39,76 +51,169 @@ namespace OsuXaml.Controls
         protected Shape(Stretch defaultStretch)
         {
             stretch = defaultStretch;
+
+            InternalChildren = new Drawable[]
+            {
+                fillLayer = new ShapeLayer(),
+                strokeLayer = new ShapeLayer(),
+            };
         }
 
-        /// <summary>The colour inside the shape (<c>Fill="#89b4fa"</c> or a colour name).</summary>
-        public Colour4 Fill
+        /// <summary>What paints the inside: <c>Fill="#89b4fa"</c>, a colour name, or a gradient brush in <c>&lt;Rectangle.Fill&gt;</c>.</summary>
+        public Brush Fill
         {
             get => fill;
-            set
-            {
-                bool wasVisible = fill.A > 0;
-                fill = value;
-                brushChanged(wasVisible != value.A > 0);
-            }
+            set => setBrush(ref fill, value);
         }
 
-        /// <summary>The colour of the outline.</summary>
-        public Colour4 Stroke
+        /// <summary>What paints the outline.</summary>
+        public Brush Stroke
         {
             get => stroke;
-            set
-            {
-                bool wasVisible = stroke.A > 0;
-                stroke = value;
-                brushChanged(wasVisible != value.A > 0);
-            }
+            set => setBrush(ref stroke, value);
         }
 
         /// <summary>The width of the outline (1 by default), drawn only while <see cref="Stroke"/> is set.</summary>
         public float StrokeThickness
         {
             get => strokeThickness;
+            set => setGeometry(ref strokeThickness, value);
+        }
+
+        /// <summary>The cap at the start of an open line (Flat by default, as in WPF).</summary>
+        public PenLineCap StrokeStartLineCap
+        {
+            get => strokeStartLineCap;
+            set => setGeometry(ref strokeStartLineCap, value);
+        }
+
+        /// <summary>The cap at the end of an open line (Flat by default).</summary>
+        public PenLineCap StrokeEndLineCap
+        {
+            get => strokeEndLineCap;
+            set => setGeometry(ref strokeEndLineCap, value);
+        }
+
+        /// <summary>The cap at both ends of each dash (Flat by default).</summary>
+        public PenLineCap StrokeDashCap
+        {
+            get => strokeDashCap;
+            set => setGeometry(ref strokeDashCap, value);
+        }
+
+        /// <summary>The shape of corners (Miter by default).</summary>
+        public PenLineJoin StrokeLineJoin
+        {
+            get => strokeLineJoin;
+            set => setGeometry(ref strokeLineJoin, value);
+        }
+
+        /// <summary>How far a Miter corner may reach, in half stroke widths, before its point is cut off (10 by default, at least 1).</summary>
+        public float StrokeMiterLimit
+        {
+            get => strokeMiterLimit;
+            set => setGeometry(ref strokeMiterLimit, value);
+        }
+
+        /// <summary>
+        /// Dash and gap lengths in multiples of <see cref="StrokeThickness"/>, as <c>StrokeDashArray="4 2"</c>. An odd count repeats;
+        /// a zero-length dash with Round <see cref="StrokeDashCap"/> draws a dot.
+        /// </summary>
+        public DoubleCollection StrokeDashArray
+        {
+            get => strokeDashArray;
             set
             {
-                strokeThickness = value;
+                if (ReferenceEquals(strokeDashArray, value))
+                    return;
+
+                if (strokeDashArray != null)
+                    strokeDashArray.CollectionChanged -= onDashArrayChanged;
+
+                strokeDashArray = value;
+
+                if (strokeDashArray != null)
+                    strokeDashArray.CollectionChanged += onDashArrayChanged;
+
                 InvalidateGeometry();
             }
+        }
+
+        /// <summary>How far into the dash pattern the line starts, in multiples of <see cref="StrokeThickness"/>.</summary>
+        public float StrokeDashOffset
+        {
+            get => strokeDashOffset;
+            set => setGeometry(ref strokeDashOffset, value);
         }
 
         /// <summary>How the shape fills its bounds. Rectangle and Ellipse default to Fill, the point shapes to None.</summary>
         public Stretch Stretch
         {
             get => stretch;
-            set
-            {
-                stretch = value;
-                InvalidateGeometry();
-            }
+            set => setGeometry(ref stretch, value);
         }
 
-        /// <summary>The outline width that takes part in layout and drawing: none while there is no visible stroke, as in WPF.</summary>
-        protected float EffectiveStrokeThickness => stroke.A > 0 ? Math.Max(0, strokeThickness) : 0;
+        /// <summary>The outline width that takes part in layout and drawing: none while there is no visible stroke.</summary>
+        protected float EffectiveStrokeThickness => strokeVisible ? Math.Max(0, strokeThickness) : 0;
+
+        /// <summary>The area <see cref="Fill"/> paints, in this shape's coordinates.</summary>
+        internal ShapeMesh FillMesh => fillMesh;
+
+        /// <summary>The area <see cref="Stroke"/> paints, in this shape's coordinates.</summary>
+        internal ShapeMesh StrokeMesh => strokeMesh;
+
+        /// <summary>The box a relative brush maps to for the fill and the stroke.</summary>
+        internal RectangleF FillBrushBounds => fillBounds;
+
+        internal RectangleF StrokeBrushBounds => strokeBounds;
 
         /// <summary>Rebuilds the drawn geometry before the next frame is drawn.</summary>
         protected void InvalidateGeometry() => geometryValid = false;
 
-        /// <summary>Lays out the drawables that draw the shape for its current size.</summary>
-        protected abstract void UpdateGeometry(Vector2 size);
-
-        /// <summary>Applies <see cref="Fill"/> and <see cref="Stroke"/> to the drawables, without rebuilding them.</summary>
-        protected abstract void ApplyColours();
+        /// <summary>The figures to draw for the shape's current size, in its own coordinates.</summary>
+        protected abstract ShapeOutline BuildOutline(Vector2 size);
 
         public abstract Vector2 Measure(Vector2 availableSize);
 
-        private void brushChanged(bool visibilityChanged)
+        private void setGeometry<T>(ref T field, T value)
         {
-            ApplyColours();
-
-            // A stroke appearing or disappearing changes the space the shape needs.
-            if (visibilityChanged)
-                InvalidateGeometry();
+            field = value;
+            InvalidateGeometry();
         }
+
+        private void setBrush(ref Brush field, Brush value)
+        {
+            if (ReferenceEquals(field, value))
+                return;
+
+            if (field != null)
+                field.Changed -= onBrushChanged;
+
+            field = value;
+
+            if (field != null)
+                field.Changed += onBrushChanged;
+
+            onBrushChanged();
+        }
+
+        private void onBrushChanged()
+        {
+            bool fillNowVisible = fill?.IsVisible == true;
+            bool strokeNowVisible = stroke?.IsVisible == true;
+
+            // A brush appearing or disappearing changes what has to be built, and a stroke changes the space the shape needs.
+            if (fillNowVisible != fillVisible || strokeNowVisible != strokeVisible)
+            {
+                fillVisible = fillNowVisible;
+                strokeVisible = strokeNowVisible;
+                InvalidateGeometry();
+            }
+
+            brushesValid = false;
+        }
+
+        private void onDashArrayChanged(object sender, NotifyCollectionChangedEventArgs e) => InvalidateGeometry();
 
         protected override void LoadComplete()
         {
@@ -116,8 +221,6 @@ namespace OsuXaml.Controls
 
             sizeToContentX = !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.X) && Width == 0;
             sizeToContentY = !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.Y) && Height == 0;
-
-            ApplyColours();
         }
 
         protected override void UpdateAfterChildren()
@@ -135,8 +238,68 @@ namespace OsuXaml.Controls
             {
                 geometryValid = true;
                 geometrySize = DrawSize;
-                UpdateGeometry(DrawSize);
+                rebuild(DrawSize);
+                brushesValid = false;
             }
+
+            if (!brushesValid)
+            {
+                brushesValid = true;
+                fillLayer.Paint(fillMesh, fill, fillBounds);
+                strokeLayer.Paint(strokeMesh, stroke, strokeBounds);
+            }
+        }
+
+        private void rebuild(Vector2 size)
+        {
+            var outline = BuildOutline(size);
+            float thickness = EffectiveStrokeThickness;
+
+            fillMesh = fillVisible
+                ? ShapeGeometry.Fill(outline.Figures.Where(f => f.IsFilled).Select(f => f.Points), outline.FillRule)
+                : ShapeMesh.Empty;
+
+            if (thickness <= 0)
+                strokeMesh = ShapeMesh.Empty;
+            else if (outline.StrokeArea != null)
+                strokeMesh = ShapeGeometry.Fill(new[] { outline.StrokeArea }, FillRule.Nonzero);
+            else
+            {
+                strokeMesh = ShapeGeometry.Stroke(outline.Figures.Select(f => (f.Points, f.IsClosed)), new StrokeStyle
+                {
+                    Thickness = thickness,
+                    StartLineCap = strokeStartLineCap,
+                    EndLineCap = strokeEndLineCap,
+                    DashCap = strokeDashCap,
+                    LineJoin = strokeLineJoin,
+                    MiterLimit = strokeMiterLimit,
+                    DashArray = strokeDashArray,
+                    DashOffset = strokeDashOffset,
+                });
+            }
+
+            // As in WPF, relative brushes map to the outline's bounds, without the stroke. A straight level or upright line has no
+            // height or width there (WPF then draws nothing), so that side takes the stroke's width instead.
+            fillBounds = outline.Bounds;
+            strokeBounds = outline.Bounds;
+
+            if (strokeBounds.Width <= 0)
+                strokeBounds = new RectangleF(strokeBounds.X - thickness / 2, strokeBounds.Y, thickness, strokeBounds.Height);
+            if (strokeBounds.Height <= 0)
+                strokeBounds = new RectangleF(strokeBounds.X, strokeBounds.Y - thickness / 2, strokeBounds.Width, thickness);
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            // Brushes and dash arrays may be resources or view model values that outlive the shape.
+            if (fill != null)
+                fill.Changed -= onBrushChanged;
+            if (stroke != null)
+                stroke.Changed -= onBrushChanged;
+            if (strokeDashArray != null)
+                strokeDashArray.CollectionChanged -= onDashArrayChanged;
+
+            base.Dispose(isDisposing);
         }
 
         /// <summary>The box a Rectangle or Ellipse draws in: all of its bounds for Fill, a centred square for the uniform modes.</summary>
@@ -158,28 +321,44 @@ namespace OsuXaml.Controls
                     return new RectangleF(Vector2.Zero, size);
             }
         }
+
+        /// <summary>What a shape draws at its current size.</summary>
+        protected readonly struct ShapeOutline
+        {
+            /// <summary>The figures, filled (those marked so) and stroked.</summary>
+            public readonly IReadOnlyList<ShapeFigure> Figures;
+
+            /// <summary>How overlapping filled figures combine.</summary>
+            public readonly FillRule FillRule;
+
+            /// <summary>The bounds of the figures, which relative brushes map to.</summary>
+            public readonly RectangleF Bounds;
+
+            /// <summary>When set, the stroke covers this whole area instead of following the figures (a stroke wider than the shape).</summary>
+            public readonly IReadOnlyList<Vector2> StrokeArea;
+
+            public ShapeOutline(IReadOnlyList<ShapeFigure> figures, FillRule fillRule, RectangleF bounds, IReadOnlyList<Vector2> strokeArea = null)
+            {
+                Figures = figures;
+                FillRule = fillRule;
+                Bounds = bounds;
+                StrokeArea = strokeArea;
+            }
+        }
     }
 
     /// <summary>
     /// A rectangle, like WPF's: <c>&lt;Rectangle Width="80" Height="40" Fill="#89b4fa" Stroke="White" StrokeThickness="2" RadiusX="6" RadiusY="6" /&gt;</c>.
-    /// Corners round only when both radii are set, and use the smaller one (osu!framework masks with circular corners).
+    /// Corners round into quarter ellipses when both radii are set.
     /// </summary>
     public partial class Rectangle : Shape
     {
-        private readonly Container body;
-        private readonly Box fillBox;
         private float radiusX;
         private float radiusY;
 
         public Rectangle()
             : base(Stretch.Fill)
         {
-            InternalChild = body = new Container
-            {
-                Masking = true,
-                // The masking border only shows over drawn pixels, so the fill is always drawn, even when transparent.
-                Child = fillBox = new Box { RelativeSizeAxes = Axes.Both, AlwaysPresent = true, Colour = Colour4.Transparent },
-            };
         }
 
         public float RadiusX
@@ -204,21 +383,18 @@ namespace OsuXaml.Controls
 
         public override Vector2 Measure(Vector2 availableSize) => new Vector2(EffectiveStrokeThickness);
 
-        protected override void UpdateGeometry(Vector2 size)
+        protected override ShapeOutline BuildOutline(Vector2 size)
         {
             var bounds = StretchedBounds(size);
-            float shortest = Math.Min(bounds.Width, bounds.Height);
+            float thickness = EffectiveStrokeThickness;
 
-            body.Position = bounds.TopLeft;
-            body.Size = bounds.Size;
-            body.CornerRadius = radiusX > 0 && radiusY > 0 ? Math.Min(Math.Min(radiusX, radiusY), shortest / 2) : 0;
-            body.BorderThickness = Math.Min(EffectiveStrokeThickness, shortest / 2);
-        }
+            // The outline runs through the middle of the stroke, half its width inside the bounds.
+            var inner = bounds.Inflate(-thickness / 2);
 
-        protected override void ApplyColours()
-        {
-            fillBox.Colour = Fill;
-            body.BorderColour = Stroke;
+            if (inner.Width <= 0 || inner.Height <= 0)
+                return new ShapeOutline(Array.Empty<ShapeFigure>(), FillRule.Nonzero, bounds, ShapeGeometry.Rectangle(bounds, radiusX, radiusY));
+
+            return new ShapeOutline(new[] { new ShapeFigure(ShapeGeometry.Rectangle(inner, radiusX, radiusY), true, true) }, FillRule.Nonzero, inner);
         }
     }
 
@@ -228,67 +404,28 @@ namespace OsuXaml.Controls
     /// </summary>
     public partial class Ellipse : Shape
     {
-        private const float unit_diameter = 100;
-
-        private readonly CircularContainer fillCircle;
-        private readonly Box fillBox;
-        private readonly SmoothPath outline;
-
         public Ellipse()
             : base(Stretch.Fill)
         {
-            InternalChildren = new Drawable[]
-            {
-                // A circle scaled unevenly is an ellipse; osu!framework's masking follows the scale.
-                fillCircle = new CircularContainer
-                {
-                    Size = new Vector2(unit_diameter),
-                    Masking = true,
-                    Child = fillBox = new Box { RelativeSizeAxes = Axes.Both, Colour = Colour4.Transparent },
-                },
-                // The outline is a path rather than the circle's border, which an uneven scale would stretch.
-                outline = new SmoothPath { PathRadius = 0.5f, Alpha = 0 },
-            };
         }
 
         public override Vector2 Measure(Vector2 availableSize) => new Vector2(EffectiveStrokeThickness);
 
-        protected override void UpdateGeometry(Vector2 size)
+        protected override ShapeOutline BuildOutline(Vector2 size)
         {
             var bounds = StretchedBounds(size);
-            float thickness = Math.Min(EffectiveStrokeThickness, Math.Min(bounds.Width, bounds.Height) / 2);
+            float thickness = EffectiveStrokeThickness;
 
             // The fill reaches the middle of the stroke, as in WPF.
             var inner = bounds.Inflate(-thickness / 2);
 
-            fillCircle.Position = inner.TopLeft;
-            fillCircle.Scale = new Vector2(Math.Max(0, inner.Width), Math.Max(0, inner.Height)) / unit_diameter;
-            fillCircle.Alpha = inner.Width > 0 && inner.Height > 0 ? 1 : 0;
-
-            if (thickness <= 0 || inner.Width <= 0 || inner.Height <= 0)
+            if (inner.Width <= 0 || inner.Height <= 0)
             {
-                outline.Alpha = 0;
-                return;
+                var area = bounds.Width > 0 && bounds.Height > 0 ? ShapeGeometry.Ellipse(bounds) : null;
+                return new ShapeOutline(Array.Empty<ShapeFigure>(), FillRule.Nonzero, bounds, area);
             }
 
-            var centre = inner.Centre;
-            var radius = inner.Size / 2;
-            int segments = Math.Clamp((int)(MathF.PI * (radius.X + radius.Y) / 3), 24, 256);
-            var points = new List<Vector2>(segments + 1);
-
-            for (int i = 0; i <= segments; i++)
-            {
-                float angle = MathF.Tau * i / segments;
-                points.Add(centre + new Vector2(radius.X * MathF.Cos(angle), radius.Y * MathF.Sin(angle)));
-            }
-
-            ShapeGeometry.SetStroke(outline, points, thickness);
-        }
-
-        protected override void ApplyColours()
-        {
-            fillBox.Colour = Fill;
-            outline.Colour = Stroke;
+            return new ShapeOutline(new[] { new ShapeFigure(ShapeGeometry.Ellipse(inner), true, true) }, FillRule.Nonzero, inner);
         }
     }
 
@@ -344,7 +481,7 @@ namespace OsuXaml.Controls
         /// <summary>Whether the outline returns to the first point.</summary>
         public readonly bool IsClosed;
 
-        /// <summary>Whether <see cref="Shape.Fill"/> paints the area inside.</summary>
+        /// <summary>Whether <see cref="Shape.Fill"/> paints the area inside (as if closed).</summary>
         public readonly bool IsFilled;
 
         public ShapeFigure(IReadOnlyList<Vector2> points, bool isClosed, bool isFilled)
@@ -362,21 +499,16 @@ namespace OsuXaml.Controls
     /// </summary>
     public abstract partial class FigureShape : Shape
     {
-        private readonly Container<SmoothPath> strokes;
-        private readonly Container<PolygonFill> fills;
-
         protected FigureShape()
             : base(Stretch.None)
         {
-            InternalChildren = new Drawable[]
-            {
-                fills = new Container<PolygonFill>(),
-                strokes = new Container<SmoothPath>(),
-            };
         }
 
         /// <summary>The figures to draw, in the shape's own coordinates before stretching.</summary>
         protected abstract IReadOnlyList<ShapeFigure> GetFigures();
+
+        /// <summary>How overlapping parts of the filled figures combine.</summary>
+        protected abstract FillRule FigureFillRule { get; }
 
         /// <summary>The bounds of every point of every figure, or an empty rectangle at the origin.</summary>
         protected RectangleF FigureBounds()
@@ -425,43 +557,16 @@ namespace OsuXaml.Controls
             return new Vector2(bounds.Width * scaleX, bounds.Height * scaleY) + new Vector2(thickness);
         }
 
-        protected override void UpdateGeometry(Vector2 size)
+        protected override ShapeOutline BuildOutline(Vector2 size)
         {
-            var figures = GetFigures();
             var bounds = FigureBounds();
-            float thickness = EffectiveStrokeThickness;
-            var (scale, offset) = stretchTransform(size, bounds, thickness);
+            var (scale, offset) = stretchTransform(size, bounds, EffectiveStrokeThickness);
 
-            int strokeCount = 0, fillCount = 0;
+            var figures = GetFigures()
+                          .Select(f => new ShapeFigure(f.Points.Select(p => (p - bounds.TopLeft) * scale + offset).ToList(), f.IsClosed, f.IsFilled))
+                          .ToList();
 
-            foreach (var figure in figures)
-            {
-                var points = figure.Points.Select(p => (p - bounds.TopLeft) * scale + offset).ToList();
-
-                // A transparent fill isn't triangulated at all; making it visible invalidates the geometry.
-                if (figure.IsFilled && Fill.A > 0 && points.Count >= 3)
-                {
-                    if (fillCount == fills.Count)
-                        fills.Add(new PolygonFill { Colour = Fill });
-                    fills[fillCount++].SetPolygon(points);
-                }
-
-                if (thickness > 0 && points.Count >= 2)
-                {
-                    if (strokeCount == strokes.Count)
-                        strokes.Add(new SmoothPath { Colour = Stroke });
-
-                    if (figure.IsClosed)
-                        points.Add(points[0]);
-
-                    ShapeGeometry.SetStroke(strokes[strokeCount++], points, thickness);
-                }
-            }
-
-            while (strokes.Count > strokeCount)
-                strokes.Remove(strokes[^1], true);
-            while (fills.Count > fillCount)
-                fills.Remove(fills[^1], true);
+            return new ShapeOutline(figures, FigureFillRule, new RectangleF(offset, bounds.Size * scale));
         }
 
         /// <summary>WPF's stretch metrics: the scale, and where the top-left of the point bounds lands.</summary>
@@ -495,14 +600,6 @@ namespace OsuXaml.Controls
                 scaleX = scaleY = Stretch == Stretch.Uniform ? Math.Min(scaleX, scaleY) : Math.Max(scaleX, scaleY);
 
             return (new Vector2(scaleX, scaleY), new Vector2(thickness / 2));
-        }
-
-        protected override void ApplyColours()
-        {
-            foreach (var path in strokes)
-                path.Colour = Stroke;
-            foreach (var fill in fills)
-                fill.Colour = Fill;
         }
 
         /// <summary>Redraws when a bound point collection changes.</summary>
@@ -554,16 +651,20 @@ namespace OsuXaml.Controls
             }
         }
 
+        protected override FillRule FigureFillRule => FillRule.EvenOdd;
+
         protected override IReadOnlyList<ShapeFigure> GetFigures()
             => new[] { new ShapeFigure(new[] { new Vector2(x1, y1), new Vector2(x2, y2) }, false, false) };
     }
 
     /// <summary>
-    /// Base for <see cref="Polyline"/> and <see cref="Polygon"/>: a <see cref="Points"/> collection that redraws when it changes.
+    /// Base for <see cref="Polyline"/> and <see cref="Polygon"/>: a <see cref="Points"/> collection that redraws when it changes,
+    /// and the <see cref="FillRule"/> for outlines that cross themselves.
     /// </summary>
     public abstract partial class PointsShape : FigureShape
     {
         private PointCollection points = new PointCollection();
+        private FillRule fillRule;
 
         protected PointsShape()
         {
@@ -586,6 +687,19 @@ namespace OsuXaml.Controls
             }
         }
 
+        /// <summary>Which parts of a self-crossing outline the fill paints: EvenOdd (the default, as in WPF) or Nonzero.</summary>
+        public FillRule FillRule
+        {
+            get => fillRule;
+            set
+            {
+                fillRule = value;
+                InvalidateGeometry();
+            }
+        }
+
+        protected override FillRule FigureFillRule => fillRule;
+
         protected override void Dispose(bool isDisposing)
         {
             // The collection may belong to a view model that outlives the shape.
@@ -594,199 +708,21 @@ namespace OsuXaml.Controls
         }
     }
 
-    /// <summary>Connected straight lines through <see cref="PointsShape.Points"/>, like WPF's Polyline. Only the stroke is drawn.</summary>
+    /// <summary>
+    /// Connected straight lines through <see cref="PointsShape.Points"/>, like WPF's Polyline. The stroke stays open;
+    /// <see cref="Shape.Fill"/> paints the area as if the last point joined the first.
+    /// </summary>
     public partial class Polyline : PointsShape
     {
-        protected override IReadOnlyList<ShapeFigure> GetFigures() => new[] { new ShapeFigure(Points, false, false) };
+        protected override IReadOnlyList<ShapeFigure> GetFigures() => new[] { new ShapeFigure(Points, false, true) };
     }
 
     /// <summary>
     /// A closed shape through <see cref="PointsShape.Points"/>, like WPF's Polygon: <see cref="Shape.Fill"/> paints the
-    /// inside and the stroke returns to the first point. Self-intersecting outlines fill approximately.
+    /// inside and the stroke returns to the first point.
     /// </summary>
     public partial class Polygon : PointsShape
     {
         protected override IReadOnlyList<ShapeFigure> GetFigures() => new[] { new ShapeFigure(Points, true, true) };
-    }
-
-    /// <summary>Geometry helpers behind the shapes: strokes as osu!framework paths, and polygon triangulation.</summary>
-    public static class ShapeGeometry
-    {
-        /// <summary>
-        /// Draws <paramref name="points"/> (in the parent's coordinates) as a path <paramref name="thickness"/> wide.
-        /// The vertices are moved next to the origin so the path's buffer only covers the stroke itself.
-        /// </summary>
-        public static void SetStroke(SmoothPath path, IReadOnlyList<Vector2> points, float thickness)
-        {
-            float radius = thickness / 2;
-            var min = points.Aggregate(points[0], Vector2.ComponentMin);
-            var origin = min - new Vector2(radius);
-
-            path.PathRadius = radius;
-            path.Vertices = points.Select(p => p - origin).ToList();
-            path.Position = origin;
-            path.Alpha = 1;
-        }
-
-        /// <summary>
-        /// Splits a simple polygon into triangles by ear clipping, adding three points per triangle to <paramref name="output"/>.
-        /// What can't be clipped (self-intersecting outlines) is fanned from its first corner.
-        /// </summary>
-        public static void Triangulate(IReadOnlyList<Vector2> polygon, List<Vector2> output)
-        {
-            var points = new List<Vector2>(polygon.Count);
-
-            foreach (var p in polygon)
-            {
-                if (points.Count == 0 || points[^1] != p)
-                    points.Add(p);
-            }
-
-            if (points.Count > 1 && points[0] == points[^1])
-                points.RemoveAt(points.Count - 1);
-
-            if (points.Count < 3)
-                return;
-
-            float area = 0;
-            for (int i = 0; i < points.Count; i++)
-                area += cross(points[i], points[(i + 1) % points.Count]);
-
-            if (area == 0)
-                return;
-
-            float winding = Math.Sign(area);
-            var remaining = Enumerable.Range(0, points.Count).ToList();
-
-            while (remaining.Count > 3)
-            {
-                bool clipped = false;
-
-                for (int i = 0; i < remaining.Count; i++)
-                {
-                    int a = remaining[(i + remaining.Count - 1) % remaining.Count];
-                    int b = remaining[i];
-                    int c = remaining[(i + 1) % remaining.Count];
-                    float turn = cross(points[b] - points[a], points[c] - points[b]) * winding;
-
-                    // A corner on a straight edge adds no area, so it can simply go.
-                    if (Math.Abs(turn) < 1e-6f)
-                    {
-                        remaining.RemoveAt(i);
-                        clipped = true;
-                        break;
-                    }
-
-                    if (turn < 0 || remaining.Any(j => j != a && j != b && j != c && inTriangle(points[j], points[a], points[b], points[c])))
-                        continue;
-
-                    output.Add(points[a]);
-                    output.Add(points[b]);
-                    output.Add(points[c]);
-                    remaining.RemoveAt(i);
-                    clipped = true;
-                    break;
-                }
-
-                if (!clipped)
-                    break;
-            }
-
-            for (int k = 1; k + 1 < remaining.Count; k++)
-            {
-                output.Add(points[remaining[0]]);
-                output.Add(points[remaining[k]]);
-                output.Add(points[remaining[k + 1]]);
-            }
-        }
-
-        private static float cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
-
-        private static bool inTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
-        {
-            float d1 = cross(b - a, p - a);
-            float d2 = cross(c - b, p - b);
-            float d3 = cross(a - c, p - c);
-
-            bool negative = d1 < 0 || d2 < 0 || d3 < 0;
-            bool positive = d1 > 0 || d2 > 0 || d3 > 0;
-            return !(negative && positive);
-        }
-    }
-
-    /// <summary>Draws the inside of a polygon as triangles in its own colour.</summary>
-    internal partial class PolygonFill : Drawable, ITexturedShaderDrawable
-    {
-        private readonly List<Vector2> triangles = new List<Vector2>();
-
-        [Resolved]
-        private IRenderer renderer { get; set; }
-
-        public IShader TextureShader { get; private set; }
-
-        [BackgroundDependencyLoader]
-        private void load(ShaderManager shaders)
-        {
-            TextureShader = shaders.Load(VertexShaderDescriptor.TEXTURE_2, FragmentShaderDescriptor.TEXTURE);
-        }
-
-        /// <summary>The triangles from the last <see cref="SetPolygon"/>, three corners each, in this drawable's space.</summary>
-        public IReadOnlyList<Vector2> Triangles => triangles;
-
-        /// <summary>Fills <paramref name="points"/>, given in the parent's coordinates.</summary>
-        public void SetPolygon(IReadOnlyList<Vector2> points)
-        {
-            var min = points.Aggregate(points[0], Vector2.ComponentMin);
-            var max = points.Aggregate(points[0], Vector2.ComponentMax);
-
-            // Sized to the polygon, so culling and masking see where it draws.
-            Position = min;
-            Size = Vector2.ComponentMax(max - min, new Vector2(1));
-
-            triangles.Clear();
-            ShapeGeometry.Triangulate(points.Select(p => p - min).ToList(), triangles);
-            Invalidate(Invalidation.DrawNode);
-        }
-
-        protected override DrawNode CreateDrawNode() => new PolygonFillDrawNode(this);
-
-        private class PolygonFillDrawNode : TexturedShaderDrawNode
-        {
-            private readonly List<Vector2> screenSpace = new List<Vector2>();
-            private Texture texture;
-
-            public PolygonFillDrawNode(PolygonFill source)
-                : base(source)
-            {
-            }
-
-            protected new PolygonFill Source => (PolygonFill)base.Source;
-
-            public override void ApplyState()
-            {
-                base.ApplyState();
-
-                texture = Source.renderer.WhitePixel;
-                screenSpace.Clear();
-
-                foreach (var p in Source.triangles)
-                    screenSpace.Add(Vector2Extensions.Transform(p, DrawInfo.Matrix));
-            }
-
-            protected override void Draw(IRenderer renderer)
-            {
-                base.Draw(renderer);
-
-                if (screenSpace.Count < 3)
-                    return;
-
-                BindTextureShader(renderer);
-
-                for (int i = 0; i + 2 < screenSpace.Count; i += 3)
-                    renderer.DrawTriangle(texture, new Triangle(screenSpace[i], screenSpace[i + 1], screenSpace[i + 2]), DrawColourInfo.Colour);
-
-                UnbindTextureShader(renderer);
-            }
-        }
     }
 }

@@ -110,6 +110,9 @@ namespace OsuXaml.Generator
                 case "osu.Framework.Graphics.Colour4":
                 case "osu.Framework.Graphics.Colour.ColourInfo":
                 case "osuTK.Graphics.Color4":
+                // Brushes take a colour the way WPF's do, through their implicit conversion from Colour4.
+                case "OsuXaml.Controls.Brush":
+                case "OsuXaml.Controls.SolidColorBrush":
                     return colour(s, out hint);
 
                 case "osu.Framework.Graphics.Sprites.FontUsage":
