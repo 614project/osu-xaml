@@ -41,8 +41,9 @@ namespace OsuXaml.Controls
         private TreeViewItem selectedContainer;
         private bool syncing;
 
-        // The node a virtualizing tree is scrolling to; it and its ancestors keep their containers until the scroll settles.
+        // The node being scrolled into view; it and its ancestors keep their containers until the scroll settles.
         private TreeViewItem bringIntoViewTarget;
+        private int bringIntoViewRequest;
 
         public TreeView()
         {
@@ -114,45 +115,124 @@ namespace OsuXaml.Controls
             => item == null ? null : TreeViewItem.All(RealizedContainers).FirstOrDefault(n => Equals(n.DataItem, item));
 
         /// <summary>
-        /// Scrolls until the header of <paramref name="item"/> (a data item or TreeViewItem) is visible. A virtualizing tree reaches
-        /// nodes that have containers and top-level items; a nested item whose node hasn't been created can't be found.
+        /// Scrolls until the header of <paramref name="item"/> (a data item or TreeViewItem) is visible, expanding its ancestors.
+        /// A node that hasn't been created yet (its parent never expanded, or a virtualizing tree hasn't reached it) is found by
+        /// walking the items and their children (through the <see cref="HierarchicalDataTemplate{T}"/>) depth first, and is
+        /// created along with its ancestors.
         /// </summary>
         public void ScrollIntoView(object item)
         {
-            var container = item as TreeViewItem ?? ContainerFromDataItem(item);
+            if (item == null)
+                return;
 
-            var top = container;
-            while (top?.ParentItem != null)
-                top = top.ParentItem;
-
-            int index = top == null ? -1 : IndexFromContainer(top);
-
-            if (index >= 0)
+            // The items are known once the tree has loaded.
+            if (scroll == null || !IsLoaded)
             {
-                // Nodes out of view don't update, so the top level (which always does) keeps scrolling until the header is in view
-                // and has stopped moving as the nodes around it lay out.
-                bringIntoViewTarget = container;
-
-                if (BringIndexIntoView(index, _ => container.Parent != null ? container.HeaderRow : null))
-                    return;
-
-                bringIntoViewTarget = null;
-            }
-            else if (BringIndexIntoView(IndexOf(item), headerOf))
-            {
-                // A top-level item whose node hadn't been created.
+                Schedule(() => ScrollIntoView(item));
                 return;
             }
 
-            if (container == null || scroll == null)
+            var container = item is TreeViewItem node && node.ParentTreeView == this && node.Parent != null ? node : ContainerFromDataItem(item) ?? reveal(item);
+            if (container == null)
                 return;
 
-            // A node added this frame has no position until its panel arranges it, so scroll once layout has run.
-            ScheduleAfterChildren(() =>
+            for (var parent = container.ParentItem; parent != null; parent = parent.ParentItem)
+                parent.IsExpanded.Value = true;
+
+            // Nodes out of view don't update, so a node below one that hasn't been in view yet has no position: the viewer scrolls
+            // to the deepest ancestor that has one, a level further each frame, and keeps scrolling until the node stays put as the
+            // nodes around it lay out. Until then the node keeps its container.
+            bringIntoViewTarget = container;
+            bringIntoViewRequest = scroll.BringIntoView(() =>
             {
-                if (container.Parent != null)
-                    scroll.ScrollIntoView(container.HeaderRow);
+                if (container.Parent == null)
+                    return (null, true);
+
+                var shown = container;
+                while (shown.ParentItem != null && !shown.IsLoaded)
+                    shown = shown.ParentItem;
+
+                return (shown.HeaderRow, shown == container);
             });
+        }
+
+        /// <summary>Finds <paramref name="item"/> among the items, depth first, and creates its node and its ancestors' nodes. Null when it isn't in the tree.</summary>
+        private TreeViewItem reveal(object item)
+        {
+            var path = new List<int>();
+
+            // The template's children lists are only read here, so it hands back the view model's lists rather than bound copies.
+            var scope = BindingScope.ForReading();
+
+            try
+            {
+                if (!find(SourceItems, this, ItemTemplate, item, path, scope, new HashSet<object>(ReferenceEqualityComparer.Instance)))
+                    return null;
+            }
+            finally
+            {
+                // Any other binding a template made while listing children.
+                scope.UnbindAll();
+            }
+
+            ItemsControl owner = this;
+            TreeViewItem node = null;
+
+            foreach (int index in path)
+            {
+                if (node != null)
+                {
+                    node.IsExpanded.Value = true;
+
+                    if (!node.ShowsChildren())
+                        return null;
+
+                    owner = node;
+                }
+
+                node = owner.RealizeIndex(index) as TreeViewItem;
+
+                if (node == null)
+                    return null;
+            }
+
+            return node;
+        }
+
+        /// <summary>Looks for <paramref name="target"/> in <paramref name="items"/> and below them, adding its index at each level to <paramref name="path"/>.</summary>
+        private static bool find(IEnumerable items, ItemsControl owner, DataTemplate template, object target, List<int> path, BindingScope scope, HashSet<object> ancestors)
+        {
+            if (items == null)
+                return false;
+
+            int index = 0;
+
+            foreach (object item in items)
+            {
+                path.Add(index);
+
+                if (Equals(item, target))
+                    return true;
+
+                // A node that exists knows its children and its template; for an item without one, the template lists them.
+                // An item that contains itself is only walked once.
+                if (item != null && ancestors.Add(item))
+                {
+                    var node = owner?.ContainerFromIndex(index) as TreeViewItem ?? item as TreeViewItem;
+                    var children = node != null ? node.ChildSource : (template as IHierarchicalTemplate)?.GetChildren(item, scope);
+                    bool found = find(children, node, node != null ? node.ItemTemplate : template, target, path, scope, ancestors);
+
+                    ancestors.Remove(item);
+
+                    if (found)
+                        return true;
+                }
+
+                path.RemoveAt(path.Count - 1);
+                index++;
+            }
+
+            return false;
         }
 
         protected override Drawable CreateItemsHost(Panel panel)
@@ -199,7 +279,7 @@ namespace OsuXaml.Controls
             if (selectedContainer != null && selectedContainer.IsDescendantOf(node))
                 return true;
 
-            if (!IsBringingIntoView)
+            if (bringIntoViewTarget != null && !scroll.IsBringingIntoView(bringIntoViewRequest))
                 bringIntoViewTarget = null;
 
             return bringIntoViewTarget != null && bringIntoViewTarget.IsDescendantOf(node);
@@ -373,8 +453,6 @@ namespace OsuXaml.Controls
             ScrollIntoView(target);
             return true;
         }
-
-        private static Drawable headerOf(Drawable container) => (container as TreeViewItem)?.HeaderRow ?? container;
 
         /// <summary>The level <paramref name="node"/> is an item of: its parent node, or the tree.</summary>
         private static ItemsControl ownerOf(TreeViewItem node) => (ItemsControl)node.ParentItem ?? node.ParentTreeView;
@@ -573,6 +651,9 @@ namespace OsuXaml.Controls
             IsSelected.Value = selected;
             headerRow.UpdateState();
         }
+
+        /// <summary>The children: the items, or the list they will come from when the node first expands.</summary>
+        internal IEnumerable ChildSource => pendingChildren ?? SourceItems;
 
         /// <summary>Whether the node is expanded and has children, creating its list of children if it hasn't yet.</summary>
         internal bool ShowsChildren()
