@@ -49,6 +49,16 @@ namespace OsuXaml.Controls
         private Vector2 lastOffset;
         private double laidOutAt = double.NaN;
 
+        // How long a bring-into-view request keeps correcting the scroll position while the layout settles.
+        private const double max_bring_into_view_time = 3000;
+
+        private Func<(Drawable drawable, bool final)> bringIntoView;
+        private int bringIntoViewRequest;
+        private double bringIntoViewStarted;
+        private bool bringIntoViewStarting;
+        private int bringIntoViewStill;
+        private int bringIntoViewScrolls;
+
         public ScrollViewer()
         {
             horizontal = new AxisScroller(Direction.Horizontal, this) { RelativeSizeAxes = Axes.X };
@@ -205,6 +215,26 @@ namespace OsuXaml.Controls
         /// <summary>Where the scroll is heading.</summary>
         internal Vector2d ScrollTarget => new Vector2d(horizontal.Target, vertical.Target);
 
+        /// <summary>
+        /// Scrolls until the drawable <paramref name="target"/> returns is in view, again each frame once the content has laid out,
+        /// until the scroll has stayed put for a couple of frames: a row placed by estimate, or a tree node that only lays out
+        /// once it comes into view, can move as the scroll reaches it. While <paramref name="target"/> returns a stand-in that
+        /// isn't <c>final</c> (an ancestor of a node that has no position yet), the scroll doesn't settle. Stops when anything
+        /// else scrolls, when another request replaces this one, or when <paramref name="target"/> returns null.
+        /// Returns the request, for <see cref="IsBringingIntoView"/>.
+        /// </summary>
+        internal int BringIntoView(Func<(Drawable drawable, bool final)> target)
+        {
+            bringIntoView = target;
+            bringIntoViewStarting = true;
+            bringIntoViewStarted = Time.Current;
+            bringIntoViewStill = 0;
+            return ++bringIntoViewRequest;
+        }
+
+        /// <summary>Whether <paramref name="request"/>, returned by <see cref="BringIntoView"/>, is still settling.</summary>
+        internal bool IsBringingIntoView(int request) => bringIntoView != null && request == bringIntoViewRequest;
+
         /// <summary>Whether a scroll is still easing towards its target.</summary>
         internal bool IsScrollAnimating => !Precision.AlmostEquals(vertical.Current, vertical.Target) || !Precision.AlmostEquals(horizontal.Current, horizontal.Target);
 
@@ -268,6 +298,8 @@ namespace OsuXaml.Controls
             if (laidOutAt != Time.Current)
                 layoutContent();
 
+            continueBringIntoView();
+
             // The horizontal bar belongs to the content-tall inner scroller; keep it at the bottom of the viewport instead.
             horizontal.ScrollbarOffset = (float)Math.Min(0, vertical.Current + vertical.ChildSize.Y - horizontal.Height);
 
@@ -278,6 +310,38 @@ namespace OsuXaml.Controls
                 lastOffset = offset;
                 ScrollChanged?.Invoke();
             }
+        }
+
+        private void continueBringIntoView()
+        {
+            if (bringIntoView == null)
+                return;
+
+            // Someone else scrolled since last frame: they win.
+            if (!bringIntoViewStarting && ScrollRequests != bringIntoViewScrolls)
+            {
+                bringIntoView = null;
+                return;
+            }
+
+            var (target, final) = bringIntoView();
+
+            if (target == null)
+            {
+                bringIntoView = null;
+                return;
+            }
+
+            var before = ScrollTarget;
+            ScrollIntoView(target);
+            bringIntoViewScrolls = ScrollRequests;
+            bringIntoViewStarting = false;
+
+            bool still = final && (ScrollTarget - before).Length < 0.5 && !IsScrollAnimating;
+            bringIntoViewStill = still ? bringIntoViewStill + 1 : 0;
+
+            if (bringIntoViewStill >= 2 || Time.Current - bringIntoViewStarted > max_bring_into_view_time)
+                bringIntoView = null;
         }
 
         /// <summary>
