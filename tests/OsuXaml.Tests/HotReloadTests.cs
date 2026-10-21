@@ -199,6 +199,49 @@ namespace OsuXaml.Tests
             AddAssert("one-way binding on the root still works", () => view.LabelText.ToString() == "renamed");
         }
 
+        [Test]
+        public void RootListLinkSurvivesRebuild()
+        {
+            ReloadCalendar view = null;
+            var day = new DateTime(2026, 3, 14);
+
+            AddStep("create view", () =>
+            {
+                reload.Days.Clear();
+                Child = view = new ReloadCalendar();
+            });
+            AddUntilStep("loaded", () => view.IsLoaded);
+
+            AddStep("hot reload", () => XamlHotReload.UpdateApplication(new[] { typeof(ReloadCalendar) }));
+            AddUntilStep("rebuilt", () => reloaded == 1);
+
+            AddStep("select through the view model", () => reload.Days.Add(day));
+            AddAssert("calendar follows", () => view.SelectedDates.SequenceEqual(new[] { day }) && view.SelectedDate.Value == day);
+            AddStep("clear through the calendar", () => view.SelectedDate.Value = null);
+            AddAssert("view model follows", () => reload.Days.Count == 0);
+        }
+
+        [Test]
+        public void RootNullableLinkSurvivesRebuild()
+        {
+            ReloadThreeStateCheckBox view = null;
+
+            AddStep("create view", () =>
+            {
+                reload.Flag.Value = false;
+                Child = view = new ReloadThreeStateCheckBox();
+            });
+            AddUntilStep("loaded", () => view.IsLoaded);
+
+            AddStep("hot reload", () => XamlHotReload.UpdateApplication(new[] { typeof(ReloadThreeStateCheckBox) }));
+            AddUntilStep("rebuilt", () => reloaded == 1);
+
+            AddStep("tick", () => view.Toggle());
+            AddAssert("view model follows", () => reload.Flag.Value);
+            AddStep("change view model", () => reload.Flag.Value = false);
+            AddAssert("check box follows", () => view.IsChecked.Value == false);
+        }
+
         private static int texts(Drawable root, string text) => root.ChildrenOfType<SpriteText>().Count(s => s.Text.ToString() == text);
     }
 }

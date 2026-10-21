@@ -206,7 +206,7 @@ namespace OsuXaml.Generator
             if (listItem != null && !oneWay && isBindableListClass(target) && isBindableListClass(sourceType)
                 && SymbolEqualityComparer.Default.Equals(bindableListItemType(target), listItem))
             {
-                line($"global::OsuXaml.XamlBinding.TwoWayList({v}.{member.Name}, {expr});");
+                line($"{firstBuildOnly(v)}global::OsuXaml.XamlBinding.TwoWayList({v}.{member.Name}, {expr});");
                 return;
             }
 
