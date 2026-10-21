@@ -50,6 +50,105 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void EveryNameIconFindTakesCompiles()
+        {
+            ShapesTestData.Compiles(@"
+  <StackPanel>
+    <Icon Kind=""check"" />
+    <Icon Kind=""solid.CHECK"" />
+    <Icon Kind=""fa-check-circle"" />
+    <Icon Kind=""FontAwesome.Solid.Times"" />
+    <Icon Kind=""Regular.Bell"" />
+    <Icon Kind=""Brands.Github"" />
+    <Icon Kind="" Solid.Star "" />
+    <Icon>
+      <Icon.Kind>Solid.Heart</Icon.Kind>
+    </Icon>
+  </StackPanel>");
+        }
+
+        [TestCase("Solid.Chek", "did you mean Solid.Check?")]
+        [TestCase("chek", "did you mean Solid.Check?")]
+        [TestCase("fa-check-circel", "did you mean Solid.CheckCircle?")]
+        [TestCase("Solid.Github", "did you mean Brands.Github?")]
+        [TestCase("Light.Check", "did you mean Solid.Check?")]
+        [TestCase("Light.Xyzzy", "the styles are Solid, Regular and Brands")]
+        [TestCase("Solid.Xyzzyplugh", "has no icon by that name")]
+        [TestCase("", "has no icon by that name")]
+        public void UnknownKindIsABuildError(string kind, string hint)
+        {
+            var error = ShapesTestData.Error($@"<Icon Kind=""{kind}"" />");
+
+            Assert.That(error.Id, Is.EqualTo("OX0005"));
+            Assert.That(error.GetMessage(), Does.Contain($"\"{kind}\" to a FontAwesome icon").And.Contain(hint));
+            Assert.That(error.Location.GetLineSpan().StartLinePosition.Line, Is.EqualTo(2), "points at the Icon's line");
+        }
+
+        [Test]
+        public void UnknownKindFromAStyleOrResourceIsABuildError()
+        {
+            var fromStyle = ShapesTestData.Error(@"
+  <StackPanel>
+    <StackPanel.Resources>
+      <Style TargetType=""Icon"">
+        <Setter Property=""Kind"" Value=""Solid.Sav"" />
+      </Style>
+    </StackPanel.Resources>
+    <Icon />
+  </StackPanel>");
+
+            Assert.That(fromStyle.GetMessage(), Does.Contain("did you mean Solid.Save?"));
+
+            var fromResource = ShapesTestData.Error(@"
+  <StackPanel>
+    <StackPanel.Resources>
+      <x:String x:Key=""SaveIcon"">Solid.Sav</x:String>
+    </StackPanel.Resources>
+    <Icon Kind=""{StaticResource SaveIcon}"" />
+  </StackPanel>");
+
+            Assert.That(fromResource.GetMessage(), Does.Contain("did you mean Solid.Save?"));
+        }
+
+        [Test]
+        public void IconNameWorksOnYourOwnControls()
+        {
+            const string code_behind = @"
+using osu.Framework.Graphics.Containers;
+
+namespace Demo
+{
+    public class Vm { }
+
+    public class IconButton : Container
+    {
+        [OsuXaml.IconName]
+        public string IconKind { get; set; }
+
+        public string Caption { get; set; }
+    }
+
+    public partial class View : CompositeDrawable { }
+}";
+
+            string Page(string content) => @"<CompositeDrawable xmlns=""osu-xaml"" xmlns:x=""osu-xaml:x"" xmlns:local=""clr-namespace:Demo""
+    x:Class=""Demo.View"" x:DataType=""local:Vm"">
+" + content + @"
+</CompositeDrawable>";
+
+            GeneratorRunner.Compiles(code_behind, Page(@"<local:IconButton IconKind=""Solid.Save"" Caption=""Solid.Sav"" />"));
+
+            var error = GeneratorRunner.SingleError(code_behind, Page(@"<local:IconButton IconKind=""Solid.Sav"" />"));
+            Assert.That(error.GetMessage(), Does.Contain("did you mean Solid.Save?"));
+        }
+
+        [Test]
+        public void BoundKindsAreLeftToRuntime()
+        {
+            ShapesTestData.Compiles(@"<Icon Kind=""{Bind IconName}"" />");
+        }
+
+        [Test]
         public void NamesFindFontAwesomeIcons()
         {
             Assert.That(Icon.Find("Solid.Check"), Is.EqualTo(FontAwesome.Solid.Check));
