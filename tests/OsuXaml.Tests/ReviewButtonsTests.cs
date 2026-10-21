@@ -29,7 +29,7 @@ namespace OsuXaml.Tests
             {
                 clicks = 0;
                 box = new CheckBox { Content = "Locked setting" };
-                box.IsChecked.BindTo(locked);
+                XamlBinding.TwoWayNullable(new BindingScope(), box.IsChecked, locked);
                 box.Click += () => clicks++;
                 locked.Disabled = true;
                 Child = box;
@@ -43,7 +43,7 @@ namespace OsuXaml.Tests
             });
             AddStep("Space", () => InputManager.Key(Key.Space));
             AddStep("Toggle()", () => box.Toggle());
-            AddAssert("value unchanged, clicks still reported", () => box.IsChecked.Value && locked.Value && clicks == 3);
+            AddAssert("value unchanged, clicks still reported", () => box.IsChecked.Value == true && locked.Value && clicks == 3);
         }
 
         [Test]
@@ -294,11 +294,11 @@ namespace OsuXaml.Tests
                 Child = box;
             });
             AddUntilStep("laid out", () => box.PresentedContent?.DrawWidth > 0);
-            AddAssert("default box hidden", () => !box.ChildrenOfType<SpriteIcon>().Single().Parent.IsPresent);
+            AddAssert("default box hidden", () => box.ChildrenOfType<SpriteIcon>().All(icon => !icon.Parent.IsPresent));
             AddAssert("sized to the template", () => near(box.DrawHeight, templateRoot.DrawHeight) && templateRoot.DrawHeight < 18);
 
             AddStep("remove the template", () => box.Template = null);
-            AddUntilStep("default box back", () => box.ChildrenOfType<SpriteIcon>().Single().Parent.IsPresent);
+            AddUntilStep("default box back", () => box.ChildrenOfType<SpriteIcon>().All(icon => icon.Parent.IsPresent));
         }
 
         [Test]

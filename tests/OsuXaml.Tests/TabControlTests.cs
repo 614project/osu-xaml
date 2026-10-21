@@ -281,5 +281,125 @@ namespace OsuXaml.Tests
             AddStep("select Big", () => tabs.SelectedIndex.Value = 1);
             AddUntilStep("grows to the big page", () => System.Math.Abs(tabs.DrawWidth - 320) < 1 && System.Math.Abs(tabs.DrawHeight - (stripHeight + 140)) < 1);
         }
+    
+
+        private static TabControl.TabStrip stripOf(TabControl tabs) => tabs.ChildrenOfType<TabControl.TabStrip>().Single();
+
+        private static TabControl.TabStripScrollButton scrollButton(TabControl tabs, int direction)
+            => tabs.ChildrenOfType<TabControl.TabStripScrollButton>().Single(b => b.Direction == direction);
+
+        /// <summary>Whether all of <paramref name="tab"/> is inside the part of the strip between the scroll buttons.</summary>
+        private static bool fullyShown(TabControl tabs, TabItem tab)
+        {
+            var strip = stripOf(tabs).ScreenSpaceDrawQuad;
+            var quad = tab.ScreenSpaceDrawQuad;
+            float buttons = stripOf(tabs).Overflows ? 24 * strip.Width / stripOf(tabs).DrawWidth : 0;
+            return quad.TopLeft.X >= strip.TopLeft.X + buttons - 1 && quad.TopRight.X <= strip.TopRight.X - buttons + 1;
+        }
+
+        [Test]
+        public void TabsThatDontFitScroll()
+        {
+            TabControl tabs = null;
+            TabItem[] items = null;
+
+            AddStep("create ten tabs in a narrow control", () =>
+            {
+                items = Enumerable.Range(1, 10).Select(i => new TabItem { Header = "Section " + i, Content = page() }).ToArray();
+                tabs = new TabControl { Size = new Vector2(320, 200) };
+                foreach (var item in items)
+                    tabs.Add(item);
+                Child = tabs;
+            });
+            AddUntilStep("laid out", () => items[9].DrawWidth > 0);
+
+            AddAssert("overflows, with arrows", () => stripOf(tabs).Overflows && scrollButton(tabs, -1).Alpha > 0 && scrollButton(tabs, 1).IsPresent);
+            AddAssert("strip no wider than the control", () => stripOf(tabs).DrawWidth <= tabs.DrawWidth + 0.5f);
+            AddAssert("starts at the first tab", () => stripOf(tabs).ScrollTarget == 0 && fullyShown(tabs, items[0]) && !fullyShown(tabs, items[9]));
+            AddAssert("back arrow dimmed at the start", () => !scrollButton(tabs, -1).IsEnabled && scrollButton(tabs, 1).IsEnabled);
+
+            AddStep("select the last tab", () => tabs.SelectedIndex.Value = 9);
+            AddUntilStep("scrolled to show it", () => fullyShown(tabs, items[9]) && stripOf(tabs).ScrollOffset == stripOf(tabs).MaxScroll);
+            AddUntilStep("marker under it", () =>
+            {
+                var marker = stripOf(tabs).Indicator.ScreenSpaceDrawQuad;
+                var tab = items[9].ScreenSpaceDrawQuad;
+                return marker.TopLeft.X > tab.TopLeft.X && marker.TopRight.X < tab.TopRight.X;
+            });
+            AddAssert("forward arrow dimmed at the end", () => !scrollButton(tabs, 1).IsEnabled);
+
+            AddStep("Home", () =>
+            {
+                InputManager.MoveMouseTo(items[9]);
+                InputManager.Click(MouseButton.Left);
+                InputManager.Key(Key.Home);
+            });
+            AddUntilStep("back at the first tab", () => tabs.SelectedIndex.Value == 0 && stripOf(tabs).ScrollOffset == 0);
+
+            AddStep("wheel down over the strip", () =>
+            {
+                InputManager.MoveMouseTo(items[1]);
+                InputManager.ScrollVerticalBy(-1);
+            });
+            AddUntilStep("tabs move along", () => stripOf(tabs).ScrollOffset > 40);
+
+            float before = 0;
+            AddStep("click the back arrow", () =>
+            {
+                before = stripOf(tabs).ScrollTarget;
+                InputManager.MoveMouseTo(scrollButton(tabs, -1));
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("scrolled back, selection kept", () => stripOf(tabs).ScrollTarget < before && tabs.SelectedIndex.Value == 0);
+
+            AddStep("click the forward arrow", () =>
+            {
+                InputManager.MoveMouseTo(scrollButton(tabs, 1));
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("scrolled forward", () => stripOf(tabs).ScrollTarget > 0 && tabs.SelectedIndex.Value == 0);
+
+            AddStep("widen the control", () => tabs.Width = 1200);
+            AddUntilStep("everything fits, arrows gone", () => !stripOf(tabs).Overflows && stripOf(tabs).ScrollOffset == 0
+                                                              && fullyShown(tabs, items[0]) && fullyShown(tabs, items[9]) && scrollButton(tabs, 1).Alpha == 0);
+        }
+
+        [Test]
+        public void SideStripsScrollVertically()
+        {
+            TabControl tabs = null;
+            TabItem[] items = null;
+
+            AddStep("create", () =>
+            {
+                items = Enumerable.Range(1, 12).Select(i => new TabItem { Header = "Item " + i, Content = page() }).ToArray();
+                tabs = new TabControl { Size = new Vector2(400, 220), TabStripPlacement = Dock.Left };
+                foreach (var item in items)
+                    tabs.Add(item);
+                Child = tabs;
+            });
+            AddUntilStep("laid out", () => items[11].DrawHeight > 0);
+            AddAssert("overflows", () => stripOf(tabs).Overflows && stripOf(tabs).DrawHeight <= tabs.DrawHeight + 0.5f);
+
+            AddStep("press End", () =>
+            {
+                InputManager.MoveMouseTo(items[0]);
+                InputManager.Click(MouseButton.Left);
+                InputManager.Key(Key.End);
+            });
+            AddUntilStep("last tab shown", () =>
+            {
+                var strip = stripOf(tabs).ScreenSpaceDrawQuad;
+                var tab = items[11].ScreenSpaceDrawQuad;
+                return tabs.SelectedIndex.Value == 11 && tab.BottomLeft.Y <= strip.BottomLeft.Y - 23 && stripOf(tabs).ScrollOffset == stripOf(tabs).MaxScroll;
+            });
+
+            AddStep("wheel up", () =>
+            {
+                InputManager.MoveMouseTo(items[11]);
+                InputManager.ScrollVerticalBy(1);
+            });
+            AddUntilStep("scrolled up", () => stripOf(tabs).ScrollOffset < stripOf(tabs).MaxScroll - 40);
+        }
     }
 }
