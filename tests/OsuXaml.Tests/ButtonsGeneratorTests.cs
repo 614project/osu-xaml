@@ -17,6 +17,7 @@ namespace Demo
     public class Vm
     {
         public BindableBool IsBold { get; } = new BindableBool();
+        public Bindable<bool?> AllDone { get; } = new Bindable<bool?>();
         public BindableBool Small { get; } = new BindableBool(true);
         public BindableBool Large { get; } = new BindableBool();
         public BindableBool ShowDetails { get; } = new BindableBool();
@@ -75,6 +76,27 @@ namespace Demo
             Assert.That(source, Does.Contain("GroupName = \"Size\""));
             Assert.That(source, Does.Contain("Content = \"Huge\""));
             Assert.That(source, Does.Contain("Interval = 40"));
+        }
+
+        [Test]
+        public void CheckBoxIsCheckedIsANullableBool()
+        {
+            string source = compiles(@"
+  <StackPanel Spacing=""8"">
+    <CheckBox Content=""Bold"" IsChecked=""{Bind IsBold}"" />
+    <CheckBox Content=""All done"" IsThreeState=""True"" IsChecked=""{Bind AllDone}"" Indeterminate=""OnChecked"" />
+    <CheckBox Content=""Unknown"" IsChecked=""{x:Null}"" />
+    <CheckBox Content=""On"" IsChecked=""True"" />
+  </StackPanel>");
+
+            // A view model's Bindable<bool> still binds two-way to the bool? IsChecked; a Bindable<bool?> links directly.
+            Assert.That(source, Does.Contain("XamlBinding.TwoWayNullable("));
+            Assert.That(source, Does.Contain("e1.IsChecked, dataContext.IsBold)"));
+            Assert.That(source, Does.Contain("XamlBinding.TwoWay(e2.IsChecked, dataContext.AllDone)"));
+            Assert.That(source, Does.Contain("IsThreeState = true"));
+            Assert.That(source, Does.Contain(".Indeterminate += () => this.OnChecked()"));
+            Assert.That(source, Does.Contain("e3.IsChecked.Value = null"));
+            Assert.That(source, Does.Contain("e4.IsChecked.Value = true"));
         }
 
         [Test]

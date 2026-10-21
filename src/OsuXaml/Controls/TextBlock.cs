@@ -1,12 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Linq;
+using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Colour;
+using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Primitives;
 using osu.Framework.Graphics.Rendering;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Graphics.Textures;
+using osu.Framework.Input.Events;
+using osu.Framework.Layout;
+using osu.Framework.Platform;
 using osu.Framework.Text;
 using osuTK;
 using osuTK.Graphics;
@@ -30,6 +36,17 @@ namespace OsuXaml.Controls
         WrapWithOverflow,
     }
 
+    /// <summary>Where each line sits across the TextBlock's width, like WPF's TextAlignment.</summary>
+    public enum TextAlignment
+    {
+        Left,
+        Right,
+        Center,
+
+        /// <summary>Wrapped lines are spread to the full width by widening their spaces; the last line of a paragraph stays left-aligned.</summary>
+        Justify,
+    }
+
     public enum TextTrimming
     {
         None,
@@ -46,7 +63,7 @@ namespace OsuXaml.Controls
     /// width its panel offers (or its own Width), like WPF; a wrapping TextBlock in a horizontal StackPanel has unlimited width and stays on one line.
     /// Line breaks in the text start new lines, and <see cref="Inlines"/> (<see cref="Run"/>, <see cref="Bold"/>, <see cref="LineBreak"/>...) style parts of it.
     /// </summary>
-    public partial class TextBlock : SpriteText, ILayoutElement
+    public partial class TextBlock : SpriteText, ILayoutElement, IHasDefaultCursor
     {
         private static readonly char[] never_fixed_width_characters = { '.', ',', ':', ' ', '\u00A0', '\u202F' };
 
@@ -55,7 +72,22 @@ namespace OsuXaml.Controls
 
         private TextWrapping textWrapping;
         private TextTrimming textTrimming;
+        private TextAlignment textAlignment;
         private TextDecorations textDecorations;
+
+        // The width the layout last offered, which aligned lines spread across.
+        private float availableWidth = float.PositiveInfinity;
+
+        // The link under the mouse, and whether any text is a link at all (only then does the TextBlock take mouse input).
+        private HyperlinkInline hoveredLink;
+        private bool hasLinks;
+
+        // Drawables among the text, and the layer next to the TextBlock that shows them.
+        private readonly List<InlineUIContainer> uiContainers = new List<InlineUIContainer>();
+        private InlineUILayer uiLayer;
+
+        [Resolved(canBeNull: true)]
+        private GameHost host { get; set; }
 
         // The size last reported to the layout; NaN until the first measure, so sizes set in XAML always apply.
         private Vector2 measured = new Vector2(float.NaN);
@@ -98,6 +130,23 @@ namespace OsuXaml.Controls
             }
         }
 
+        /// <summary>
+        /// Where lines sit across the width: the TextBlock's own Width, a stretched width, or else the width its panel offers
+        /// (in a horizontal StackPanel, which offers unlimited width, the widest line).
+        /// </summary>
+        public TextAlignment TextAlignment
+        {
+            get => textAlignment;
+            set
+            {
+                if (textAlignment == value)
+                    return;
+
+                textAlignment = value;
+                FrameworkInternals.Invalidate(this, true, true);
+            }
+        }
+
         /// <summary>Whether the last layout cut text off for <see cref="TextTrimming"/>.</summary>
         public new bool IsTruncated => FrameworkInternals.Characters(this).Count > 0 && builder?.IsTruncated == true;
 
@@ -108,6 +157,12 @@ namespace OsuXaml.Controls
         public InlineCollection Inlines => inlines ??= new InlineCollection(onInlinesChanged);
 
         public void Add(Inline inline) => Inlines.Add(inline);
+
+        /// <summary>Adds link text: <c>&lt;Hyperlink NavigateUri="..."&gt;docs&lt;/Hyperlink&gt;</c> written among the text.</summary>
+        public void Add(Hyperlink link) => Inlines.Add(link);
+
+        /// <summary>Adds a drawable among the text, as WPF wraps one in an <see cref="InlineUIContainer"/>.</summary>
+        public void Add(Drawable drawable) => Inlines.Add(drawable);
 
         /// <summary>Adds a <see cref="Run"/> of <paramref name="text"/>.</summary>
         public void AddText(string text) => Inlines.Add(new Run(text));
@@ -166,6 +221,21 @@ namespace OsuXaml.Controls
             }
             else
                 runs.Add(new TextRun(TextRun.NormaliseLineBreaks(text), style));
+
+            hasLinks = false;
+            uiContainers.Clear();
+
+            foreach (var run in runs)
+            {
+                if (run.Style.Link != null)
+                    hasLinks = true;
+
+                if (run.Style.Container != null)
+                    uiContainers.Add(run.Style.Container);
+            }
+
+            if (hoveredLink != null && !hasLinks)
+                setHoveredLink(null);
         }
 
         public Vector2 Measure(Vector2 availableSize)
@@ -173,6 +243,15 @@ namespace OsuXaml.Controls
             // Wrapping and trimming need the width on offer; MaxWidth keeps the text sizing itself up to that width.
             if (constrainsWidth)
                 MaxWidth = float.IsFinite(availableSize.X) ? Math.Max(1, availableSize.X) : float.PositiveInfinity;
+
+            // Aligned lines spread across the width on offer, so the text takes all of it.
+            if (availableSize.X != availableWidth)
+            {
+                availableWidth = availableSize.X;
+
+                if (textAlignment != TextAlignment.Left)
+                    FrameworkInternals.Invalidate(this, true, true);
+            }
 
             return measured = new Vector2(
                 RelativeSizeAxes.HasFlag(Axes.X) ? 0 : DrawWidth,
@@ -190,10 +269,16 @@ namespace OsuXaml.Controls
 
             bool wrap = textWrapping != TextWrapping.NoWrap;
 
+            float alignWidth = textAlignment == TextAlignment.Left ? 0
+                : RelativeSizeAxes.HasFlag(Axes.X) ? DrawWidth - Padding.Right
+                : explicitWidth is float own ? own - Padding.Right
+                : float.IsFinite(availableWidth) ? Math.Min(MaxWidth, availableWidth) - Padding.Right
+                : 0;
+
             // The base builder's character list is the one this text draws from, so the replacement writes into it.
             var characters = base.CreateTextBuilder(store).Characters;
 
-            return builder = new TextBlockTextBuilder(this, store, Font, maxWidth, wrap, !wrap && textTrimming != TextTrimming.None, EllipsisString,
+            return builder = new TextBlockTextBuilder(this, store, Font, maxWidth, textAlignment, alignWidth, wrap, !wrap && textTrimming != TextTrimming.None, EllipsisString,
                 UseFullGlyphHeight, new Vector2(Padding.Left, Padding.Top), Spacing, characters, FixedWidthExcludeCharacters ?? never_fixed_width_characters,
                 FallbackCharacter, FixedWidthReferenceCharacter);
         }
@@ -241,6 +326,137 @@ namespace OsuXaml.Controls
         {
             get => Font.Italics ? FontStyle.Italic : FontStyle.Normal;
             set => Font = Font.With(italics: value == FontStyle.Italic);
+        }
+
+        /// <summary>
+        /// The font family: <c>Roboto</c> (the default), <c>RobotoCondensed</c>, or one the game added to its fonts.
+        /// Of a WPF-style list (<c>"Segoe UI, Roboto"</c>) the first is used; text a family lacks falls back to another font with the same weight.
+        /// </summary>
+        public string FontFamily
+        {
+            get => Font.Family;
+            set => Font = Font.With(family: ParseFontFamily(value) ?? FrameworkFont.Regular.Family);
+        }
+
+        #region Links and drawables among the text
+
+        // Only text with links takes mouse input, so plain text never stands in the way of what's under it.
+        public override bool HandlePositionalInput => hasLinks;
+
+        // A link among the text shows the hand, as a Hyperlink on its own does; the rest of the text shows its parents' cursor.
+        Cursor IHasDefaultCursor.DefaultCursor => hoveredLink?.Link.IsEnabled == true ? Cursors.Hand : null;
+
+        /// <summary>The style of the glyph at a point in the TextBlock's own space, or null where there's none.</summary>
+        internal TextStyle StyleAt(Vector2 position)
+        {
+            var layout = LaidOut;
+
+            if (layout == null)
+                return null;
+
+            var characters = FrameworkInternals.Characters(this);
+
+            foreach (var line in layout.Lines)
+            {
+                if (position.Y < line.Top || position.Y >= line.Top + line.Height)
+                    continue;
+
+                for (int i = line.Start; i < line.End && i < characters.Count; i++)
+                {
+                    var glyph = characters[i];
+                    float left = glyph.DrawRectangle.Left - glyph.XOffset;
+
+                    if (position.X >= left && position.X < left + glyph.XAdvance)
+                        return layout.GlyphStyles[i];
+                }
+            }
+
+            return null;
+        }
+
+        private HyperlinkInline linkAt(Vector2 screenSpacePosition) => StyleAt(ToLocalSpace(screenSpacePosition))?.Link;
+
+        private void setHoveredLink(HyperlinkInline link)
+        {
+            if (link == hoveredLink)
+                return;
+
+            if (hoveredLink != null)
+                hoveredLink.Hovered = false;
+
+            hoveredLink = link;
+
+            if (link != null)
+                link.Hovered = true;
+
+            Invalidate(Invalidation.DrawNode);
+        }
+
+        // Hover isn't taken, so a button or list row around the text still sees the mouse.
+        protected override bool OnHover(HoverEvent e)
+        {
+            setHoveredLink(linkAt(e.ScreenSpaceMousePosition));
+            return false;
+        }
+
+        protected override bool OnMouseMove(MouseMoveEvent e)
+        {
+            setHoveredLink(linkAt(e.ScreenSpaceMousePosition));
+            return false;
+        }
+
+        protected override void OnHoverLost(HoverLostEvent e) => setHoveredLink(null);
+
+        protected override bool OnClick(ClickEvent e) => linkAt(e.ScreenSpaceMousePosition)?.Link.Activate(host) == true;
+
+        protected override void Update()
+        {
+            base.Update();
+
+            if (uiContainers.Count > 0 || uiLayer != null)
+                syncUILayer();
+        }
+
+        // The drawables among the text live in a layer next to the TextBlock (which, being a sprite, can't hold children),
+        // in the same parent, following the TextBlock's place and size.
+        private void syncUILayer()
+        {
+            var layout = LaidOut;
+
+            uiLayer ??= new InlineUILayer(this);
+
+            if (uiLayer.Parent != Parent && !uiLayer.Disposed)
+            {
+                (uiLayer.Parent as Container<Drawable>)?.Remove(uiLayer, false);
+
+                if (Parent is Container<Drawable> container)
+                    container.Add(uiLayer);
+            }
+
+            // A drawable's place in the line is its size, so a drawable that resized lays the text out again.
+            if (uiLayer.Sync(layout == null ? Array.Empty<InlineUIContainer>() : uiContainers, layout, FrameworkInternals.Characters(this)))
+                FrameworkInternals.Invalidate(this, true, false);
+        }
+
+        internal bool Disposed => IsDisposed;
+
+        protected override void Dispose(bool isDisposing)
+        {
+            uiLayer?.Expire();
+            base.Dispose(isDisposing);
+        }
+
+        #endregion
+
+        /// <summary>The first family of a WPF-style list, or null for none.</summary>
+        internal static string ParseFontFamily(string value)
+        {
+            if (value == null)
+                return null;
+
+            int comma = value.IndexOf(',');
+            string family = (comma < 0 ? value : value.Substring(0, comma)).Trim().Trim('"', '\'');
+            return family.Length > 0 ? family : null;
         }
 
         public TextDecorations TextDecorations
@@ -306,7 +522,7 @@ namespace OsuXaml.Controls
 
                 ColourInfo colourOf(TextStyle style)
                 {
-                    if (style?.Foreground is not Colour4 foreground || !parentColour.HasSingleColour)
+                    if ((style?.Link?.CurrentForeground ?? style?.Foreground) is not Colour4 foreground || !parentColour.HasSingleColour)
                         return DrawColourInfo.Colour;
 
                     if (colours.TryGetValue(style, out var colour))
@@ -353,7 +569,11 @@ namespace OsuXaml.Controls
                         while (stop < end && layout.GlyphStyles[stop] == style)
                             stop++;
 
-                        if (style.Decorations != TextDecorations.None)
+                        var decorations = style.Container != null ? TextDecorations.None
+                            : style.Link?.Underlined == true ? style.Decorations | TextDecorations.Underline
+                            : style.Decorations;
+
+                        if (decorations != TextDecorations.None)
                         {
                             var first = characters[start];
                             var last = characters[stop - 1];
@@ -362,9 +582,9 @@ namespace OsuXaml.Controls
                             float size = style.Font.Size;
                             float thickness = Math.Max(1, size * 0.06f);
 
-                            if (style.Decorations.HasFlag(TextDecorations.Underline))
+                            if (decorations.HasFlag(TextDecorations.Underline))
                                 addLine(line.Baseline + size * 0.08f);
-                            if (style.Decorations.HasFlag(TextDecorations.Strikethrough))
+                            if (decorations.HasFlag(TextDecorations.Strikethrough))
                                 addLine(line.Baseline - size * 0.27f - thickness / 2);
 
                             void addLine(float top) => lines.Add(new Part
@@ -459,6 +679,8 @@ namespace OsuXaml.Controls
         private readonly TextBlock owner;
         private readonly StyledGlyphStore store;
         private readonly FontUsage font;
+        private readonly TextAlignment alignment;
+        private readonly float alignWidth;
         private readonly bool wrap;
         private readonly bool trim;
         private readonly string ellipsis;
@@ -482,15 +704,15 @@ namespace OsuXaml.Controls
         private char arriving;
         private TextStyle arrivingStyle;
 
-        public TextBlockTextBuilder(TextBlock owner, ITexturedGlyphLookupStore store, FontUsage font, float maxWidth, bool wrap, bool trim, string ellipsis,
-                                    bool useFontSizeAsHeight, Vector2 startOffset, Vector2 spacing, List<TextBuilderGlyph> characters, char[] neverFixedWidthCharacters,
+        public TextBlockTextBuilder(TextBlock owner, ITexturedGlyphLookupStore store, FontUsage font, float maxWidth, TextAlignment alignment, float alignWidth, bool wrap, bool trim,
+                                    string ellipsis, bool useFontSizeAsHeight, Vector2 startOffset, Vector2 spacing, List<TextBuilderGlyph> characters, char[] neverFixedWidthCharacters,
                                     char fallbackCharacter, char fixedWidthReferenceCharacter)
-            : this(owner, new StyledGlyphStore(store, layoutFont(font)), layoutFont(font), maxWidth, wrap, trim, ellipsis, useFontSizeAsHeight, startOffset, spacing,
-                characters, neverFixedWidthCharacters, fallbackCharacter, fixedWidthReferenceCharacter)
+            : this(owner, new StyledGlyphStore(store, layoutFont(font)), layoutFont(font), maxWidth, alignment, alignWidth, wrap, trim, ellipsis, useFontSizeAsHeight, startOffset,
+                spacing, characters, neverFixedWidthCharacters, fallbackCharacter, fixedWidthReferenceCharacter)
         {
         }
 
-        private TextBlockTextBuilder(TextBlock owner, StyledGlyphStore store, FontUsage font, float maxWidth, bool wrap, bool trim, string ellipsis,
+        private TextBlockTextBuilder(TextBlock owner, StyledGlyphStore store, FontUsage font, float maxWidth, TextAlignment alignment, float alignWidth, bool wrap, bool trim, string ellipsis,
                                      bool useFontSizeAsHeight, Vector2 startOffset, Vector2 spacing, List<TextBuilderGlyph> characters, char[] neverFixedWidthCharacters,
                                      char fallbackCharacter, char fixedWidthReferenceCharacter)
             : base(store, font, maxWidth, useFontSizeAsHeight, startOffset, spacing, characters, neverFixedWidthCharacters, fallbackCharacter, fixedWidthReferenceCharacter)
@@ -498,6 +720,8 @@ namespace OsuXaml.Controls
             this.owner = owner;
             this.store = store;
             this.font = font;
+            this.alignment = alignment;
+            this.alignWidth = alignWidth;
             this.wrap = wrap;
             this.trim = trim;
             this.ellipsis = ellipsis;
@@ -549,6 +773,7 @@ namespace OsuXaml.Controls
             }
 
             placeLines();
+            alignLines();
             laidOut = true;
         }
 
@@ -720,12 +945,116 @@ namespace OsuXaml.Controls
                 if (float.IsNaN(baseline))
                     baseline = float.IsNaN(spaceBaseline) ? lineTop + height * 0.8f : spaceBaseline;
 
+                // A drawable among the text stands on the baseline and can push it, and the line, further down than the fonts would.
+                bool hasElement = false;
+                float descent = 0;
+
+                for (int g = start; g < end; g++)
+                {
+                    if (GlyphStyles[g].Container != null)
+                        hasElement = true;
+                    else if (!char.IsWhiteSpace(Characters[g].Character))
+                        descent = Math.Max(descent, GlyphStyles[g].Font.Size - Characters[g].Baseline);
+                }
+
+                if (hasElement)
+                    height = Math.Max(height, baseline - lineTop + descent);
+
                 Lines.Add(new TextLine(start, end, lineTop, height, baseline));
                 top = lineTop + height + spacing.Y;
             }
 
             if (useFontSizeAsHeight && Lines.Count > 0)
                 FrameworkInternals.SetBounds(this, new Vector2(Bounds.X, Lines[^1].Top + Lines[^1].Height));
+        }
+
+        // Moves each line across the width: the align width, or the widest line when there's none (or it's narrower).
+        private void alignLines()
+        {
+            if (alignment == TextAlignment.Left || Lines.Count == 0)
+                return;
+
+            var widths = new float[Lines.Count];
+            float widest = 0;
+
+            for (int i = 0; i < Lines.Count; i++)
+                widest = Math.Max(widest, widths[i] = lineWidth(Lines[i]));
+
+            float target = Math.Max(widest, alignWidth - startOffset.X);
+
+            for (int i = 0; i < Lines.Count; i++)
+            {
+                var line = Lines[i];
+                float extra = target - widths[i];
+
+                if (extra <= 0 || line.End == line.Start)
+                    continue;
+
+                if (alignment == TextAlignment.Justify)
+                {
+                    // Only lines that wrapped are spread; a line a break or the text ends stays where it is, as in WPF.
+                    if (i == Lines.Count - 1 || breakSizes[i] > 0)
+                        continue;
+
+                    int last = line.End - 1;
+
+                    while (last > line.Start && char.IsWhiteSpace(Characters[last].Character))
+                        last--;
+
+                    int gaps = 0;
+
+                    for (int g = line.Start; g < last; g++)
+                    {
+                        if (char.IsWhiteSpace(Characters[g].Character))
+                            gaps++;
+                    }
+
+                    if (gaps == 0)
+                        continue;
+
+                    float perGap = extra / gaps;
+                    float shift = 0;
+
+                    for (int g = line.Start; g <= last; g++)
+                    {
+                        if (shift != 0)
+                            move(g, shift);
+
+                        if (char.IsWhiteSpace(Characters[g].Character))
+                            shift += perGap;
+                    }
+                }
+                else
+                {
+                    float shift = alignment == TextAlignment.Center ? extra / 2 : extra;
+
+                    for (int g = line.Start; g < line.End; g++)
+                        move(g, shift);
+                }
+            }
+
+            FrameworkInternals.SetBounds(this, new Vector2(Math.Max(Bounds.X, startOffset.X + target), Bounds.Y));
+
+            void move(int index, float x)
+            {
+                var glyph = Characters[index];
+                FrameworkInternals.SetDrawRectangle(ref glyph, glyph.DrawRectangle.Offset(x, 0));
+                Characters[index] = glyph;
+            }
+        }
+
+        // From the line's start to the end of its last glyph that isn't a space.
+        private float lineWidth(TextLine line)
+        {
+            for (int g = line.End - 1; g >= line.Start; g--)
+            {
+                var glyph = Characters[g];
+
+                if (!char.IsWhiteSpace(glyph.Character))
+                    return glyph.DrawRectangle.Left - glyph.XOffset + glyph.XAdvance - startOffset.X;
+            }
+
+            return 0;
         }
     }
 
@@ -749,6 +1078,9 @@ namespace OsuXaml.Controls
 
         public ITexturedCharacterGlyph Get(string fontName, char character)
         {
+            if (Style?.Container is InlineUIContainer container)
+                return new ElementGlyph(container.LaidOutSize / font.Size);
+
             var runFont = Style?.Font ?? font;
 
             // TextBuilder asks for its own font, then the same weight in any family, then any font at all.
@@ -769,6 +1101,30 @@ namespace OsuXaml.Controls
         }
 
         public Task<ITexturedCharacterGlyph> GetAsync(string fontName, char character) => Task.FromResult(Get(fontName, character));
+
+        /// <summary>The room a drawable among the text takes: its size, standing on the baseline. Sizes are in units of the builder's font size.</summary>
+        private sealed class ElementGlyph : ITexturedCharacterGlyph
+        {
+            private readonly Vector2 size;
+
+            public ElementGlyph(Vector2 size)
+            {
+                this.size = size;
+            }
+
+            public Texture Texture => null;
+            public float XOffset => 0;
+            public float YOffset => 0;
+            public float XAdvance => size.X;
+            public float Baseline => size.Y;
+            public char Character => InlineUIContainer.Placeholder;
+            public float Width => size.X;
+            public float Height => size.Y;
+
+            public float GetKerning<T>(T lastGlyph)
+                where T : ICharacterGlyph
+                => 0;
+        }
 
         private sealed class ScaledGlyph : ITexturedCharacterGlyph
         {
@@ -793,6 +1149,88 @@ namespace OsuXaml.Controls
             public float GetKerning<T>(T lastGlyph)
                 where T : ICharacterGlyph
                 => glyph.GetKerning(lastGlyph) * scale;
+        }
+    }
+
+    /// <summary>
+    /// Shows the drawables of a TextBlock's <see cref="InlineUIContainer"/>s where their places are in its text. It sits next to the
+    /// TextBlock in the same parent and copies the TextBlock's place and size each frame, so its space is the TextBlock's own.
+    /// </summary>
+    internal partial class InlineUILayer : Container
+    {
+        private readonly TextBlock owner;
+
+        public InlineUILayer(TextBlock owner)
+        {
+            this.owner = owner;
+        }
+
+        internal bool Disposed => IsDisposed;
+
+        /// <summary>Shows exactly these containers' drawables, at their glyphs. Returns whether any drawable's size changed since it was laid out.</summary>
+        public bool Sync(IReadOnlyList<InlineUIContainer> containers, TextBlockTextBuilder layout, List<TextBuilderGlyph> characters)
+        {
+            foreach (var child in Children.ToArray())
+            {
+                if (!containers.Any(c => ReferenceEquals(c.Child, child)))
+                    Remove(child, false);
+            }
+
+            bool resized = false;
+
+            foreach (var container in containers)
+            {
+                var child = container.Child;
+
+                if (child == null)
+                    continue;
+
+                if (child.Parent != this)
+                {
+                    (child.Parent as Container<Drawable>)?.Remove(child, false);
+                    child.Anchor = child.Origin = Anchor.TopLeft;
+                    Add(child);
+                }
+
+                if (child.LayoutSize != container.LaidOutSize)
+                {
+                    container.LaidOutSize = child.LayoutSize;
+                    resized = true;
+                }
+            }
+
+            if (layout != null)
+            {
+                for (int i = 0; i < layout.GlyphStyles.Count && i < characters.Count; i++)
+                {
+                    if (layout.GlyphStyles[i].Container?.Child is Drawable child && child.Parent == this)
+                        child.Position = characters[i].DrawRectangle.TopLeft;
+                }
+            }
+
+            return resized;
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+
+            if (owner.Disposed)
+            {
+                Expire();
+                return;
+            }
+
+            Anchor = owner.Anchor;
+            Origin = owner.Origin;
+            Position = owner.Position;
+            Margin = owner.Margin;
+            Scale = owner.Scale;
+            Rotation = owner.Rotation;
+            Size = owner.DrawSize;
+
+            // Hidden with the TextBlock, and when it has left this parent.
+            Alpha = owner.Parent == Parent && owner.IsPresent ? owner.Alpha : 0;
         }
     }
 }

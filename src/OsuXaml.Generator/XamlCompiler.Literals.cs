@@ -125,6 +125,19 @@ namespace OsuXaml.Generator
                 return null;
             }
 
+            // Cursor="Hand" names one of the shapes in Cursors, as in WPF, so a misspelt name fails the build.
+            if (full == "OsuXaml.Controls.Cursor")
+            {
+                var shapes = compilation.GetTypeByMetadataName("OsuXaml.Controls.Cursors")?.GetMembers().OfType<IPropertySymbol>()
+                                        .Where(m => m.IsStatic).Select(m => m.Name).ToList() ?? new List<string>();
+
+                if (shapes.Contains(s))
+                    return $"global::OsuXaml.Controls.Cursors.{s}";
+
+                hint = ". Valid values: " + string.Join(", ", shapes);
+                return null;
+            }
+
             // Any type with a static Parse(string) accepts a string, e.g. RowDefinitions="Auto,*,40".
             if (type is INamedTypeSymbol named && named.GetMembers("Parse").OfType<IMethodSymbol>()
                                                     .Any(m => m.IsStatic && m.Parameters.Length == 1 && m.Parameters[0].Type.SpecialType == SpecialType.System_String

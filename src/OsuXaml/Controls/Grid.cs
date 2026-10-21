@@ -178,7 +178,8 @@ namespace OsuXaml.Controls
     /// <summary>
     /// WPF-style Grid: rows and columns sized by pixels, by content (Auto) or by weight (*),
     /// with children placed by the Grid.Row / Grid.Column / Grid.RowSpan / Grid.ColumnSpan attached properties.
-    /// Definitions are written compactly (<c>ColumnDefinitions="Auto,*,2*"</c>) or as WPF elements with limits
+    /// A child spanning several tracks widens them to fit, with WPF's rules. Definitions are written compactly
+    /// (<c>ColumnDefinitions="Auto,*,2*"</c>) or as WPF elements with limits
     /// (<c>&lt;ColumnDefinition Width="2*" MinWidth="40" /&gt;</c>). The grid lays out every frame, so lengths changed
     /// at runtime (by code or a <see cref="GridSplitter"/>) apply on the next frame.
     /// </summary>
@@ -312,27 +313,52 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>
-        /// Sizes one axis: pixels first, then Auto from the largest single-span child, then stars share what is left.
+        /// Sizes one axis: pixels first, then Auto from the content, then stars share what is left.
         /// Every track is kept within its Min/Max limits. When the grid is sizing to its content (infinite space),
-        /// a star track takes the size its content needs.
+        /// a star track takes the size its content needs. Children spanning several tracks are fitted after the
+        /// single-track ones, narrower spans first (see <see cref="fitSpan"/>).
         /// </summary>
         private float[] solve(IReadOnlyList<DefinitionBase> defs, float available, float spacing, List<Vector2> desired, Func<Vector2, float> axis,
                               Func<Slot, (int index, int span)> cellOf)
         {
+            bool starsFromContent = float.IsInfinity(available);
             var sizes = new float[defs.Count];
             var content = new float[defs.Count];
+            var spans = new Dictionary<(int first, int last), float>();
 
             for (int i = 0; i < Slots.Count; i++)
             {
                 var (index, spanCount) = cellOf(Slots[i]);
-                if (spanCount != 1)
-                    continue;
-
-                index = Math.Clamp(index, 0, defs.Count - 1);
+                var (first, last) = span(index, spanCount, defs.Count);
 
                 float size = axis(desired[i]);
-                if (float.IsFinite(size))
-                    content[index] = Math.Max(content[index], size);
+                if (!float.IsFinite(size))
+                    continue;
+
+                if (first == last)
+                    content[first] = Math.Max(content[first], size);
+                else
+                {
+                    // Like WPF, only the largest child per range counts; the spacing between the tracks is already there.
+                    float inTracks = size - spacing * (last - first);
+                    spans[(first, last)] = spans.TryGetValue((first, last), out float other) ? Math.Max(other, inTracks) : inTracks;
+                }
+            }
+
+            for (int i = 0; i < defs.Count; i++)
+            {
+                sizes[i] = defs[i].Length.Type switch
+                {
+                    GridUnitType.Pixel => defs[i].Constrain(defs[i].Length.Value),
+                    GridUnitType.Auto => defs[i].Constrain(content[i]),
+                    _ => starsFromContent ? content[i] : 0,
+                };
+            }
+
+            foreach (var ((first, last), size) in spans.OrderBy(s => s.Key.last - s.Key.first).ThenBy(s => s.Key.first))
+            {
+                if (spanSizesToContent(defs, first, last, starsFromContent))
+                    fitSpan(defs, sizes, first, last, size);
             }
 
             float used = spacing * (defs.Count - 1);
@@ -340,35 +366,23 @@ namespace OsuXaml.Controls
 
             for (int i = 0; i < defs.Count; i++)
             {
-                switch (defs[i].Length.Type)
-                {
-                    case GridUnitType.Pixel:
-                        sizes[i] = defs[i].Constrain(defs[i].Length.Value);
-                        used += sizes[i];
-                        break;
-
-                    case GridUnitType.Auto:
-                        sizes[i] = defs[i].Constrain(content[i]);
-                        used += sizes[i];
-                        break;
-
-                    case GridUnitType.Star:
-                        stars.Add(i);
-                        break;
-                }
+                if (defs[i].Length.IsStar)
+                    stars.Add(i);
+                else
+                    used += sizes[i];
             }
 
             if (stars.Count == 0)
                 return sizes;
 
-            if (float.IsInfinity(available))
+            if (starsFromContent)
             {
                 float unit = 0;
 
                 foreach (int i in stars)
                 {
                     if (defs[i].Length.Value > 0)
-                        unit = Math.Max(unit, content[i] / defs[i].Length.Value);
+                        unit = Math.Max(unit, sizes[i] / defs[i].Length.Value);
                 }
 
                 foreach (int i in stars)
@@ -378,6 +392,88 @@ namespace OsuXaml.Controls
                 shareStars(defs, stars, sizes, Math.Max(0, available - used));
 
             return sizes;
+        }
+
+        /// <summary>
+        /// Whether a spanning child's size feeds into the tracks it spans. As in WPF, that needs at least one track
+        /// sized by content (Auto, or a star while the grid sizes to its content) and no star that shares out
+        /// remaining space: a span through such a star leaves its Auto tracks tight, and a span of only pixel tracks
+        /// already has its size.
+        /// </summary>
+        private static bool spanSizesToContent(IReadOnlyList<DefinitionBase> defs, int first, int last, bool starsFromContent)
+        {
+            bool content = false;
+
+            for (int i = first; i <= last; i++)
+            {
+                switch (defs[i].Length.Type)
+                {
+                    case GridUnitType.Auto:
+                        content = true;
+                        break;
+
+                    case GridUnitType.Star when starsFromContent:
+                        content = true;
+                        break;
+
+                    case GridUnitType.Star:
+                        return false;
+                }
+            }
+
+            return content;
+        }
+
+        /// <summary>
+        /// Grows the tracks <paramref name="first"/> to <paramref name="last"/> until they hold <paramref name="size"/>,
+        /// with WPF's rules (EnsureMinSizeInDefinitionRange). While the tracks' maximums allow it, the extra goes to the
+        /// tracks that aren't Auto (pixel, or a star sized by content) first, so Auto tracks stay tight; Auto tracks only
+        /// take what those can't. Each group shares equally, filling the tracks with the smallest maximum first.
+        /// When even the maximums are too small, every track grows past its maximum, the smaller ones faster.
+        /// </summary>
+        private static void fitSpan(IReadOnlyList<DefinitionBase> defs, float[] sizes, int first, int last, float size)
+        {
+            int count = last - first + 1;
+            float rangeSize = 0, rangeMax = 0, maxMax = 0;
+
+            for (int i = first; i <= last; i++)
+            {
+                rangeSize += sizes[i];
+                rangeMax += maxOf(i);
+                maxMax = Math.Max(maxMax, maxOf(i));
+            }
+
+            if (size <= rangeSize)
+                return;
+
+            if (size <= rangeMax)
+            {
+                var order = Enumerable.Range(first, count).OrderBy(i => defs[i].Length.IsAuto).ThenBy(maxOf).ToList();
+                int others = order.Count(i => !defs[i].Length.IsAuto);
+                float extra = size - rangeSize;
+
+                for (int k = 0; k < count; k++)
+                {
+                    int i = order[k];
+                    float grown = Math.Min(sizes[i] + extra / ((k < others ? others : count) - k), maxOf(i));
+                    extra -= grown - sizes[i];
+                    sizes[i] = grown;
+                }
+            }
+            else
+            {
+                float equal = size / count;
+                float roomBelowMaxMax = maxMax * count - rangeMax;
+
+                for (int i = first; i <= last; i++)
+                {
+                    sizes[i] = Math.Max(sizes[i], equal < maxMax && roomBelowMaxMax > 0
+                        ? maxOf(i) + (maxMax - maxOf(i)) * (size - rangeMax) / roomBelowMaxMax
+                        : equal);
+                }
+            }
+
+            float maxOf(int i) => Math.Max(defs[i].MaxLength, sizes[i]);
         }
 
         /// <summary>
