@@ -195,7 +195,7 @@ public partial class MainView : CompositeDrawable
 | | `Path` | `Data="M 0,0 L 10,10 C ... Z"` (WPF 경로 문법), `<Geometry x:Key>` 리소스, `Stretch="Uniform"` |
 | | `Image` | `Source` (파일 경로 또는 osu! 텍스처 이름), `Stretch`, `StretchDirection`, `ImageFailed` |
 | | `Viewbox` | 자식 하나를 비율 유지하며 늘이거나 줄임, `Stretch`, `StretchDirection` |
-| | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome), `Size`, `Foreground` |
+| | `Icon` | `Kind="Solid.Check"` (osu!framework의 FontAwesome, 없는 이름은 비슷한 이름을 알려 주는 빌드 오류), `Size`, `Foreground` |
 | 공통 | 모든 요소 | `HorizontalAlignment`, `VerticalAlignment` (`Stretch` 기본), `Margin`, `Width`/`Height`, `Visibility`, `ToolTip`, `ContextMenu` |
 
 패널과 `ItemsSource`도 함께 쓸 수 있습니다 (`<WrapPanel ItemsSource="{Bind Tags}">`). `{Bind}`처럼 경로를 비우면 아이템 자체에 바인딩됩니다.
@@ -254,6 +254,7 @@ private async void OnSettings()
 
 - `VirtualizationMode="Recycling"`은 벗어난 행의 컨테이너를 버리지 않고 새로 보이는 행에 다시 씁니다. `IsVirtualizing="False"`는 예전처럼 모든 행을 미리 만듭니다. WPF처럼 `VirtualizingStackPanel.IsVirtualizing`이라고 써도 됩니다.
 - `TreeView`는 WPF처럼 `IsVirtualizing="True"`를 줄 때만 가상화합니다. 그러면 펼친 단계마다 보이는 노드만 만들고, 선택된 노드와 그 조상은 화면 밖에서도 남습니다. 스크롤해서 사라졌다 돌아온 노드는 펼침 상태를 그대로 가지고 (`IsExpandedBinding`이 있으면 뷰모델에서, 없으면 아이템별로 기억합니다), `ExpandSubtree()`는 하위 노드를 화면에 나타날 때 펼칩니다.
+- `TreeView.ScrollIntoView`는 아직 만들어지지 않은 중첩 노드도 찾습니다. 아이템과 그 자식을 `HierarchicalDataTemplate`으로 따라가며 깊이 우선으로 찾은 뒤, 조상을 펼치고 그 경로의 노드를 만들어 스크롤합니다. 가상화 여부와 상관없이 동작합니다 (WPF는 이미 만들어진 노드만 찾습니다).
 - 한 번 보인 행은 잰 높이를, 아직 안 보인 행은 그 평균을 씁니다 (트리 노드는 펼쳐져 있어도 머리글 높이로 셉니다). 행 높이가 같으면 스크롤 범위가 정확하고, 다르면 스크롤하면서 맞춰집니다. 위쪽 추정치가 고쳐질 때는 스크롤 위치를 같이 옮겨서 보고 있는 행이 움직이지 않습니다.
 - 선택, `ScrollIntoView`, 키보드 이동(Home/End 포함)은 컨테이너가 없는 행에도 동작합니다. 편집 중이거나 포커스를 가진 행은 화면 밖으로 나가도 남습니다.
 - `ContainerFromIndex`/`ContainerFromItem`은 컨테이너가 없는 행에 `null`을 돌려줍니다. `ListView`와 `DataGrid`의 `Auto` 열은 지금까지 보인 셀 중 가장 넓은 폭을 유지합니다.
@@ -263,6 +264,7 @@ private async void OnSettings()
 - 매 프레임 자식 업데이트가 끝난 뒤(`UpdateAfterChildren`) 패널이 자식을 측정(Measure)하고 배치(Arrange)합니다. 이 시점에는 자동 크기 자식의 크기가 이미 확정되어 있습니다.
 - 자식마다 `Slot`이 하나씩 붙어서 정렬과 여백을 처리합니다. 기본값은 WPF처럼 `Stretch`이고, 크기를 명시한 자식은 가운데에, 텍스트처럼 내용 크기인 자식은 시작 위치에 놓입니다.
 - 다른 패널 안에 있지 않고 크기도 없는 패널은 내용 크기에 맞춰 스스로 크기를 정합니다.
+- `Grid`에서 여러 행·열에 걸친 자식은 WPF처럼 걸친 칸들을 넓혀서 들어갑니다. 걸친 칸이 모두 `Auto`면 모자란 만큼을 똑같이 나눠 늘리고, `Auto`가 아닌 칸(픽셀 칸 포함)이 섞여 있으면 그 칸이 먼저 늘어나 `Auto` 칸은 딱 맞게 남습니다. 남은 공간을 나누는 `*` 칸을 지나는 자식은 크기 계산에 들어가지 않습니다.
 - 첨부 속성은 생성기가 `Grid.SetRow(element, 1)` 같은 정적 메서드 호출로 바꿉니다. `Set이름(Drawable, 값)` 형태의 정적 메서드만 있으면 직접 만든 첨부 속성도 똑같이 동작합니다.
 - `RowDefinitions` 문법 오류는 빌드 오류로 나옵니다. 정적 `Parse(string)` 메서드가 있는 타입은 모두 문자열로 쓸 수 있습니다.
 
@@ -274,12 +276,9 @@ private async void OnSettings()
 
 - 핫 리로드 연결 (`HotReloadCallbackReceiver`로 뷰 재생성), IDE 자동완성 스키마, 제네릭 타입 요소
 - 여러 줄 `TextBox`에는 스크롤바가 없습니다 (캐럿과 마우스 휠로만 스크롤). `TextBlock`의 `TextAlignment`, 글꼴 패밀리 지정, 인라인 `Hyperlink`/`InlineUIContainer`도 없습니다
-- 가상화된 `TreeView`의 `ScrollIntoView`는 아직 만들어지지 않은 중첩 노드를 찾지 못합니다 (최상위 아이템과 이미 만들어진 노드만 됩니다). WPF도 같습니다
 - `DataGrid`의 `AutoGenerateColumns` (리플렉션을 쓰지 않으므로 열을 직접 적어야 합니다), `CheckBox`의 `IsThreeState`, `Calendar`의 여러 날짜 선택, `TabControl` 탭이 넘칠 때의 스크롤
 - 도형은 단색 `Fill`/`Stroke`만 받습니다 (그라데이션 브러시 없음). 선 끝과 이음은 항상 둥글고, 점선과 `FillRule`은 없습니다
 - 마우스 커서 모양을 바꾸지 못해서 `GridSplitter`, `Hyperlink` 같은 곳은 색으로만 반응합니다
-- `Icon Kind`의 오타는 빌드 오류가 아니라 실행 중 물음표 아이콘으로 나타납니다
-- 여러 칸에 걸친 Grid 자식은 Auto 크기 계산에 들어가지 않습니다 (WPF는 반영합니다)
 - 패널은 매 프레임 측정합니다. 프레임당 캐시는 있지만 무효화 기반 최적화는 아직 없습니다
 - 백그라운드 스레드에서 뷰모델을 바꿀 때의 Update 스레드 마샬링
 - 한글 글꼴: osu!framework 기본 Roboto에는 한글이 없어 샘플은 영어 UI입니다
