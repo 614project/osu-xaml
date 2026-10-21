@@ -26,7 +26,8 @@ namespace OsuXaml
 
         public void UnbindAll()
         {
-            foreach (var b in bindings)
+            // Unbinding can remove item scopes from this one (a bound list taking its rows down), so walk a copy.
+            foreach (var b in bindings.ToArray())
                 b.UnbindAll();
 
             bindings.Clear();

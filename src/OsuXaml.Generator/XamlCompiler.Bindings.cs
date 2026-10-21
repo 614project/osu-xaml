@@ -91,7 +91,7 @@ namespace OsuXaml.Generator
                 }
 
                 dc = named == rootElement ? "this" : "this." + elementName;
-                dcType = named == rootElement ? rootType : resolveType(named.Name.NamespaceName, named.Name.LocalName);
+                dcType = named == rootElement ? rootType : elementType(named);
                 toNamedElement = true;
                 return dcType != null;
             }
@@ -139,7 +139,7 @@ namespace OsuXaml.Generator
                     return;
                 }
 
-                line(member is IEventSymbol ? $"{v}.{member.Name} += {handler};" : $"{v}.{member.Name} = {handler};");
+                line(member is IEventSymbol ? $"{firstBuildOnly(v)}{v}.{member.Name} += {handler};" : $"{v}.{member.Name} = {handler};");
                 return;
             }
 
@@ -164,7 +164,7 @@ namespace OsuXaml.Generator
 
                 if (sourceBindableValue != null && SymbolEqualityComparer.Default.Equals(sourceBindableValue, targetBindableValue))
                 {
-                    line($"global::OsuXaml.XamlBinding.TwoWay({v}.{member.Name}, {expr});");
+                    line($"{firstBuildOnly(v)}global::OsuXaml.XamlBinding.TwoWay({v}.{member.Name}, {expr});");
                     return;
                 }
 
@@ -206,7 +206,7 @@ namespace OsuXaml.Generator
             if (listItem != null && !oneWay && isBindableListClass(target) && isBindableListClass(sourceType)
                 && SymbolEqualityComparer.Default.Equals(bindableListItemType(target), listItem))
             {
-                line($"global::OsuXaml.XamlBinding.TwoWayList({v}.{member.Name}, {expr});");
+                line($"{firstBuildOnly(v)}global::OsuXaml.XamlBinding.TwoWayList({v}.{member.Name}, {expr});");
                 return;
             }
 

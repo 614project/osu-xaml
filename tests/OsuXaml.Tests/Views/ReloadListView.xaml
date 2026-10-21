@@ -1,0 +1,7 @@
+<FillFlowContainer xmlns="osu-xaml" xmlns:x="osu-xaml:x" xmlns:local="clr-namespace:OsuXaml.Tests.Views"
+                   x:Class="OsuXaml.Tests.Views.ReloadListView" x:DataType="local:ReloadViewModel"
+                   RelativeSizeAxes="Both" Direction="Vertical" ItemsSource="{Bind Items}">
+  <FillFlowContainer.ItemTemplate>
+    <SpriteText Text="{Bind}" />
+  </FillFlowContainer.ItemTemplate>
+</FillFlowContainer>

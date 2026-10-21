@@ -1,0 +1,3 @@
+<Calendar xmlns="osu-xaml" xmlns:x="osu-xaml:x" xmlns:local="clr-namespace:OsuXaml.Tests.Views"
+          x:Class="OsuXaml.Tests.Views.ReloadCalendar" x:DataType="local:ReloadViewModel"
+          SelectionMode="MultipleRange" SelectedDates="{Bind Days}" />
