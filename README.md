@@ -277,7 +277,7 @@ private async void OnSettings()
 ```
 
 - 포인터 아래에서 커서가 있는 가장 깊은 요소의 모양이 나옵니다. 텍스트와 테두리처럼 입력을 받지 않는 요소에 준 커서도 됩니다. 없으면 기본 화살표입니다.
-- `Hyperlink`는 손 모양, `GridSplitter`는 크기 조절 방향의 양방향 화살표, `TextBox`·`PasswordBox`·편집 가능한 `ComboBox`는 텍스트 커서, `ListView`와 `DataGrid`의 열 경계는 좌우 화살표를 스스로 씁니다. 요소에 직접 준 `Cursor`가 이깁니다. 비활성 `Hyperlink`와 `GridSplitter`는 부모의 커서를 따릅니다.
+- `Hyperlink`(`TextBlock` 안의 인라인 링크 포함)는 손 모양, `GridSplitter`는 크기 조절 방향의 양방향 화살표, `TextBox`·`PasswordBox`·편집 가능한 `ComboBox`는 텍스트 커서(여러 줄 `TextBox`의 스크롤바 위에서는 화살표), `ListView`와 `DataGrid`의 열 경계는 좌우 화살표를 스스로 씁니다. 요소에 직접 준 `Cursor`가 이깁니다. 비활성 `Hyperlink`와 `GridSplitter`는 부모의 커서를 따릅니다.
 - 끄는 동안에는 포인터가 벗어나도 끌고 있는 요소의 커서를 유지합니다. 열린 팝업이나 모달 대화상자에 가려진 요소의 커서는 나오지 않습니다.
 - `CursorService.OverrideCursor = Cursors.Wait`는 WPF의 `Mouse.OverrideCursor`처럼 앱 전체의 커서를 바꾸고, `null`로 되돌립니다. 코드에서는 `CursorService.SetCursor(element, Cursors.Hand)`로 줍니다.
 - osu!framework에는 커서 API가 없어서 SDL3로 OS 커서를 직접 바꿉니다. SDL2 백엔드나 OS 커서를 숨기고 직접 그리는 게임에서는 화면에 변화가 없습니다. `Cursors.None`은 OS 커서를 숨깁니다.

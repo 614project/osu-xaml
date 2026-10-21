@@ -93,13 +93,13 @@ namespace OsuXaml.Controls
             };
         }
 
+        /// <summary>Raised after <see cref="Content"/> changes.</summary>
+        internal event Action ContentSet;
+
         /// <summary>
         /// What the control shows: a string becomes a <see cref="TextBlock"/>, a drawable is shown as is,
         /// and other objects go through <see cref="ContentTemplate"/> (or their ToString()).
         /// </summary>
-        /// <summary>Raised after <see cref="Content"/> changes.</summary>
-        internal event Action ContentSet;
-
         public object Content
         {
             get => content;

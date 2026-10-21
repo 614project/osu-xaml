@@ -134,11 +134,17 @@ namespace OsuXaml.Controls
             });
         }
 
+        /// <summary>A scroll bar over the text, which shows the arrow rather than the box's text cursor.</summary>
+        private partial class TextBoxScrollBar : ScrollBar, IHasDefaultCursor
+        {
+            Cursor IHasDefaultCursor.DefaultCursor => Cursors.Arrow;
+        }
+
         private static ScrollBar createScrollBar(Orientation orientation)
         {
             bool vertical = orientation == Orientation.Vertical;
 
-            return new ScrollBar
+            return new TextBoxScrollBar
             {
                 Orientation = orientation,
                 ShowArrows = false,

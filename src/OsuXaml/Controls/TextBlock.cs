@@ -63,7 +63,7 @@ namespace OsuXaml.Controls
     /// width its panel offers (or its own Width), like WPF; a wrapping TextBlock in a horizontal StackPanel has unlimited width and stays on one line.
     /// Line breaks in the text start new lines, and <see cref="Inlines"/> (<see cref="Run"/>, <see cref="Bold"/>, <see cref="LineBreak"/>...) style parts of it.
     /// </summary>
-    public partial class TextBlock : SpriteText, ILayoutElement
+    public partial class TextBlock : SpriteText, ILayoutElement, IHasDefaultCursor
     {
         private static readonly char[] never_fixed_width_characters = { '.', ',', ':', ' ', '\u00A0', '\u202F' };
 
@@ -342,6 +342,9 @@ namespace OsuXaml.Controls
 
         // Only text with links takes mouse input, so plain text never stands in the way of what's under it.
         public override bool HandlePositionalInput => hasLinks;
+
+        // A link among the text shows the hand, as a Hyperlink on its own does; the rest of the text shows its parents' cursor.
+        Cursor IHasDefaultCursor.DefaultCursor => hoveredLink?.Link.IsEnabled == true ? Cursors.Hand : null;
 
         /// <summary>The style of the glyph at a point in the TextBlock's own space, or null where there's none.</summary>
         internal TextStyle StyleAt(Vector2 position)
