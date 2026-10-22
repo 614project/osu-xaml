@@ -55,6 +55,12 @@ namespace OsuXaml.Tests
                 FrameworkInternals.Invalidate(text, true, true);
                 return moved && FrameworkInternals.Characters(text)[0].DrawRectangle.Width != 3;
             });
+
+            AddAssert("disposal is visible", () => !FrameworkInternals.IsDisposed(text));
+
+            bool ran = false;
+            AddStep("schedule on a drawable", () => FrameworkInternals.Schedule(text, () => ran = true));
+            AddUntilStep("it ran on the next update", () => ran);
         }
     }
 }

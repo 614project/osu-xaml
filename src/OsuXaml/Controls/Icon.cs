@@ -28,6 +28,7 @@ namespace OsuXaml.Controls
 
         private bool ownForeground;
         private ColourInfo? colourBeforeInherited;
+        private ColourInfo inheritedColour;
         private InheritedTextWatcher inheritance;
 
         public Icon()
@@ -40,7 +41,7 @@ namespace OsuXaml.Controls
         {
             base.LoadComplete();
 
-            inheritance = new InheritedTextWatcher(this, applyInherited);
+            inheritance = new InheritedTextWatcher(this, applyInherited) { IncludesOwner = true };
             inheritance.Attach();
         }
 
@@ -48,10 +49,14 @@ namespace OsuXaml.Controls
 
         private void applyInherited(InheritedText inherited)
         {
+            // As for a TextBlock: a colour set directly while the inherited one showed is the one to go back to.
+            if (colourBeforeInherited != null && !Colour.Equals(inheritedColour))
+                colourBeforeInherited = Colour;
+
             if (!ownForeground && inherited.Foreground is Colour4 foreground)
             {
                 colourBeforeInherited ??= Colour;
-                Colour = foreground;
+                Colour = inheritedColour = foreground;
             }
             else if (colourBeforeInherited is ColourInfo before)
             {

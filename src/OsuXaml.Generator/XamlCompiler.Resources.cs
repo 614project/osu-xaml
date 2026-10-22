@@ -189,6 +189,7 @@ namespace OsuXaml.Generator
                     s.Bindings = itemScope;
                     s.ItemsType = null;
                     s.InTemplate = true;
+                    s.ThemeHost = null;
                 })
                 : scope.With(s =>
                 {
@@ -200,6 +201,7 @@ namespace OsuXaml.Generator
                     s.Bindings = itemScope;
                     s.ItemsType = null;
                     s.InTemplate = true;
+                    s.ThemeHost = null;
                 });
 
             line($"var {t} = new global::OsuXaml.{className}<{typeName(itemType)}>(({item}, {itemScope}) =>");
@@ -287,6 +289,7 @@ namespace OsuXaml.Generator
                 s.Bindings = itemScope;
                 s.ItemsType = null;
                 s.InTemplate = true;
+                s.ThemeHost = null;
             });
 
             line($"var {t} = new global::OsuXaml.DataTemplate<{typeName(itemType)}>(({item}, {itemScope}) =>");
@@ -708,6 +711,56 @@ namespace OsuXaml.Generator
             {
                 expanding.Remove(resource);
             }
+        }
+
+        /// <summary>
+        /// <c>{ThemeResource Key}</c> on a property: bound at run time through <c>ThemeResources</c>, so the value follows the theme
+        /// that providers supply, converted to the property's type. The key isn't checked here, since theme libraries bring the values.
+        /// </summary>
+        private void emitThemeResource(string v, INamedTypeSymbol type, ISymbol member, string key, XObject source, Scope scope)
+        {
+            var target = member is IEventSymbol ? null : memberType(member);
+
+            if (target == null)
+            {
+                report(Diagnostics.UnknownMember, source, type.Name, member.Name + " (events take a method name)");
+                return;
+            }
+
+            var bindable = bindableClassValueType(target);
+
+            if (isTemplateType(target) || isItemBindingType(target) || target.TypeKind == TypeKind.Delegate
+                || (bindable == null && member is IPropertySymbol { SetMethod: var setter } && (setter == null || !canAccess(setter))))
+            {
+                report(Diagnostics.BadMarkup, source, $"{{ThemeResource}} can't be used for '{member.Name}'");
+                return;
+            }
+
+            string host = themeHost(v, type, scope, source);
+            if (host == null)
+                return;
+
+            string assignTarget = bindable != null ? $"element.{member.Name}.Value" : $"element.{member.Name}";
+
+            // The lambda gets the element rather than capturing it, so the binding holds nothing but the element's own entry.
+            line($"global::OsuXaml.ThemeResources.Bind<{typeName(type)}, {typeName(bindable ?? target)}>({scope.Bindings}, {host}, {v}, "
+                 + $"{SymbolDisplay.FormatLiteral(key, true)}, (element, value) => {assignTarget} = value);");
+        }
+
+        /// <summary>
+        /// The drawable a theme binding on <paramref name="v"/> follows: the element itself, or for a brush or inline the nearest
+        /// drawable around it. Reports one when there is none.
+        /// </summary>
+        private string themeHost(string v, ITypeSymbol type, Scope scope, XObject source)
+        {
+            if (inherits(type, compilation.GetTypeByMetadataName("osu.Framework.Graphics.Drawable")))
+                return v;
+
+            if (scope.ThemeHost != null)
+                return scope.ThemeHost;
+
+            report(Diagnostics.BadMarkup, source, "{ThemeResource} needs a drawable to follow: use it on a drawable, or on something inside one");
+            return null;
         }
 
         /// <summary><c>{x:Static local:Palette.Accent}</c>: a static field, property or constant.</summary>

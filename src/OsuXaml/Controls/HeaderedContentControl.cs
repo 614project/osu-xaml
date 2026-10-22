@@ -220,7 +220,16 @@ namespace OsuXaml.Controls
                     ContentTemplate = ContentTemplate;
             }
 
-            protected override Drawable CreateTextContent(LocalisableString text) => ownText = owner.CreateHeaderTextContent(text);
+            protected override Drawable CreateTextContent(LocalisableString text)
+            {
+                ownText = owner.CreateHeaderTextContent(text);
+
+                // The header takes the owner's Foreground, as the owner's content does.
+                if (ownText is TextBlock textBlock)
+                    textBlock.ForegroundOwner = owner;
+
+                return ownText;
+            }
         }
     }
 }

@@ -345,6 +345,7 @@ namespace OsuXaml.Generator
                 s.ItemsType = null;
                 s.TemplatedParent = null;
                 s.InTemplate = true;
+                s.ThemeHost = null;
             });
 
             line($"global::OsuXaml.XamlBinding.Items<{typeName(itemType)}>({scope.Bindings}, {v}, {expr}, ({item}, {itemScope}) =>");
@@ -656,6 +657,20 @@ namespace OsuXaml.Generator
 
                     body = saved;
                     indent = savedIndent;
+                    return;
+                }
+
+                case Markup.ThemeResource:
+                {
+                    string host = themeHost(v, elementType, scope, value.Source);
+                    if (host == null)
+                        return;
+
+                    // A text overload (ToolTip) is the last choice: a theme's values are brushes, colours and sizes far more often.
+                    var setter = setters.FirstOrDefault(s => s.Parameters[1].Type.SpecialType != SpecialType.System_String) ?? setters[0];
+
+                    line($"global::OsuXaml.ThemeResources.Bind<{typeName(elementType)}, {typeName(setter.Parameters[1].Type)}>({scope.Bindings}, {host}, {v}, "
+                         + $"{SymbolDisplay.FormatLiteral(markup.Path, true)}, (element, value) => {call(setter)}(element, value));");
                     return;
                 }
 

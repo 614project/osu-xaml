@@ -1,0 +1,21 @@
+<UserControl xmlns="osu-xaml" xmlns:x="osu-xaml:x" x:Class="OsuXaml.Tests.Views.ThemedView"
+             Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+  <UserControl.Resources>
+    <Style TargetType="Border">
+      <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+    </Style>
+  </UserControl.Resources>
+  <StackPanel x:Name="panel" TextElement.Foreground="{ThemeResource TextFillColorPrimaryBrush}">
+    <TextBlock x:Name="primary" Text="Primary" />
+    <TextBlock x:Name="secondary" Text="Secondary" TextElement.Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    <Border x:Name="card" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" Padding="{ThemeResource CardPadding}">
+      <TextBlock Text="In a card" />
+    </Border>
+    <Rectangle x:Name="swatch" Width="10" Height="10">
+      <Rectangle.Fill>
+        <SolidColorBrush Color="{ThemeResource AccentFillColorDefaultBrush}" />
+      </Rectangle.Fill>
+    </Rectangle>
+    <TextBlock x:Name="missing" Text="Unthemed" Foreground="{ThemeResource NoThemeHasThis}" />
+  </StackPanel>
+</UserControl>

@@ -67,6 +67,7 @@ namespace OsuXaml.Controls
         private VerticalAlignment? givenVertical;
 
         private Colour4 foreground = Theme.Text;
+        private bool hasOwnForeground;
         private HorizontalAlignment horizontalContentAlignment;
         private VerticalAlignment verticalContentAlignment;
 
@@ -148,19 +149,30 @@ namespace OsuXaml.Controls
             }
         }
 
-        /// <summary>Colour of text content.</summary>
+        /// <summary>
+        /// Colour of text content. Once set (a Button sets its own), <see cref="TextElement"/>.Foreground from the elements around the
+        /// control no longer reaches that text, while one set on the control itself still does.
+        /// </summary>
         public Colour4 Foreground
         {
             get => foreground;
             set
             {
                 foreground = value;
+                hasOwnForeground = true;
+
                 if (ownsPresented && presented is TextBlock text)
+                {
                     text.Colour = value;
+                    text.FollowInherited();
+                }
 
                 OnForegroundChanged();
             }
         }
+
+        /// <summary>Whether <see cref="Foreground"/> was set, rather than left at the theme's text colour.</summary>
+        internal bool HasOwnForeground => hasOwnForeground;
 
         /// <summary>Alignment given to content that doesn't set its own.</summary>
         public HorizontalAlignment HorizontalContentAlignment
@@ -307,7 +319,12 @@ namespace OsuXaml.Controls
                         presented = contentTemplate.Build(content, contentBindings);
                     }
                     else
+                    {
                         presented = CreateTextContent(content is LocalisableString l ? l : content.ToString());
+
+                        if (presented is TextBlock text)
+                            text.ForegroundOwner ??= this;
+                    }
 
                     ownsPresented = true;
                     break;

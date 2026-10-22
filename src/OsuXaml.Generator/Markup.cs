@@ -7,13 +7,14 @@ namespace OsuXaml.Generator
 {
     /// <summary>
     /// A parsed markup extension: <c>{Bind Path, Key=Value}</c> (or WPF's <c>{Binding}</c>), <c>{StaticResource Key}</c>,
-    /// <c>{x:Static Type.Member}</c>, <c>{TemplateBinding Property}</c>, <c>{x:Null}</c> or <c>{x:Type Type}</c>.
+    /// <c>{ThemeResource Key}</c>, <c>{x:Static Type.Member}</c>, <c>{TemplateBinding Property}</c>, <c>{x:Null}</c> or <c>{x:Type Type}</c>.
     /// Values may be single-quoted to contain commas, e.g. <c>StringFormat='{0} left, {1}'</c>.
     /// </summary>
     internal sealed class Markup
     {
         public const string Bind = "Bind";
         public const string StaticResource = "StaticResource";
+        public const string ThemeResource = "ThemeResource";
         public const string Static = "Static";
         public const string TemplateBinding = "TemplateBinding";
         public const string Null = "Null";
@@ -69,6 +70,10 @@ namespace OsuXaml.Generator
                     result.Extension = StaticResource;
                     break;
 
+                case ThemeResource:
+                    result.Extension = ThemeResource;
+                    break;
+
                 case Static:
                 case Null:
                 case Type:
@@ -80,7 +85,7 @@ namespace OsuXaml.Generator
                     break;
 
                 default:
-                    error = $"Unknown markup extension '{name}'. Supported: {{Bind}}, {{Binding}}, {{StaticResource}}, {{x:Static}}, {{TemplateBinding}}, {{x:Null}}";
+                    error = $"Unknown markup extension '{name}'. Supported: {{Bind}}, {{Binding}}, {{StaticResource}}, {{ThemeResource}}, {{x:Static}}, {{TemplateBinding}}, {{x:Null}}";
                     return null;
             }
 
@@ -128,7 +133,8 @@ namespace OsuXaml.Generator
                     result.Options[key] = val;
             }
 
-            if ((result.Extension == StaticResource || result.Extension == Static || result.Extension == Type || result.Extension == TemplateBinding) && result.Path.Length == 0)
+            if ((result.Extension == StaticResource || result.Extension == ThemeResource || result.Extension == Static || result.Extension == Type
+                 || result.Extension == TemplateBinding) && result.Path.Length == 0)
             {
                 error = $"{{{local}}} needs a value";
                 return null;

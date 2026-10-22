@@ -118,6 +118,12 @@ namespace OsuXaml.Generator
             /// <summary>Inside a template body, which runs once per item rather than once per page.</summary>
             public bool InTemplate;
 
+            /// <summary>
+            /// The nearest drawable being built around this point (in the same template), which <c>{ThemeResource}</c> on something
+            /// that isn't a drawable (a brush, an inline) follows.
+            /// </summary>
+            public string ThemeHost;
+
             public Scope With(Action<Scope> change)
             {
                 var copy = (Scope)MemberwiseClone();
@@ -363,6 +369,9 @@ namespace OsuXaml.Generator
 
                 line($"var {v} = new {typeName(type)}();");
             }
+
+            if (inherits(type, compilation.GetTypeByMetadataName("osu.Framework.Graphics.Drawable")))
+                scope = scope.With(s => s.ThemeHost = v);
 
             string name = directive(element, "Name");
 
@@ -1021,6 +1030,10 @@ namespace OsuXaml.Generator
 
                     case Markup.StaticResource:
                         emitResourceValue(v, type, member, markup.Path, source, context, owner, scope);
+                        return;
+
+                    case Markup.ThemeResource:
+                        emitThemeResource(v, type, member, markup.Path, source, scope);
                         return;
 
                     case Markup.Static:

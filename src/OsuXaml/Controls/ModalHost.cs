@@ -12,7 +12,10 @@ namespace OsuXaml.Controls
     /// </summary>
     public interface IModalAppearance
     {
-        /// <summary>The backdrop's colour once the dialog has opened, transparency included.</summary>
+        /// <summary>
+        /// The backdrop's colour once the dialog has opened, transparency included. The game's other windows, which the dialog
+        /// also blocks, dim in this colour too.
+        /// </summary>
         Colour4 BackdropColour { get; }
 
         /// <summary>How long the backdrop takes to fade in, in milliseconds.</summary>
@@ -74,6 +77,15 @@ namespace OsuXaml.Controls
         /// <summary>Whether the dialog has closed and is animating out; a closing host takes no input.</summary>
         public bool IsClosing { get; private set; }
 
+        /// <summary>The backdrop's colour once open, transparency included: the dialog's own, or half-transparent black.</summary>
+        internal Colour4 BackdropColour => Dialog is IModalAppearance appearance ? appearance.BackdropColour : Colour4.Black.Opacity(Dim);
+
+        /// <summary>How long the backdrop takes to fade in.</summary>
+        internal double BackdropOpenDuration => Dialog is IModalAppearance appearance ? appearance.OpenDuration : OpenDuration;
+
+        /// <summary>How long the backdrop takes to fade out.</summary>
+        internal double BackdropCloseDuration => Dialog is IModalAppearance appearance ? appearance.CloseDuration : CloseDuration;
+
         /// <summary>Whether the host is gone without closing: its window was disposed with the dialog still open.</summary>
         internal bool WasDisposed => IsDisposed;
 
@@ -89,7 +101,7 @@ namespace OsuXaml.Controls
 
             if (Dialog is IModalAppearance appearance)
             {
-                backdrop.Colour = appearance.BackdropColour.Opacity(1);
+                backdrop.Colour = appearance.BackdropColour.Opacity(1f);
                 backdrop.FadeTo(appearance.BackdropColour.A, appearance.OpenDuration, Easing.OutQuint);
                 appearance.AnimateOpen();
                 return;

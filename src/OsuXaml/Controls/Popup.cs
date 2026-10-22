@@ -752,7 +752,10 @@ namespace OsuXaml.Controls
         {
             private readonly PopupLayer layer;
             private readonly Box dim;
-            private bool dimmed;
+
+            // The backdrop colour of the dialog this layer is dimmed for, and how long the dim takes to go once it closes.
+            private Colour4? dimmedTo;
+            private double undimDuration;
 
             public ModalCover(PopupLayer layer)
             {
@@ -770,17 +773,27 @@ namespace OsuXaml.Controls
             {
                 base.Update();
 
-                bool shouldDim = covering is ModalHost modal && !ModalHost.IsWithin(layer, modal.Region);
+                var modal = covering;
+                Colour4? colour = modal != null && !ModalHost.IsWithin(layer, modal.Region) ? modal.BackdropColour : null;
 
-                if (shouldDim == dimmed)
+                if (colour == dimmedTo)
                     return;
 
-                dimmed = shouldDim;
+                dimmedTo = colour;
 
-                if (dimmed)
-                    dim.FadeTo(ModalHost.Dim, ModalHost.OpenDuration, Easing.OutQuint);
+                if (colour is Colour4 backdrop)
+                {
+                    // The window dims as the dialog's own backdrop does, in a dialog's own colour when it brings one.
+                    if (dim.Alpha <= 0)
+                        dim.Colour = backdrop.Opacity(1f);
+                    else
+                        dim.FadeColour(backdrop.Opacity(1f), modal.BackdropOpenDuration, Easing.OutQuint);
+
+                    dim.FadeTo(backdrop.A, modal.BackdropOpenDuration, Easing.OutQuint);
+                    undimDuration = modal.BackdropCloseDuration;
+                }
                 else
-                    dim.FadeOut(ModalHost.CloseDuration, Easing.OutQuint);
+                    dim.FadeOut(undimDuration, Easing.OutQuint);
             }
 
             protected override bool OnMouseDown(MouseDownEvent e) => true;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using osu.Framework.Caching;
@@ -5,14 +6,15 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Primitives;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Text;
+using osu.Framework.Threading;
 using osuTK;
 using FrameworkTextBox = osu.Framework.Graphics.UserInterface.TextBox;
 
 namespace OsuXaml.Controls
 {
     /// <summary>
-    /// The few private osu!framework members that multi-line text needs. [UnsafeAccessor] binds them when first called,
-    /// without reflection; <c>FrameworkInternalsTests</c> calls each one, so a framework update that renames them fails there first.
+    /// The few private osu!framework members that multi-line text and theme resources need. [UnsafeAccessor] binds them when first
+    /// called, without reflection; <c>FrameworkInternalsTests</c> calls each one, so a framework update that renames them fails there first.
     /// </summary>
     internal static class FrameworkInternals
     {
@@ -54,5 +56,13 @@ namespace OsuXaml.Controls
 
         [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "set_Bounds")]
         public static extern void SetBounds(TextBuilder builder, Vector2 value);
+
+        // Theme resources follow drawables from outside them: they drop the ones that were disposed, and hand work that arrives on
+        // another thread to the drawable's own scheduler.
+        [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "get_IsDisposed")]
+        public static extern bool IsDisposed(Drawable drawable);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "Schedule")]
+        public static extern ScheduledDelegate Schedule(Drawable drawable, Action action);
     }
 }

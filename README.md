@@ -113,6 +113,7 @@ public partial class MainView : CompositeDrawable
 | 컨트롤 템플릿 | `<Button.Template><ControlTemplate TargetType="Button">` + `{TemplateBinding Background}` + `<ContentPresenter />` | 컨트롤의 기본 모양을 통째로 교체 |
 | 아이템 바인딩 | `Binding="{Bind Done}"` (DataGrid 열 등) | `ItemBinding<Todo, bool>` 접근자로 컴파일. 리플렉션 없음 |
 | 리소스 | `<X.Resources>`의 `x:Key` 항목, `{StaticResource Key}` | 텍스트 리소스는 대상 타입의 리터럴로, 템플릿은 그 자리에서 컴파일, 다른 요소는 쓸 때마다 새로 생성 |
+| 테마 리소스 | `Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"` | 키는 빌드 때 찾지 않고, 테마 라이브러리가 등록한 `IThemeResourceProvider`가 실행 중에 요소마다 값을 줍니다. 테마가 바뀌면 다시 적용되고, 값은 속성 타입으로 변환됩니다 (아래 "컨트롤 라이브러리를 위한 확장") |
 | 공용 리소스 | 루트가 `<ResourceDictionary>`인 `.xaml` 파일 | 모든 페이지에서 보입니다 (WPF의 App.xaml 리소스 역할) |
 | 스타일 | `<Style TargetType="Button">`, `Style="{StaticResource Key}"`, `BasedOn`, `EventSetter` | 세터를 요소 생성 코드에 인라인. 요소에 직접 쓴 값이 이깁니다 |
 | 암시적 템플릿 | `<DataTemplate DataType="{x:Type local:Person}">` (키 없음) | 같은 아이템 타입의 ItemsControl에 자동 적용 |
@@ -299,6 +300,22 @@ private async void OnSettings()
 - 끄는 동안에는 포인터가 벗어나도 끌고 있는 요소의 커서를 유지합니다. 열린 팝업이나 모달 대화상자에 가려진 요소의 커서는 나오지 않습니다.
 - `CursorService.OverrideCursor = Cursors.Wait`는 WPF의 `Mouse.OverrideCursor`처럼 앱 전체의 커서를 바꾸고, `null`로 되돌립니다. 코드에서는 `CursorService.SetCursor(element, Cursors.Hand)`로 줍니다.
 - osu!framework에는 커서 API가 없어서 SDL3로 OS 커서를 직접 바꿉니다. SDL2 백엔드나 OS 커서를 숨기고 직접 그리는 게임에서는 화면에 변화가 없습니다. `Cursors.None`은 OS 커서를 숨깁니다.
+
+### 컨트롤 라이브러리를 위한 확장
+
+다른 디자인 시스템의 컨트롤 라이브러리(osu-xaml-material-3, osu-xaml-winui-3)를 osu-xaml 위에 만들 때 쓰는 확장점입니다. 기본 컨트롤의 동작은 바뀌지 않습니다.
+
+| 기능 | 표기 | 동작 |
+| --- | --- | --- |
+| 상속되는 텍스트 속성 | `<StackPanel TextElement.Foreground="Gray" TextElement.FontSize="12">`, 코드에서는 `TextElement.SetForeground(this, colour)` | WPF처럼 안쪽의 `TextBlock`과 `Icon`이 가장 가까운 요소가 정한 색·글꼴·크기·굵기를 따릅니다. 직접 정한 값이 이기고, 컨트롤이 자기 콘텐츠용으로 만든 텍스트는 그 컨트롤의 `Foreground`를 따릅니다. 값이 바뀌면 바로 반영되며, `TextElement.ClearForeground` 등으로 되돌립니다. 직접 텍스트를 그리는 컨트롤은 `InheritedTextWatcher`로 같은 값을 받습니다 |
+| 글꼴 패밀리 | `FontFamilies.Register("Selawik", 1.2f, FontWeight.Light, FontWeight.Regular, FontWeight.Bold)`, `FontFamilies.AddAlias("Segoe UI", "Selawik")` | 패밀리가 가진 굵기와 줄 높이 비율을 등록하면 `FontSize`가 WPF처럼 em 크기가 되고, 없는 굵기는 CSS 규칙대로 가장 가까운 굵기로 그립니다. `FontWeight`는 WPF의 `Thin`부터 `Black`까지 받습니다 |
+| 테마 리소스 | `{ThemeResource Key}`, `ThemeResources.AddProvider(provider)` | 공급자의 `TryGetResource(element, key, out value)`가 요소별로 값을 줍니다(요소가 로드된 뒤 한 번 더 물으므로 그 요소가 속한 테마 범위를 볼 수 있습니다). `ResourcesChanged`를 올리면 살아 있는 모든 테마 바인딩이 다시 적용됩니다. 브러시·인라인처럼 Drawable이 아닌 것에 쓰면 그것을 담은 요소를 따릅니다. 요소는 약한 참조로만 잡고, 해제된 요소는 정리됩니다 |
+| 팝업 위치 | `Placement="Custom"` + `Popup.CustomPopupPlacementCallback` | WPF의 콜백처럼 팝업 크기, 대상 사각형, 창 크기를 받아 위치를 돌려줍니다. 플라이아웃의 위·아래·좌·우 배치와 공간이 모자랄 때 뒤집기를 라이브러리가 직접 정합니다 |
+| 팝업 애니메이션 | `Popup.Transition = new MyTransition()` (`IPopupTransition`) | 열 때 `Open(root, 실제 배치 방향)`, 닫을 때 `Close(root)`가 돌려준 시간만큼 기다렸다가 제거합니다. 닫히는 동안은 입력을 받지 않고, 그 사이에 다시 열면 제거를 취소합니다 |
+| 대화상자 모양 | `Dialog`가 `IModalAppearance`를 구현 | `ModalHost`가 그 대화상자의 배경막 색(투명도 포함)과 열기·닫기 시간, 애니메이션을 씁니다. 다른 창을 덮는 막도 같은 색으로 어두워지고, 닫기 애니메이션이 끝난 뒤 제거합니다 |
+| 스크롤바 | `ScrollViewer.DefaultScrollBarProvider = provider`, 또는 바깥 요소가 `IScrollBarProvider` 구현 | 각 `ScrollViewer`가 로드될 때 가장 가까운 공급자(없으면 기본 공급자)에게 스크롤바를 받고, 받았으면 기본 스크롤바를 숨깁니다 |
+| 툴팁 | `ToolTipService.ToolTipFactory = () => new MyToolTip()` | `ToolTip="..."` 같은 텍스트 툴팁을 이 팩토리로 만듭니다. `PlaceNearPointer`를 재정의하면 포인터 기준 위치를 바꿀 수 있습니다 |
+| 텍스트 상자 | `TextBoxBase`의 `DefaultHeight`, `TextFont` 재정의 | 입력 글자, 자리표시자, 여러 줄 텍스트가 모두 그 글꼴로 그려집니다 |
 
 ### 레이아웃 동작
 

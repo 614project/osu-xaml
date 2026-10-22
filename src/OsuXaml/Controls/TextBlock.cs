@@ -126,11 +126,20 @@ namespace OsuXaml.Controls
         // The weight asked for, which the family may not have (the font then has the nearest one).
         private FontWeight? wantedWeight;
 
-        // What the TextBlock looked like before it took inherited values, to go back to when they stop.
+        // What the TextBlock looked like before it took inherited values, to go back to when they stop, and what it was given then:
+        // a colour or font that differs from what was given was set directly meanwhile, and is the one to go back to.
         private ColourInfo? colourBeforeInherited;
+        private ColourInfo inheritedColour;
         private FontUsage? fontBeforeInherited;
+        private FontUsage inheritedFont;
 
         private InheritedTextWatcher inheritance;
+
+        /// <summary>
+        /// The control whose <see cref="ContentControl.Foreground"/> colours this text, for the text a control makes for its content.
+        /// While the control sets a Foreground of its own, <see cref="TextElement"/>.Foreground from further out doesn't reach the text.
+        /// </summary>
+        internal ContentControl ForegroundOwner;
 
         public TextBlock()
         {
@@ -142,19 +151,32 @@ namespace OsuXaml.Controls
         {
             base.LoadComplete();
 
-            inheritance = new InheritedTextWatcher(this, applyInherited);
-            inheritance.Attach();
+            inheritance = new InheritedTextWatcher(this, applyInherited) { IncludesOwner = true };
+            FollowInherited();
         }
 
-        void IInheritsTextProperties.InheritedTextChanged() => inheritance?.Attach();
+        void IInheritsTextProperties.InheritedTextChanged() => FollowInherited();
+
+        /// <summary>Takes the inherited text properties again, e.g. after <see cref="ForegroundOwner"/> changed its Foreground.</summary>
+        internal void FollowInherited()
+        {
+            if (inheritance == null)
+                return;
+
+            inheritance.ForegroundBoundary = ForegroundOwner?.HasOwnForeground == true ? ForegroundOwner : null;
+            inheritance.Attach();
+        }
 
         private void applyInherited(InheritedText inherited)
         {
             // Only what an element around sets is touched, so a colour or font given directly stays when nothing is inherited.
+            if (colourBeforeInherited != null && !Colour.Equals(inheritedColour))
+                colourBeforeInherited = Colour;
+
             if (!ownForeground && inherited.Foreground is Colour4 foreground)
             {
                 colourBeforeInherited ??= Colour;
-                Colour = foreground;
+                Colour = inheritedColour = foreground;
             }
             else if (colourBeforeInherited is ColourInfo before)
             {
@@ -163,6 +185,9 @@ namespace OsuXaml.Controls
                 if (!ownForeground)
                     Colour = before;
             }
+
+            if (fontBeforeInherited != null && !Font.Equals(inheritedFont))
+                fontBeforeInherited = Font;
 
             string family = ownFamily ? null : FontFamilies.Resolve(inherited.FontFamily);
             float? size = ownSize ? null : inherited.FontSize;
@@ -190,7 +215,16 @@ namespace OsuXaml.Controls
             float em = size ?? (ownSize ? FontSize : local.Size / FontFamilies.SizeScale(local.Family));
             var w = weight ?? (ownWeight ? FontWeight : FontFamilies.Parse(local.Weight));
 
-            Font = Font.With(family: family, size: em * FontFamilies.SizeScale(family), weight: FontFamilies.WeightName(family, w));
+            changeFont(Font.With(family: family, size: em * FontFamilies.SizeScale(family), weight: FontFamilies.WeightName(family, w)));
+        }
+
+        // A font change the TextBlock makes itself, which while it inherits isn't a font set directly.
+        private void changeFont(FontUsage font)
+        {
+            Font = font;
+
+            if (fontBeforeInherited != null)
+                inheritedFont = font;
         }
 
         /// <summary>
@@ -423,7 +457,7 @@ namespace OsuXaml.Controls
             set
             {
                 ownSize = true;
-                Font = Font.With(size: value * FontFamilies.SizeScale(Font.Family));
+                changeFont(Font.With(size: value * FontFamilies.SizeScale(Font.Family)));
             }
         }
 
@@ -434,14 +468,14 @@ namespace OsuXaml.Controls
             {
                 ownWeight = true;
                 wantedWeight = value;
-                Font = Font.With(weight: FontFamilies.WeightName(Font.Family, value));
+                changeFont(Font.With(weight: FontFamilies.WeightName(Font.Family, value)));
             }
         }
 
         public FontStyle FontStyle
         {
             get => Font.Italics ? FontStyle.Italic : FontStyle.Normal;
-            set => Font = Font.With(italics: value == FontStyle.Italic);
+            set => changeFont(Font.With(italics: value == FontStyle.Italic));
         }
 
         /// <summary>
@@ -459,7 +493,7 @@ namespace OsuXaml.Controls
                 var weight = FontWeight;
                 string family = FontFamilies.Resolve(ParseFontFamily(value)) ?? FrameworkFont.Regular.Family;
 
-                Font = Font.With(family: family, size: size * FontFamilies.SizeScale(family), weight: FontFamilies.WeightName(family, weight));
+                changeFont(Font.With(family: family, size: size * FontFamilies.SizeScale(family), weight: FontFamilies.WeightName(family, weight)));
             }
         }
 
@@ -618,7 +652,7 @@ namespace OsuXaml.Controls
             set
             {
                 ownForeground = value;
-                if (!value) inheritance?.Attach();
+                if (!value) FollowInherited();
             }
         }
 
