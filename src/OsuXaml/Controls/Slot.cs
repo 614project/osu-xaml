@@ -16,7 +16,7 @@ namespace OsuXaml.Controls
 
         private readonly bool explicitX;
         private readonly bool explicitY;
-        private readonly MarginPadding margin;
+        private MarginPadding margin;
 
         // Reopened after each measure and arrange: osu!framework only passes on a child's size change while the last one has been handled.
         private readonly LayoutValue contentSize = new LayoutValue(Invalidation.DrawSize | Invalidation.Presence, InvalidationSource.Child);
@@ -40,6 +40,20 @@ namespace OsuXaml.Controls
             Child = content;
 
             AddLayout(contentSize);
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+
+            // A margin set after the child joined the panel replaces the one it had, as one set before does.
+            if (!Content.Margin.Equals(default(MarginPadding)))
+            {
+                margin = Content.Margin;
+                Content.Margin = default;
+                Padding = margin;
+                Layout.InvalidateMeasure(this);
+            }
         }
 
         /// <summary>Whether the content asks for the same size whatever happens inside it: it has a size of its own on both axes, or is collapsed.</summary>
