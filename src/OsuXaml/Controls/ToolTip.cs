@@ -41,6 +41,20 @@ namespace OsuXaml.Controls
         public override bool PropagateNonPositionalInputSubTree => false;
 
         protected override Drawable CreateTextContent(LocalisableString text) => new TextBlock { Text = text, FontSize = 14, Colour = Foreground };
+
+        /// <summary>
+        /// Where the tooltip goes for <see cref="PlacementMode.Mouse"/>, in the layer's space: below the pointer like desktop
+        /// tooltips, or above it when there is no room. It is kept inside the layer afterwards.
+        /// </summary>
+        public virtual Vector2 PlaceNearPointer(Vector2 pointer, Vector2 size, Vector2 bounds)
+        {
+            var position = pointer + new Vector2(0, 20);
+
+            if (position.Y + size.Y > bounds.Y)
+                position.Y = pointer.Y - size.Y - 4;
+
+            return position;
+        }
     }
 
     /// <summary>
@@ -65,6 +79,12 @@ namespace OsuXaml.Controls
 
         /// <summary>Moving from one tooltip element to another within this many milliseconds shows the next tooltip at once.</summary>
         public static double BetweenShowDelay = 100;
+
+        /// <summary>
+        /// Makes the tooltips that show text tooltips and rich content that isn't a <see cref="ToolTip"/> itself. A theme library
+        /// sets it to its own ToolTip subclass; tooltips made before it changed are replaced the next time one shows.
+        /// </summary>
+        public static Func<ToolTip> ToolTipFactory { get; set; } = () => new ToolTip();
 
         public static void SetToolTip(Drawable element, LocalisableString text)
         {
@@ -140,8 +160,11 @@ namespace OsuXaml.Controls
     internal partial class ToolTipHost : CompositeDrawable
     {
         private readonly PopupLayer layer;
-        private readonly ToolTip textToolTip = new ToolTip();
-        private readonly ToolTip wrapper = new ToolTip();
+
+        // The tooltips for text and for wrapped content, from the factory that made them.
+        private ToolTip textToolTip;
+        private ToolTip wrapper;
+        private Func<ToolTip> madeBy;
 
         private Drawable hovered;
         private double hoveredSince;
@@ -243,9 +266,28 @@ namespace OsuXaml.Controls
             hide();
         }
 
+        private void ensureToolTips()
+        {
+            var factory = ToolTipService.ToolTipFactory ?? (() => new ToolTip());
+
+            if (factory == madeBy && textToolTip != null)
+                return;
+
+            textToolTip?.Dispose();
+            wrapper?.Dispose();
+
+            madeBy = factory;
+            textToolTip = factory() ?? new ToolTip();
+            wrapper = factory() ?? new ToolTip();
+        }
+
         private void show(Drawable target, Vector2 mouseScreenSpace)
         {
             object content = ToolTipService.GetToolTip(target);
+
+            // Only replaced while none is showing, so a factory set in the meantime takes effect from the next tooltip.
+            if (!(content is ToolTip))
+                ensureToolTips();
 
             switch (content)
             {
@@ -335,10 +377,7 @@ namespace OsuXaml.Controls
                     break;
 
                 default:
-                    // Below the pointer like desktop tooltips, or above it when there is no room.
-                    position = anchorPosition + new Vector2(0, 20);
-                    if (position.Y + size.Y > bounds.Y)
-                        position.Y = anchorPosition.Y - size.Y - 4;
+                    position = shown.PlaceNearPointer(anchorPosition, size, bounds);
                     break;
             }
 
@@ -350,10 +389,10 @@ namespace OsuXaml.Controls
         protected override void Dispose(bool isDisposing)
         {
             // The shared tooltips are only children while showing, so the hidden ones aren't disposed with the host.
-            if (textToolTip.Parent == null)
-                textToolTip.Dispose();
-            if (wrapper.Parent == null)
-                wrapper.Dispose();
+            if (textToolTip?.Parent == null)
+                textToolTip?.Dispose();
+            if (wrapper?.Parent == null)
+                wrapper?.Dispose();
 
             base.Dispose(isDisposing);
         }

@@ -111,15 +111,18 @@ namespace OsuXaml.Controls
 
             var font = outer.Font;
 
-            if (fontFamily != null)
-                font = font.With(family: fontFamily);
+            if (fontFamily != null || fontWeight != null || fontSize != null)
+            {
+                // Sizes are em sizes and weights the nearest the family has, as for a TextBlock (see FontFamilies).
+                string family = FontFamilies.Resolve(fontFamily) ?? font.Family;
+                float size = fontSize ?? font.Size / FontFamilies.SizeScale(font.Family);
+                var weight = fontWeight ?? FontFamilies.Parse(font.Weight);
 
-            if (fontWeight is FontWeight weight)
-                font = font.With(weight: weight.ToString());
+                font = font.With(family: family, size: size * FontFamilies.SizeScale(family), weight: FontFamilies.WeightName(family, weight));
+            }
+
             if (fontStyle is FontStyle style)
                 font = font.With(italics: style == FontStyle.Italic);
-            if (fontSize is float size)
-                font = font.With(size: size);
 
             return new TextStyle(font, foreground ?? outer.Foreground, outer.Decorations | textDecorations, outer.Link);
         }

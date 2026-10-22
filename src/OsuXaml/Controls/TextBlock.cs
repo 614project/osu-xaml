@@ -19,10 +19,25 @@ using osuTK.Graphics;
 
 namespace OsuXaml.Controls
 {
+    /// <summary>
+    /// How heavy text is, as WPF's FontWeights name it. A family that lacks a weight shows the nearest one it has (see
+    /// <see cref="FontFamilies"/>); osu!framework's Roboto has Regular and Bold.
+    /// </summary>
     public enum FontWeight
     {
         Regular,
         Bold,
+        Thin,
+        ExtraLight,
+        Light,
+        SemiLight,
+        Medium,
+        SemiBold,
+        ExtraBold,
+        Black,
+
+        /// <summary>The same as <see cref="Regular"/>, as WPF also calls it.</summary>
+        Normal = Regular,
     }
 
     public enum TextWrapping
@@ -63,7 +78,7 @@ namespace OsuXaml.Controls
     /// width its panel offers (or its own Width), like WPF; a wrapping TextBlock in a horizontal StackPanel has unlimited width and stays on one line.
     /// Line breaks in the text start new lines, and <see cref="Inlines"/> (<see cref="Run"/>, <see cref="Bold"/>, <see cref="LineBreak"/>...) style parts of it.
     /// </summary>
-    public partial class TextBlock : SpriteText, ILayoutElement, IHasDefaultCursor
+    public partial class TextBlock : SpriteText, ILayoutElement, IHasDefaultCursor, IInheritsTextProperties
     {
         private static readonly char[] never_fixed_width_characters = { '.', ',', ':', ' ', '\u00A0', '\u202F' };
 
@@ -102,10 +117,91 @@ namespace OsuXaml.Controls
 
         private TextBlockTextBuilder builder;
 
+        // Which text properties were set on the TextBlock itself; the others follow the TextElement properties around it.
+        private bool ownForeground;
+        private bool ownFamily;
+        private bool ownSize;
+        private bool ownWeight;
+
+        // The weight asked for, which the family may not have (the font then has the nearest one).
+        private FontWeight? wantedWeight;
+
+        // What the TextBlock looked like before it took inherited values, to go back to when they stop.
+        private ColourInfo? colourBeforeInherited;
+        private FontUsage? fontBeforeInherited;
+
+        private InheritedTextWatcher inheritance;
+
         public TextBlock()
         {
             Font = FrameworkFont.Regular.With(size: 16);
             Colour = Theme.Text;
+        }
+
+        protected override void LoadComplete()
+        {
+            base.LoadComplete();
+
+            inheritance = new InheritedTextWatcher(this, applyInherited);
+            inheritance.Attach();
+        }
+
+        void IInheritsTextProperties.InheritedTextChanged() => inheritance?.Attach();
+
+        private void applyInherited(InheritedText inherited)
+        {
+            // Only what an element around sets is touched, so a colour or font given directly stays when nothing is inherited.
+            if (!ownForeground && inherited.Foreground is Colour4 foreground)
+            {
+                colourBeforeInherited ??= Colour;
+                Colour = foreground;
+            }
+            else if (colourBeforeInherited is ColourInfo before)
+            {
+                colourBeforeInherited = null;
+
+                if (!ownForeground)
+                    Colour = before;
+            }
+
+            string family = ownFamily ? null : FontFamilies.Resolve(inherited.FontFamily);
+            float? size = ownSize ? null : inherited.FontSize;
+            var weight = ownWeight ? null : inherited.FontWeight;
+
+            if (family == null && size == null && weight == null)
+            {
+                if (fontBeforeInherited is FontUsage local)
+                {
+                    fontBeforeInherited = null;
+                    setFont(local, null, null, null);
+                }
+
+                return;
+            }
+
+            fontBeforeInherited ??= Font;
+            setFont(fontBeforeInherited.Value, family, size, weight);
+        }
+
+        // The font from inherited values, the ones set on the TextBlock, and for the rest those of `local`.
+        private void setFont(FontUsage local, string family, float? size, FontWeight? weight)
+        {
+            family ??= ownFamily ? Font.Family : local.Family;
+            float em = size ?? (ownSize ? FontSize : local.Size / FontFamilies.SizeScale(local.Family));
+            var w = weight ?? (ownWeight ? FontWeight : FontFamilies.Parse(local.Weight));
+
+            Font = Font.With(family: family, size: em * FontFamilies.SizeScale(family), weight: FontFamilies.WeightName(family, w));
+        }
+
+        /// <summary>
+        /// Sets the font as a whole and keeps it, whatever the elements around set: for text a control lays out itself.
+        /// </summary>
+        public void SetOwnFont(FontUsage font)
+        {
+            ownFamily = ownSize = ownWeight = true;
+            wantedWeight = null;
+            fontBeforeInherited = null;
+            Font = font;
         }
 
         /// <summary>Wraps long text onto more lines, between words where it can.</summary>
@@ -317,16 +413,29 @@ namespace OsuXaml.Controls
             }
         }
 
+        /// <summary>
+        /// The size of the text. For osu!framework's fonts it is the height of the font's line box; a family registered with
+        /// <see cref="FontFamilies"/> takes it as the em size, as WPF does.
+        /// </summary>
         public float FontSize
         {
-            get => Font.Size;
-            set => Font = Font.With(size: value);
+            get => Font.Size / FontFamilies.SizeScale(Font.Family);
+            set
+            {
+                ownSize = true;
+                Font = Font.With(size: value * FontFamilies.SizeScale(Font.Family));
+            }
         }
 
         public FontWeight FontWeight
         {
-            get => Font.Weight == "Bold" ? FontWeight.Bold : FontWeight.Regular;
-            set => Font = Font.With(weight: value.ToString());
+            get => wantedWeight ?? FontFamilies.Parse(Font.Weight);
+            set
+            {
+                ownWeight = true;
+                wantedWeight = value;
+                Font = Font.With(weight: FontFamilies.WeightName(Font.Family, value));
+            }
         }
 
         public FontStyle FontStyle
@@ -342,7 +451,16 @@ namespace OsuXaml.Controls
         public string FontFamily
         {
             get => Font.Family;
-            set => Font = Font.With(family: ParseFontFamily(value) ?? FrameworkFont.Regular.Family);
+            set
+            {
+                ownFamily = true;
+
+                float size = FontSize;
+                var weight = FontWeight;
+                string family = FontFamilies.Resolve(ParseFontFamily(value)) ?? FrameworkFont.Regular.Family;
+
+                Font = Font.With(family: family, size: size * FontFamilies.SizeScale(family), weight: FontFamilies.WeightName(family, weight));
+            }
         }
 
         #region Links and drawables among the text
@@ -449,6 +567,7 @@ namespace OsuXaml.Controls
 
         protected override void Dispose(bool isDisposing)
         {
+            inheritance?.Detach();
             uiLayer?.Expire();
             base.Dispose(isDisposing);
         }
@@ -482,7 +601,25 @@ namespace OsuXaml.Controls
         public Colour4 Foreground
         {
             get => Colour;
-            set => Colour = value;
+            set
+            {
+                ownForeground = true;
+                Colour = value;
+            }
+        }
+
+        /// <summary>
+        /// Whether <see cref="Foreground"/> was set on this TextBlock rather than taken from the elements around it
+        /// (<see cref="TextElement"/>). Setting it to false hands the colour back to them.
+        /// </summary>
+        public bool HasOwnForeground
+        {
+            get => ownForeground;
+            set
+            {
+                ownForeground = value;
+                if (!value) inheritance?.Attach();
+            }
         }
 
         /// <summary>Draws each glyph in its run's colour, then the underlines and strikethroughs.</summary>

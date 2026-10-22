@@ -29,8 +29,6 @@ namespace OsuXaml.Controls
         // and turned back into '\n' wherever the text leaves it.
         private const char line_separator = '\u2028';
 
-        private const float default_height = 36;
-
         [Resolved]
         private Clipboard clipboard { get; set; }
 
@@ -94,7 +92,7 @@ namespace OsuXaml.Controls
 
         // A height set in XAML or code, rather than the default or the layout handing back the measured height.
         private bool heightSet;
-        private float autoHeight = default_height;
+        private float autoHeight;
 
         private string lastRaw;
         private float laidOutWidth = -1;
@@ -102,7 +100,7 @@ namespace OsuXaml.Controls
 
         protected TextBoxBase()
         {
-            base.Height = default_height;
+            base.Height = autoHeight = DefaultHeight;
 
             // osu!framework sizes text to the box's height unless told otherwise; match the rest of the controls instead.
             FontSize = 16;
@@ -120,7 +118,7 @@ namespace OsuXaml.Controls
                 Children = new Drawable[]
                 {
                     selectionBoxes = new Container { Depth = 1 },
-                    lineText = new TextBlock { Colour = Colour4.White },
+                    lineText = new TextBlock { Foreground = Colour4.White },
                     lineCaret = new Container
                     {
                         Depth = -1,
@@ -285,10 +283,23 @@ namespace OsuXaml.Controls
 
         protected override float LeftRightPadding => 10;
 
+        /// <summary>
+        /// The height of a box of one line, which also centres the text in a box of lines. Read from the constructor, so an
+        /// override returns a constant.
+        /// </summary>
+        protected virtual float DefaultHeight => 36;
+
+        /// <summary>
+        /// The font the text is drawn in, at <c>FontSize</c> (osu!framework's size: the font's line box). Read from the
+        /// constructor (for the placeholder) and whenever characters are made, so call <see cref="RefreshText"/> after it changes.
+        /// </summary>
+        protected virtual FontUsage TextFont => FrameworkFont.Condensed;
+
         protected override SpriteText CreatePlaceholder()
         {
             var placeholder = base.CreatePlaceholder();
             placeholder.Colour = Theme.Overlay;
+            placeholder.Font = TextFont.With(size: placeholder.Font.Size);
             return placeholder;
         }
 
@@ -301,7 +312,7 @@ namespace OsuXaml.Controls
         protected override Drawable GetDrawableCharacter(char c) => new Character(this)
         {
             AutoSizeAxes = Axes.Both,
-            Child = new SpriteText { Text = c.ToString(), Font = FrameworkFont.Condensed.With(size: FontSize) },
+            Child = new SpriteText { Text = c.ToString(), Font = TextFont.With(size: FontSize) },
         };
 
         /// <summary>Whether the text is laid out in lines (rather than osu!framework's single row).</summary>
@@ -315,6 +326,7 @@ namespace OsuXaml.Controls
         {
             string value = base.Text;
 
+            lineLayoutValid = false;
             refreshing = true;
             base.Text = string.Empty;
             base.Text = value;
@@ -346,7 +358,7 @@ namespace OsuXaml.Controls
             if (heightSet || RelativeSizeAxes.HasFlag(Axes.Y))
                 return;
 
-            base.Height = growsWithLines ? 0 : default_height;
+            base.Height = growsWithLines ? 0 : DefaultHeight;
         }
 
         public bool ReportsMeasureChanges => true;
@@ -355,7 +367,7 @@ namespace OsuXaml.Controls
         {
             // A stretched box still asks for a row's height, as a WPF TextBox asks for its content's.
             float height = growsWithLines ? autoHeight
-                : RelativeSizeAxes.HasFlag(Axes.Y) ? default_height
+                : RelativeSizeAxes.HasFlag(Axes.Y) ? DefaultHeight
                 : Height;
 
             return new Vector2(0, height);
@@ -365,7 +377,7 @@ namespace OsuXaml.Controls
 
         #region Line mode
 
-        private float verticalPadding => Math.Max(4, (default_height - FontSize) / 2);
+        private float verticalPadding => Math.Max(4, (DefaultHeight - FontSize) / 2);
 
         private float lineGap => MathF.Round(FontSize * 0.25f);
 
@@ -491,7 +503,7 @@ namespace OsuXaml.Controls
 
             string display = InputProperties.Type.IsPassword() ? mask(raw) : raw.Replace(line_separator, '\n');
 
-            lineText.Font = FrameworkFont.Condensed.With(size: FontSize);
+            lineText.SetOwnFont(TextFont.With(size: FontSize));
             lineText.Spacing = new Vector2(0, lineGap);
             lineText.TextWrapping = textWrapping == TextWrapping.NoWrap ? TextWrapping.NoWrap : TextWrapping.Wrap;
             lineText.MaxWidth = wrapWidth;

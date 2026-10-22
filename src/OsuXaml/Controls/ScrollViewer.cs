@@ -27,6 +27,19 @@ namespace OsuXaml.Controls
     }
 
     /// <summary>
+    /// Draws the scroll bars of <see cref="ScrollViewer"/>s in place of their built-in thin bars, for a theme library. A viewer
+    /// asks the nearest element around it that implements this when it loads, then <see cref="ScrollViewer.DefaultScrollBarProvider"/>.
+    /// </summary>
+    public interface IScrollBarProvider
+    {
+        /// <summary>
+        /// The bars of <paramref name="viewer"/>: a drawable laid over the whole viewer, taking input only where it draws, that
+        /// reads the viewer's offsets and scroll bar visibilities and scrolls it. Null keeps the built-in bars.
+        /// </summary>
+        Drawable CreateScrollBars(ScrollViewer viewer);
+    }
+
+    /// <summary>
     /// Scrolls one child, like WPF's ScrollViewer: vertically by default, and horizontally or both ways through
     /// <see cref="HorizontalScrollBarVisibility"/> and <see cref="VerticalScrollBarVisibility"/>. The child is measured with
     /// unlimited space on each scrolling axis and arranged at least as large as the viewport, so a panel child fills the
@@ -58,6 +71,14 @@ namespace OsuXaml.Controls
         private bool bringIntoViewStarting;
         private int bringIntoViewStill;
         private int bringIntoViewScrolls;
+
+        private Drawable scrollBars;
+
+        /// <summary>Gives every ScrollViewer without a provider around it these scroll bars (null: the built-in ones).</summary>
+        public static IScrollBarProvider DefaultScrollBarProvider { get; set; }
+
+        /// <summary>The bars an <see cref="IScrollBarProvider"/> made for this viewer, once it has loaded; null with the built-in bars.</summary>
+        public Drawable ScrollBars => scrollBars;
 
         public ScrollViewer()
         {
@@ -268,12 +289,30 @@ namespace OsuXaml.Controls
             horizontal.CanScroll = canScrollX;
             horizontal.YieldsVerticalInput = canScrollY;
 
-            vertical.ScrollbarVisible = verticalVisibility == ScrollBarVisibility.Auto || verticalVisibility == ScrollBarVisibility.Visible;
-            horizontal.ScrollbarVisible = horizontalVisibility == ScrollBarVisibility.Auto || horizontalVisibility == ScrollBarVisibility.Visible;
+            vertical.ScrollbarVisible = scrollBars == null && (verticalVisibility == ScrollBarVisibility.Auto || verticalVisibility == ScrollBarVisibility.Visible);
+            horizontal.ScrollbarVisible = scrollBars == null && (horizontalVisibility == ScrollBarVisibility.Auto || horizontalVisibility == ScrollBarVisibility.Visible);
 
             // Leaving a scrolled axis behind snaps it back to the start.
             if (!canScrollY) vertical.ScrollToStart(false);
             if (!canScrollX) horizontal.ScrollToStart(false);
+        }
+
+        protected override void LoadComplete()
+        {
+            base.LoadComplete();
+
+            IScrollBarProvider provider = null;
+
+            for (var d = Parent; d != null && provider == null; d = d.Parent)
+                provider = d as IScrollBarProvider;
+
+            scrollBars = (provider ?? DefaultScrollBarProvider)?.CreateScrollBars(this);
+
+            if (scrollBars != null)
+            {
+                AddInternal(scrollBars);
+                applyVisibility();
+            }
         }
 
         /// <summary>Measures the content and sizes the scrolled area to it (at least the viewport on each scrolling axis).</summary>

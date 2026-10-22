@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Sprites;
 using osuTK;
 
@@ -15,19 +16,56 @@ namespace OsuXaml.Controls
     /// is looked up in Solid, then Regular, then Brands. A name written in XAML that doesn't exist is a build error; one that
     /// arrives through a binding or code shows a question mark. 16 pixels by default.
     /// It also works as a menu item's icon: <c>&lt;MenuItem.Icon&gt;&lt;Icon Kind="Solid.Save" /&gt;&lt;/MenuItem.Icon&gt;</c>.
+    /// Without a <see cref="Foreground"/> of its own it takes <see cref="TextElement"/>.Foreground from the elements around it, as text does.
     /// </summary>
     /// <remarks>C# files that import both osuTK and OsuXaml.Controls need an alias, as osuTK has an Icon class too.</remarks>
-    public partial class Icon : SpriteIcon
+    public partial class Icon : SpriteIcon, IInheritsTextProperties
     {
         private static readonly Type[] styles = { typeof(FontAwesome.Solid), typeof(FontAwesome.Regular), typeof(FontAwesome.Brands) };
         private static readonly Dictionary<string, IconUsage?> cache = new Dictionary<string, IconUsage?>(StringComparer.OrdinalIgnoreCase);
 
         private string kind;
 
+        private bool ownForeground;
+        private ColourInfo? colourBeforeInherited;
+        private InheritedTextWatcher inheritance;
+
         public Icon()
         {
             Size = new Vector2(16);
             Colour = Theme.Text;
+        }
+
+        protected override void LoadComplete()
+        {
+            base.LoadComplete();
+
+            inheritance = new InheritedTextWatcher(this, applyInherited);
+            inheritance.Attach();
+        }
+
+        void IInheritsTextProperties.InheritedTextChanged() => inheritance?.Attach();
+
+        private void applyInherited(InheritedText inherited)
+        {
+            if (!ownForeground && inherited.Foreground is Colour4 foreground)
+            {
+                colourBeforeInherited ??= Colour;
+                Colour = foreground;
+            }
+            else if (colourBeforeInherited is ColourInfo before)
+            {
+                colourBeforeInherited = null;
+
+                if (!ownForeground)
+                    Colour = before;
+            }
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            inheritance?.Detach();
+            base.Dispose(isDisposing);
         }
 
         /// <summary>Which icon to show, e.g. <c>Solid.Check</c>.</summary>
@@ -45,7 +83,11 @@ namespace OsuXaml.Controls
         public Colour4 Foreground
         {
             get => Colour;
-            set => Colour = value;
+            set
+            {
+                ownForeground = true;
+                Colour = value;
+            }
         }
 
         /// <summary>Whether <see cref="Kind"/> named an icon that exists.</summary>

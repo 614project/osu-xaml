@@ -7,6 +7,28 @@ using osuTK;
 namespace OsuXaml.Controls
 {
     /// <summary>
+    /// Implemented by a dialog that brings its own look to the <see cref="ModalHost"/> showing it: the backdrop's colour and the
+    /// opening and closing animations. Without it the backdrop is half-transparent black and the dialog fades and scales in.
+    /// </summary>
+    public interface IModalAppearance
+    {
+        /// <summary>The backdrop's colour once the dialog has opened, transparency included.</summary>
+        Colour4 BackdropColour { get; }
+
+        /// <summary>How long the backdrop takes to fade in, in milliseconds.</summary>
+        double OpenDuration { get; }
+
+        /// <summary>How long the backdrop takes to fade out, and the host waits before it removes the dialog.</summary>
+        double CloseDuration { get; }
+
+        /// <summary>Plays the dialog's opening animation, on the dialog itself.</summary>
+        void AnimateOpen();
+
+        /// <summary>Plays the dialog's closing animation, which should take no longer than <see cref="CloseDuration"/>.</summary>
+        void AnimateClose();
+    }
+
+    /// <summary>
     /// One modal dialog in a <see cref="PopupLayer"/>: a dimmed backdrop over the whole layer that takes every click, hover,
     /// wheel turn and key press, the dialog centred above it, and a popup layer of its own so drop-downs, menus and tooltips
     /// inside the dialog open above the dialog. Clicking the backdrop does nothing. Hosts stack; only the top one takes input, and the
@@ -65,6 +87,14 @@ namespace OsuXaml.Controls
 
             previousFocus = GetContainingInputManager()?.FocusedDrawable;
 
+            if (Dialog is IModalAppearance appearance)
+            {
+                backdrop.Colour = appearance.BackdropColour.Opacity(1);
+                backdrop.FadeTo(appearance.BackdropColour.A, appearance.OpenDuration, Easing.OutQuint);
+                appearance.AnimateOpen();
+                return;
+            }
+
             backdrop.FadeTo(Dim, OpenDuration, Easing.OutQuint);
             Dialog.FadeInFromZero(OpenDuration * 0.6, Easing.OutQuint);
             Dialog.ScaleTo(0.94f).ScaleTo(1, OpenDuration, Easing.OutQuint);
@@ -104,7 +134,10 @@ namespace OsuXaml.Controls
                 return;
 
             IsClosing = true;
-            layer.CloseModal(this, CloseDuration);
+
+            var appearance = Dialog as IModalAppearance;
+            double duration = appearance?.CloseDuration ?? CloseDuration;
+            layer.CloseModal(this, duration);
 
             var input = GetContainingInputManager();
             var focus = input?.FocusedDrawable;
@@ -119,8 +152,12 @@ namespace OsuXaml.Controls
 
             PopupLayer.DismissAll();
 
-            backdrop.FadeOut(CloseDuration, Easing.OutQuint);
-            Dialog.ScaleTo(0.96f, CloseDuration, Easing.OutQuint).FadeOut(CloseDuration, Easing.OutQuint);
+            backdrop.FadeOut(duration, Easing.OutQuint);
+
+            if (appearance != null)
+                appearance.AnimateClose();
+            else
+                Dialog.ScaleTo(0.96f, CloseDuration, Easing.OutQuint).FadeOut(CloseDuration, Easing.OutQuint);
         }
 
         internal void ScheduleClose() => Schedule(Close);

@@ -7,9 +7,11 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Primitives;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input.Events;
 using osu.Framework.Platform;
+using osu.Framework.Threading;
 using osuTK;
 using osuTK.Input;
 
@@ -24,6 +26,29 @@ namespace OsuXaml.Controls
         Left,
         Mouse,
         Center,
+
+        /// <summary>Where <see cref="Popup.CustomPopupPlacementCallback"/> says.</summary>
+        Custom,
+    }
+
+    /// <summary>
+    /// Places a popup whose <see cref="Popup.Placement"/> is <see cref="PlacementMode.Custom"/>: from the popup's size, the target's
+    /// rectangle and the size of the layer (all in the layer's space), the popup's top-left. The popup is still kept inside the layer.
+    /// </summary>
+    public delegate Vector2 CustomPopupPlacementCallback(Vector2 popupSize, RectangleF target, Vector2 bounds);
+
+    /// <summary>
+    /// How a popup's content comes and goes (<see cref="Popup.Transition"/>). Without one it fades in and vanishes at once.
+    /// Animate the root's <see cref="Drawable.Alpha"/>, <see cref="Drawable.Scale"/> or <see cref="PopupRoot.Offset"/>
+    /// (its position is set every frame), or its content.
+    /// </summary>
+    public interface IPopupTransition
+    {
+        /// <summary>Plays the opening animation. The root is placed already, on <paramref name="side"/> of its target.</summary>
+        void Open(PopupRoot root, PlacementMode side);
+
+        /// <summary>Plays the closing animation and returns its length in milliseconds; the content leaves the layer after it.</summary>
+        double Close(PopupRoot root);
     }
 
     /// <summary>A drawable that hosts the popup layer for everything inside it, such as <see cref="Window"/>.</summary>
@@ -305,6 +330,11 @@ namespace OsuXaml.Controls
 
             open.Add(popup);
 
+            // Reopened while it was animating out.
+            popup.Root.PendingRemoval?.Cancel();
+            popup.Root.PendingRemoval = null;
+            popup.Root.IsClosing = false;
+
             if (popup.Root.Parent != roots)
                 roots.Add(popup.Root);
 
@@ -312,13 +342,32 @@ namespace OsuXaml.Controls
             roots.ChangeChildDepth(popup.Root, -open.Count);
         }
 
-        internal void Close(Popup popup)
+        /// <summary>Closes a popup at once, or after <paramref name="removeAfter"/> milliseconds of its closing animation.</summary>
+        internal void Close(Popup popup, double removeAfter = 0)
         {
             if (!open.Remove(popup))
                 return;
 
-            if (popup.Root.Parent == roots)
-                roots.Remove(popup.Root, false);
+            var root = popup.Root;
+
+            if (removeAfter <= 0)
+            {
+                if (root.Parent == roots)
+                    roots.Remove(root, false);
+
+                return;
+            }
+
+            root.IsClosing = true;
+            root.PendingRemoval?.Cancel();
+            root.PendingRemoval = Scheduler.AddDelayed(() =>
+            {
+                root.PendingRemoval = null;
+                root.IsClosing = false;
+
+                if (!open.Contains(popup) && root.Parent == roots)
+                    roots.Remove(root, false);
+            }, removeAfter);
         }
 
         /// <summary>Removes and disposes a popup's content on the update thread after its owner was disposed.</summary>
@@ -796,6 +845,12 @@ namespace OsuXaml.Controls
         /// <summary>Makes the content as wide as the placement target, as drop-down lists are.</summary>
         public bool MatchTargetWidth { get; set; }
 
+        /// <summary>Places the popup when <see cref="Placement"/> is <see cref="PlacementMode.Custom"/>, as WPF's callback does.</summary>
+        public CustomPopupPlacementCallback CustomPopupPlacementCallback { get; set; }
+
+        /// <summary>The opening and closing animations; null fades the content in and removes it at once.</summary>
+        public IPopupTransition Transition { get; set; }
+
         public event Action Opened;
 
         public event Action Closed;
@@ -846,12 +901,15 @@ namespace OsuXaml.Controls
 
                 mousePosition = GetContainingInputManager()?.CurrentState.Mouse.Position ?? Vector2.Zero;
                 layer.Open(this);
-                Root.Appear();
+                Root.Appear(Transition);
                 Opened?.Invoke();
             }
             else if (layer != null && layer.OpenPopups.Contains(this))
             {
-                layer.Close(this);
+                // Content whose window went away has nothing left to animate in.
+                double closing = Transition != null && Root.IsPresent && layer.IsLoaded ? Transition.Close(Root) : 0;
+
+                layer.Close(this, closing);
                 Closed?.Invoke();
             }
         }
@@ -875,6 +933,33 @@ namespace OsuXaml.Controls
         public readonly Popup Owner;
 
         private Drawable content;
+        private Vector2 offset;
+
+        /// <summary>Moves the content from where it is placed, for opening and closing animations.</summary>
+        public Vector2 Offset
+        {
+            get => offset;
+            set
+            {
+                offset = value;
+                place();
+            }
+        }
+
+        /// <summary>The side of its target the popup opened on, after flipping for room (Bottom for the other placements).</summary>
+        public PlacementMode ActualPlacement { get; private set; } = PlacementMode.Bottom;
+
+        /// <summary>Whether the popup has closed and its content is animating out; it takes no input meanwhile.</summary>
+        public bool IsClosing { get; internal set; }
+
+        internal ScheduledDelegate PendingRemoval;
+
+        // The opening animation, waiting for the content to have a size (it loads in the frame after it opens).
+        private IPopupTransition pendingTransition;
+
+        public override bool PropagatePositionalInputSubTree => !IsClosing && base.PropagatePositionalInputSubTree;
+
+        public override bool PropagateNonPositionalInputSubTree => !IsClosing && base.PropagateNonPositionalInputSubTree;
 
         internal PopupRoot(Popup owner)
         {
@@ -897,16 +982,53 @@ namespace OsuXaml.Controls
             }
         }
 
-        internal void Appear()
+        internal void Appear(IPopupTransition transition)
         {
+            ClearTransforms();
+            offset = Vector2.Zero;
+            Scale = Vector2.One;
             place();
-            this.FadeInFromZero(120, Easing.OutQuint);
+
+            if (transition != null)
+            {
+                Alpha = 0;
+                pendingTransition = transition;
+                startTransition();
+            }
+            else
+            {
+                pendingTransition = null;
+                this.FadeInFromZero(120, Easing.OutQuint);
+            }
+        }
+
+        private void startTransition()
+        {
+            if (pendingTransition == null || DrawWidth <= 0 || DrawHeight <= 0)
+                return;
+
+            var transition = pendingTransition;
+            pendingTransition = null;
+
+            Alpha = 1;
+            transition.Open(this, ActualPlacement);
         }
 
         protected override void Update()
         {
             base.Update();
             place();
+        }
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+
+            if (pendingTransition != null && !IsClosing)
+            {
+                place();
+                startTransition();
+            }
         }
 
         private void place()
@@ -945,46 +1067,87 @@ namespace OsuXaml.Controls
             var bounds = container.DrawSize;
             Vector2 position;
 
+            var side = PlacementMode.Bottom;
+
             switch (Owner.Placement)
             {
                 case PlacementMode.Top:
                     position = new Vector2(topLeft.X, topLeft.Y - size.Y);
+                    side = PlacementMode.Top;
                     // Flip below the target when there is no room above.
-                    if (position.Y < 0 && bottomRight.Y + size.Y <= bounds.Y) position.Y = bottomRight.Y;
+                    if (position.Y < 0 && bottomRight.Y + size.Y <= bounds.Y)
+                    {
+                        position.Y = bottomRight.Y;
+                        side = PlacementMode.Bottom;
+                    }
+
                     break;
 
                 case PlacementMode.Right:
                     position = new Vector2(bottomRight.X, topLeft.Y);
-                    if (position.X + size.X > bounds.X) position.X = topLeft.X - size.X;
+                    side = PlacementMode.Right;
+                    if (position.X + size.X > bounds.X)
+                    {
+                        position.X = topLeft.X - size.X;
+                        side = PlacementMode.Left;
+                    }
+
                     break;
 
                 case PlacementMode.Left:
                     position = new Vector2(topLeft.X - size.X, topLeft.Y);
-                    if (position.X < 0) position.X = bottomRight.X;
+                    side = PlacementMode.Left;
+                    if (position.X < 0)
+                    {
+                        position.X = bottomRight.X;
+                        side = PlacementMode.Right;
+                    }
+
                     break;
 
                 case PlacementMode.Mouse:
                     position = container.ToLocalSpace(Owner.MousePosition);
                     // Open up or to the left of the pointer when there is no room, instead of sliding under it.
                     if (position.X + size.X > bounds.X && position.X - size.X >= 0) position.X -= size.X;
-                    if (position.Y + size.Y > bounds.Y && position.Y - size.Y >= 0) position.Y -= size.Y;
+                    if (position.Y + size.Y > bounds.Y && position.Y - size.Y >= 0)
+                    {
+                        position.Y -= size.Y;
+                        side = PlacementMode.Top;
+                    }
+
                     break;
 
                 case PlacementMode.Center:
                     position = (topLeft + bottomRight) / 2 - size / 2;
                     break;
 
+                case PlacementMode.Custom when Owner.CustomPopupPlacementCallback != null:
+                    position = Owner.CustomPopupPlacementCallback(size, new RectangleF(topLeft, bottomRight - topLeft), bounds);
+                    if (position.Y + size.Y <= topLeft.Y) side = PlacementMode.Top;
+                    else if (position.X + size.X <= topLeft.X) side = PlacementMode.Left;
+                    else if (position.X >= bottomRight.X) side = PlacementMode.Right;
+                    break;
+
                 default:
                     position = new Vector2(topLeft.X, bottomRight.Y);
                     // Flip above the target when there is no room below.
-                    if (position.Y + size.Y > bounds.Y && topLeft.Y - size.Y >= 0) position.Y = topLeft.Y - size.Y;
+                    if (position.Y + size.Y > bounds.Y && topLeft.Y - size.Y >= 0)
+                    {
+                        position.Y = topLeft.Y - size.Y;
+                        side = PlacementMode.Top;
+                    }
+
                     break;
             }
+
+            // The side is settled when the opening animation starts, so a popup animating in doesn't change direction halfway.
+            if (pendingTransition != null || (Owner.Transition == null && !IsClosing))
+                ActualPlacement = side;
 
             position += new Vector2(Owner.HorizontalOffset, Owner.VerticalOffset);
             position.X = Math.Clamp(position.X, 0, Math.Max(0, bounds.X - size.X));
             position.Y = Math.Clamp(position.Y, 0, Math.Max(0, bounds.Y - size.Y));
-            Position = position;
+            Position = position + offset;
         }
 
         private static Drawable topOf(Drawable drawable)
