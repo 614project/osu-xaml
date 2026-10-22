@@ -200,6 +200,46 @@ namespace OsuXaml.Tests
         }
 
         /// <summary>A custom element that changes its desired size without telling anyone, as elements written before invalidation did.</summary>
+        [Test]
+        public void MarginSetAfterJoiningAPanelTakesEffect()
+        {
+            StackPanel panel = null;
+            Box first = null, second = null;
+
+            AddStep("create", () =>
+            {
+                panel = new StackPanel();
+                panel.Add(first = box(40, 20));
+                panel.Add(second = box(40, 20));
+                Child = panel;
+            });
+            AddUntilStep("laid out", () => panel.DrawHeight == 40);
+
+            AddStep("give the first box a margin", () => first.Margin = new MarginPadding { Bottom = 12 });
+            AddUntilStep("the panel grows by it", () => panel.DrawHeight == 52);
+            AddAssert("the second box moves down", () => posOf(second).Y == 32);
+        }
+
+        [Test]
+        public void WrappedTextInAFixedWidthPanelMeasuresAtThatWidth()
+        {
+            WrapPanel wrap = null;
+            StackPanel cell = null;
+            TextBlock text = null;
+
+            AddStep("create", () =>
+            {
+                wrap = new WrapPanel();
+                cell = new StackPanel { Width = 60 };
+                cell.Add(text = new TextBlock { Text = "a very long sentence that wraps", TextWrapping = TextWrapping.Wrap });
+                wrap.Add(cell);
+                Child = wrap;
+            });
+            AddUntilStep("laid out", () => text.DrawHeight > 0);
+            AddAssert("the text wraps", () => text.DrawWidth <= 60);
+            AddAssert("the panel holds every line", () => Precision.AlmostEquals(cell.DrawHeight, text.DrawHeight, 0.5f) && cell.DrawHeight > 40);
+        }
+
         private partial class QuietElement : CompositeDrawable, ILayoutElement
         {
             public Vector2 Desired;

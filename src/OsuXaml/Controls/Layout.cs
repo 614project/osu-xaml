@@ -307,6 +307,11 @@ namespace OsuXaml.Controls
 
             if (content is ILayoutElement element)
             {
+                // An element with a size of its own lays its content out within that size, as WPF measures it, so text in a
+                // fixed-width panel wraps at that width when measured as well as when arranged.
+                if (explicitX) inner.X = content.Width;
+                if (explicitY) inner.Y = content.Height;
+
                 desired = MeasureElement(element, inner);
 
                 if (explicitX) desired.X = content.Width;
