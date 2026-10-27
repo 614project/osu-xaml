@@ -244,8 +244,12 @@ namespace OsuXaml.Controls
         /// <summary>Whether a virtualizing panel must keep <paramref name="container"/> even when it is out of view.</summary>
         private protected virtual bool KeepContainerRealized(Drawable container) => false;
 
-        /// <summary>Scrolls a virtualizing list until the item at <paramref name="index"/> is in view, creating its container now. False when not virtualizing.</summary>
-        internal bool BringIndexIntoView(int index, Func<Drawable, Drawable> part = null)
+        /// <summary>
+        /// Scrolls a virtualizing list until the item at <paramref name="index"/> (or <paramref name="part"/> of its container) is in
+        /// view, creating its container now. False when not virtualizing; then the container already exists and can be scrolled to directly.
+        /// Controls built on this one (in other assemblies too) use it for keyboard navigation and ScrollIntoView.
+        /// </summary>
+        protected internal bool BringIndexIntoView(int index, Func<Drawable, Drawable> part = null)
         {
             if (virtualizingPanel == null || index < 0 || index >= items.Count)
                 return false;
@@ -254,8 +258,11 @@ namespace OsuXaml.Controls
             return true;
         }
 
-        /// <summary>The container of the item at <paramref name="index"/>, created now in a virtualizing list if it has none; it goes again once out of view.</summary>
-        internal Drawable RealizeIndex(int index)
+        /// <summary>
+        /// The container of the item at <paramref name="index"/>, created now in a virtualizing list if it has none; it goes again once
+        /// out of view. Derived controls use it to reach the container of an item that isn't in view (to measure or animate it).
+        /// </summary>
+        protected internal Drawable RealizeIndex(int index)
         {
             if (index < 0 || index >= items.Count)
                 return null;

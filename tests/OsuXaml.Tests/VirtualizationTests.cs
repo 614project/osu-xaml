@@ -88,6 +88,35 @@ namespace OsuXaml.Tests
             AddUntilStep("the scroll extent covers every row", () => scroll(list).ExtentHeight > 10000 * 20);
         }
 
+        /// <summary>A control library's list, built on ListBox in another assembly, reaching rows through the protected helpers.</summary>
+        private partial class DerivedList : ListBox
+        {
+            public bool Bring(int index) => BringIndexIntoView(index);
+
+            public Drawable Realize(int index) => RealizeIndex(index);
+        }
+
+        [Test]
+        public void DerivedListsCanRealizeAndBringRowsIntoView()
+        {
+            DerivedList list = null;
+            bool realizedNow = false;
+
+            AddStep("create 10,000 rows", () => Child = list = new DerivedList { Size = new Vector2(200, 300), ItemsSource = numbers(10000) });
+            AddUntilStep("first rows realized", () => list.ContainerFromIndex(0) != null);
+
+            // The container goes again in the panel's next update, as it's out of view, so it's checked straight away.
+            AddStep("realize a far row", () =>
+            {
+                var realized = list.Realize(7000);
+                realizedNow = realized != null && list.ContainerFromIndex(7000) == realized && list.IndexFromContainer(realized) == 7000;
+            });
+            AddAssert("it had a container at once", () => realizedNow);
+
+            AddStep("bring another into view", () => list.Bring(9000));
+            AddUntilStep("it is in view", () => inView(list, 9000));
+        }
+
         [Test]
         public void ScrollingRealizesNewRowsAndReleasesOldOnes()
         {

@@ -477,7 +477,7 @@ namespace OsuXaml.Controls
             {
                 var root = open[i].Root;
 
-                if (root.Parent == roots && root.IsPresent && root.ScreenSpaceDrawQuad.Contains(screenSpacePos))
+                if (root.Parent == roots && root.IsPresent && !root.IsWaitingForSize && root.ScreenSpaceDrawQuad.Contains(screenSpacePos))
                     return root;
             }
 
@@ -703,6 +703,28 @@ namespace OsuXaml.Controls
             });
         }
 
+        /// <summary>
+        /// Puts an element that isn't in the drawable tree into this layer, where context menus go, so the popups declared in it can
+        /// open: for example a flyout attached to an element rather than declared inside it (WinUI's <c>FlyoutBase.AttachedFlyout</c>).
+        /// It sits under this layer's popups and takes input only where its own bounds say. An element that already has a parent
+        /// stays where it is. Call from the update thread.
+        /// </summary>
+        public void Host(Drawable element)
+        {
+            if (element.Parent == null)
+                contextMenus.Add(element);
+        }
+
+        /// <summary>Takes an element <see cref="Host"/> put into this layer back out, without disposing it. Call from the update thread.</summary>
+        public void ReleaseHosted(Drawable element)
+        {
+            if (element.Parent == contextMenus)
+                contextMenus.Remove(element, false);
+        }
+
+        /// <summary>Whether <paramref name="element"/> is in this layer by <see cref="Host"/>.</summary>
+        public bool IsHosting(Drawable element) => element.Parent == contextMenus;
+
         protected override bool OnMouseDown(MouseDownEvent e)
         {
             // The layer sits above the app, so it sees presses first; a press and release can fall within one frame.
@@ -920,7 +942,7 @@ namespace OsuXaml.Controls
             else if (layer != null && layer.OpenPopups.Contains(this))
             {
                 // Content whose window went away has nothing left to animate in.
-                double closing = Transition != null && Root.IsPresent && layer.IsLoaded ? Transition.Close(Root) : 0;
+                double closing = Transition != null && Root.IsPresent && !Root.IsWaitingForSize && layer.IsLoaded ? Transition.Close(Root) : 0;
 
                 layer.Close(this, closing);
                 Closed?.Invoke();
@@ -970,9 +992,18 @@ namespace OsuXaml.Controls
         // The opening animation, waiting for the content to have a size (it loads in the frame after it opens).
         private IPopupTransition pendingTransition;
 
-        public override bool PropagatePositionalInputSubTree => !IsClosing && base.PropagatePositionalInputSubTree;
+        public override bool PropagatePositionalInputSubTree => !IsClosing && !IsWaitingForSize && base.PropagatePositionalInputSubTree;
 
         public override bool PropagateNonPositionalInputSubTree => !IsClosing && base.PropagateNonPositionalInputSubTree;
+
+        /// <summary>
+        /// Whether the opening animation is waiting for the content to have a size. Meanwhile the root stays present, though
+        /// invisible (alpha 0) and taking no pointer input, so its content updates: content that sizes itself in its update, such as
+        /// a layout panel or a control measuring its children, would otherwise never get a size and the popup would never appear.
+        /// </summary>
+        public bool IsWaitingForSize => pendingTransition != null && !IsClosing;
+
+        public override bool IsPresent => base.IsPresent || IsWaitingForSize;
 
         internal PopupRoot(Popup owner)
         {

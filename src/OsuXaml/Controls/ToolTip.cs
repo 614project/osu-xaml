@@ -40,6 +40,20 @@ namespace OsuXaml.Controls
 
         public override bool PropagateNonPositionalInputSubTree => false;
 
+        /// <summary>
+        /// The element the tooltip is showing for, as WPF's <c>ToolTip.PlacementTarget</c>: set just before it opens (before
+        /// <see cref="OnOpening"/>), null again once it has closed.
+        /// </summary>
+        public Drawable PlacementTarget { get; internal set; }
+
+        /// <summary>
+        /// Called each time the tooltip is about to show for <see cref="PlacementTarget"/>, before it joins the popup layer. A tooltip
+        /// that takes something from the element it belongs to (its theme, say, as it opens outside that element) takes it here.
+        /// </summary>
+        protected internal virtual void OnOpening()
+        {
+        }
+
         protected override Drawable CreateTextContent(LocalisableString text) => new TextBlock { Text = text, FontSize = 14, Colour = Foreground };
 
         /// <summary>
@@ -320,6 +334,9 @@ namespace OsuXaml.Controls
             shownContent = content;
             anchorPosition = ToLocalSpace(mouseScreenSpace);
 
+            shown.PlacementTarget = target;
+            shown.OnOpening();
+
             AddInternal(shown);
             shown.ClearTransforms();
             shown.Alpha = 0;
@@ -333,6 +350,7 @@ namespace OsuXaml.Controls
                 return;
 
             RemoveInternal(shown, false);
+            shown.PlacementTarget = null;
 
             // Hand rich content back so it can be shown again (or disposed by its owner).
             if (shown == wrapper)

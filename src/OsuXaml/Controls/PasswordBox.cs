@@ -6,12 +6,14 @@ namespace OsuXaml.Controls
 {
     /// <summary>
     /// A single-line box that masks what is typed, like WPF's PasswordBox. <see cref="Password"/> binds two-way;
-    /// <see cref="PasswordChar"/> picks the mask character. Built on osu!framework's password input type, so the
-    /// text can't be copied out, word navigation is off and the platform's IME stays out of the way.
+    /// <see cref="PasswordChar"/> picks the mask character and <see cref="RevealPassword"/> shows the password as it is.
+    /// Built on osu!framework's password input type, so the text can't be copied out, word navigation is off and the
+    /// platform's IME stays out of the way.
     /// </summary>
     public partial class PasswordBox : TextBox
     {
         private char passwordChar = '•';
+        private bool revealPassword;
 
         public PasswordBox()
         {
@@ -31,11 +33,28 @@ namespace OsuXaml.Controls
                     return;
 
                 passwordChar = value;
-
-                if (IsLoaded)
-                    RefreshText();
+                RedrawCharacters();
             }
         }
+
+        /// <summary>
+        /// Shows the password as plain text while true (Avalonia's <c>RevealPassword</c>), for a "show password" check box or a
+        /// reveal button. Copying stays off either way.
+        /// </summary>
+        public bool RevealPassword
+        {
+            get => revealPassword;
+            set
+            {
+                if (revealPassword == value)
+                    return;
+
+                revealPassword = value;
+                RedrawCharacters();
+            }
+        }
+
+        protected override bool MasksText => !revealPassword;
 
         /// <summary>Raised when the password changes.</summary>
         public event Action PasswordChanged;

@@ -191,5 +191,36 @@ namespace OsuXaml.Tests
                 return true;
             }
         }
+
+        [Test]
+        public void LayerHostsDetachedElementsSoTheirPopupsOpen()
+        {
+            Container holder = null;
+            Popup popup = null;
+
+            AddStep("host a detached element", () =>
+            {
+                holder = new Container { Child = popup = new Popup { PlacementTarget = inner, Child = new Box { Size = new Vector2(50) } } };
+                window.PopupLayer.Host(holder);
+            });
+            AddUntilStep("loaded in the layer", () => holder.IsLoaded && window.PopupLayer.IsHosting(holder));
+            AddAssert("hosting twice keeps one", () =>
+            {
+                window.PopupLayer.Host(holder);
+                return window.PopupLayer.IsHosting(holder);
+            });
+            AddStep("open its popup", () => popup.Open());
+            AddAssert("the popup opened in this layer", () => popup.IsOpen.Value && popup.Layer == window.PopupLayer && window.PopupLayer.OpenPopups.Contains(popup));
+            AddStep("close and release", () =>
+            {
+                popup.Close();
+                window.PopupLayer.ReleaseHosted(holder);
+            });
+            AddAssert("out of the layer", () => holder.Parent == null && !window.PopupLayer.IsHosting(holder));
+            AddStep("host it again", () => window.PopupLayer.Host(holder));
+            AddAssert("not disposed: back in the layer", () => window.PopupLayer.IsHosting(holder) && holder.IsLoaded);
+            AddStep("an element with a parent stays put", () => window.PopupLayer.Host(inner));
+            AddAssert("still in its own parent", () => !window.PopupLayer.IsHosting(inner));
+        }
     }
 }

@@ -63,6 +63,14 @@ namespace OsuXaml.Generator
                     : null;
             }
 
+            // NavigateUri="https://learn.microsoft.com": an absolute or relative address, as WPF and WinUI take Uri properties.
+            if (full == "System.Uri")
+            {
+                return Uri.TryCreate(s, UriKind.RelativeOrAbsolute, out _)
+                    ? $"new global::System.Uri({SymbolDisplay.FormatLiteral(s, true)}, global::System.UriKind.RelativeOrAbsolute)"
+                    : null;
+            }
+
             if (type.TypeKind == TypeKind.Enum)
             {
                 var parts = s.Split(new[] { '|', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToArray();

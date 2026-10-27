@@ -161,5 +161,47 @@ namespace OsuXaml.Tests
             });
             AddUntilStep("a popup layer joins the game", () => bare.IsLoaded && game.ChildrenOfType<PopupLayer>().Any());
         }
+
+        [Test]
+        public void TooltipKnowsTheElementItShowsFor()
+        {
+            RecordingToolTip recording = null;
+
+            AddStep("own tooltip on Save", () => ToolTipService.SetToolTip(save, recording = new RecordingToolTip { Content = "Recorded" }));
+            AddAssert("no target while hidden", () => recording.PlacementTarget == null);
+            AddStep("hover Save", () => InputManager.MoveMouseTo(save));
+            AddUntilStep("shows", () => shown == recording);
+            AddAssert("target is Save, told before joining the layer", () => recording.PlacementTarget == save && recording.OpenedFor == save && !recording.WasInLayerWhenOpening);
+
+            AddStep("leave", () => InputManager.MoveMouseTo(plain));
+            AddAssert("target cleared on hide", () => shown == null && recording.PlacementTarget == null);
+
+            AddStep("hover Save again", () => InputManager.MoveMouseTo(save));
+            AddUntilStep("opened twice", () => recording.Openings == 2);
+        }
+
+        [Test]
+        public void TextTooltipsKnowTheirTargetToo()
+        {
+            AddStep("hover inner text", () => InputManager.MoveMouseTo(inside));
+            AddUntilStep("inner tooltip", () => shownText == "Inner tooltip");
+            AddAssert("target is the text", () => shown.PlacementTarget == inside);
+            AddStep("move to the card's padding", () => InputManager.MoveMouseTo(card, new Vector2(0, -card.DrawHeight / 2 + 5)));
+            AddAssert("target follows", () => shownText == "Card tooltip" && shown.PlacementTarget == card);
+        }
+
+        private partial class RecordingToolTip : ToolTip
+        {
+            public Drawable OpenedFor;
+            public bool WasInLayerWhenOpening;
+            public int Openings;
+
+            protected internal override void OnOpening()
+            {
+                Openings++;
+                OpenedFor = PlacementTarget;
+                WasInLayerWhenOpening = Parent != null;
+            }
+        }
     }
 }
