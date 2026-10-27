@@ -997,13 +997,18 @@ namespace OsuXaml.Controls
         public override bool PropagateNonPositionalInputSubTree => !IsClosing && base.PropagateNonPositionalInputSubTree;
 
         /// <summary>
-        /// Whether the opening animation is waiting for the content to have a size. Meanwhile the root stays present, though
-        /// invisible (alpha 0) and taking no pointer input, so its content updates: content that sizes itself in its update, such as
-        /// a layout panel or a control measuring its children, would otherwise never get a size and the popup would never appear.
+        /// Whether the opening animation is waiting for the content to have a size. Meanwhile the root is invisible (alpha 0) and
+        /// takes no pointer input, but stays present (see <see cref="IsPresent"/>) so its content updates: content that sizes itself in
+        /// its update, such as a layout panel or a control measuring its children, would otherwise never get a size.
         /// </summary>
         public bool IsWaitingForSize => pendingTransition != null && !IsClosing;
 
-        public override bool IsPresent => base.IsPresent || IsWaitingForSize;
+        /// <summary>
+        /// An open popup's root is present for its whole opening, even at alpha 0: while it waits for a size, and on the first frame
+        /// of a fade in from zero. So its content keeps updating, and an element in it can take focus as the popup opens (focus on
+        /// an element with a hidden ancestor is dropped). A closed or closing root is present only while it is visible.
+        /// </summary>
+        public override bool IsPresent => base.IsPresent || (!IsClosing && Parent != null && Owner.IsOpen.Value);
 
         internal PopupRoot(Popup owner)
         {

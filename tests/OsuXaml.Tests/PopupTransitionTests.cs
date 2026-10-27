@@ -156,6 +156,28 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void ContentCanTakeFocusAsItOpens()
+        {
+            FocusableBox box = null;
+            bool presentAtZero = false;
+
+            AddStep("open fading in from zero", () =>
+            {
+                popup.Transition = new FadeFromZeroTransition();
+                popup.Child = box = new FocusableBox { Size = content_size };
+                popup.Open();
+                presentAtZero = popup.Root.Alpha == 0 && popup.Root.IsPresent;
+            });
+            AddAssert("present from the first frame, at alpha 0", () => presentAtZero);
+            AddUntilStep("content loaded", () => box.IsLoaded);
+            AddStep("focus while the popup starts to fade in", () => GetContainingFocusManager()?.ChangeFocus(box));
+            AddWaitStep("a few frames", 3);
+            AddAssert("focus kept", () => box.HasFocus);
+            AddStep("close", () => popup.Close());
+            AddAssert("closing: present only while visible", () => popup.Root.IsPresent == popup.Root.Alpha > 0);
+        }
+
+        [Test]
         public void TheSideIsSettledWhenTheAnimationStarts()
         {
             var transition = new RecordingTransition();
@@ -251,6 +273,22 @@ namespace OsuXaml.Tests
             AddUntilStep("shown", () => popup.Root.IsPresent && popup.Root.DrawWidth > 0);
             AddStep("close", () => popup.Close());
             AddAssert("gone", () => popup.Root.Parent == null);
+        }
+
+        private partial class FocusableBox : Container
+        {
+            public override bool AcceptsFocus => true;
+        }
+
+        private class FadeFromZeroTransition : IPopupTransition
+        {
+            public void Open(PopupRoot root, PlacementMode side) => root.FadeInFromZero(300);
+
+            public double Close(PopupRoot root)
+            {
+                root.FadeOut(100);
+                return 100;
+            }
         }
 
         // Content that, like a layout panel, works out its size in its own update.
