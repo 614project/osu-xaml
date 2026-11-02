@@ -157,6 +157,12 @@ namespace OsuXaml.Controls
 
         void IInheritsTextProperties.InheritedTextChanged() => FollowInherited();
 
+        protected override bool OnInvalidate(Invalidation invalidation, InvalidationSource source)
+        {
+            inheritance?.Invalidate(invalidation);
+            return base.OnInvalidate(invalidation, source);
+        }
+
         /// <summary>Takes the inherited text properties again, e.g. after <see cref="ForegroundOwner"/> changed its Foreground.</summary>
         internal void FollowInherited()
         {
@@ -571,6 +577,10 @@ namespace OsuXaml.Controls
         protected override void Update()
         {
             base.Update();
+
+            // Moved to another parent: take what the elements around it now give.
+            if (inheritance?.Moved == true)
+                FollowInherited();
 
             if (uiContainers.Count > 0 || uiLayer != null)
                 syncUILayer();

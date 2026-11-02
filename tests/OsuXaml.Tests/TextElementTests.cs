@@ -85,6 +85,51 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void TextThatMovesFollowsItsNewPlace()
+        {
+            StackPanel other = null;
+            StackPanel moving = null;
+            TextBlock carried = null;
+            Icon icon = null;
+
+            AddStep("colour both panels", () =>
+            {
+                TextElement.SetForeground(inner, red);
+                outer.Add(other = new StackPanel());
+                TextElement.SetForeground(other, blue);
+                other.Add(moving = new StackPanel());
+                moving.Add(carried = new TextBlock { Text = "carried" });
+                moving.Add(icon = new Icon { Kind = "Solid.Check" });
+            });
+            loaded(() => icon);
+            AddAssert("in the other panel's colour", () => carried.Colour == blue && icon.Colour == blue);
+
+            AddStep("move the text itself", () =>
+            {
+                inner.Remove(innerText, false);
+                other.Add(innerText);
+            });
+            AddAssert("takes its new panel's colour", () => innerText.Colour == blue);
+
+            AddStep("move the panel around the text and icon", () =>
+            {
+                other.Remove(moving, false);
+                inner.Add(moving);
+            });
+            AddAssert("they take the colour around their panel now", () => carried.Colour == red && icon.Colour == red);
+
+            AddStep("take the panel out and change the old place", () =>
+            {
+                inner.Remove(moving, false);
+                TextElement.SetForeground(inner, green);
+            });
+            AddAssert("removed text no longer follows it", () => carried.Colour == red && icon.Colour == red);
+
+            AddStep("put it back", () => other.Add(moving));
+            AddAssert("follows again", () => carried.Colour == blue && icon.Colour == blue);
+        }
+
+        [Test]
         public void ValuesSetOnTheTextWin()
         {
             TextBlock own = null;

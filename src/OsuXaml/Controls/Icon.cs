@@ -5,6 +5,7 @@ using System.Text;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Sprites;
+using osu.Framework.Layout;
 using osuTK;
 
 namespace OsuXaml.Controls
@@ -46,6 +47,21 @@ namespace OsuXaml.Controls
         }
 
         void IInheritsTextProperties.InheritedTextChanged() => inheritance?.Attach();
+
+        protected override bool OnInvalidate(Invalidation invalidation, InvalidationSource source)
+        {
+            inheritance?.Invalidate(invalidation);
+            return base.OnInvalidate(invalidation, source);
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+
+            // Moved to another parent: take what the elements around it now give.
+            if (inheritance?.Moved == true)
+                inheritance.Attach();
+        }
 
         private void applyInherited(InheritedText inherited)
         {

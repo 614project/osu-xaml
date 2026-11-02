@@ -186,6 +186,8 @@ namespace OsuXaml.Controls
     /// <summary>
     /// Follows the inherited text properties around a drawable: <see cref="Attach"/> once it is loaded (its parents are known then),
     /// and <paramref name="apply"/> runs with the current values then and after every change. <see cref="Detach"/> stops it.
+    /// A drawable that can move to other parents also passes its invalidations to <see cref="Invalidate"/> and attaches again
+    /// from its Update while <see cref="Moved"/> is set.
     /// </summary>
     public sealed class InheritedTextWatcher
     {
@@ -216,10 +218,31 @@ namespace OsuXaml.Controls
         /// </summary>
         public Drawable ForegroundBoundary { get; set; }
 
+        /// <summary>
+        /// Whether the drawable, or an element around it, moved to another parent since the watcher last attached: the elements it
+        /// followed have been let go, and the drawable should <see cref="Attach"/> again (from its Update, once it is in a tree).
+        /// </summary>
+        public bool Moved { get; private set; }
+
+        /// <summary>
+        /// Takes the drawable's invalidations (from its <c>OnInvalidate</c>). When it or an element around it moved
+        /// (<see cref="Invalidation.Parent"/>, which reaches every element inside the one that moved), the watcher lets go of the
+        /// elements it followed at once, so a removed drawable isn't kept alive by them, and sets <see cref="Moved"/>.
+        /// </summary>
+        public void Invalidate(Invalidation invalidation)
+        {
+            if ((invalidation & Invalidation.Parent) == 0)
+                return;
+
+            Detach();
+            Moved = true;
+        }
+
         /// <summary>Starts (or restarts, after the drawable moved) following the elements around the drawable.</summary>
         public void Attach()
         {
             Detach();
+            Moved = false;
 
             bool foreground = true;
 
