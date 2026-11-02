@@ -307,15 +307,20 @@ private async void OnSettings()
 
 | 기능 | 표기 | 동작 |
 | --- | --- | --- |
-| 상속되는 텍스트 속성 | `<StackPanel TextElement.Foreground="Gray" TextElement.FontSize="12">`, 코드에서는 `TextElement.SetForeground(this, colour)` | WPF처럼 안쪽의 `TextBlock`과 `Icon`이 가장 가까운 요소가 정한 색·글꼴·크기·굵기를 따릅니다. 직접 정한 값이 이기고, 컨트롤이 자기 콘텐츠용으로 만든 텍스트는 그 컨트롤의 `Foreground`를 따릅니다. 값이 바뀌면 바로 반영되며, `TextElement.ClearForeground` 등으로 되돌립니다. 직접 텍스트를 그리는 컨트롤은 `InheritedTextWatcher`로 같은 값을 받습니다 |
+| 상속되는 텍스트 속성 | `<StackPanel TextElement.Foreground="Gray" TextElement.FontSize="12">`, 코드에서는 `TextElement.SetForeground(this, colour)` | WPF처럼 안쪽의 `TextBlock`과 `Icon`이 가장 가까운 요소가 정한 색·글꼴·크기·굵기를 따릅니다. 직접 정한 값이 이기고, 컨트롤이 자기 콘텐츠용으로 만든 텍스트는 그 컨트롤의 `Foreground`를 따릅니다. 값이 바뀌면 바로 반영되고, 텍스트를 다른 곳으로 옮기면 새 자리의 값을 따릅니다. `TextElement.ClearForeground` 등으로 되돌립니다. 직접 텍스트를 그리는 컨트롤은 `InheritedTextWatcher`로 같은 값을 받습니다 |
 | 글꼴 패밀리 | `FontFamilies.Register("Selawik", 1.2f, FontWeight.Light, FontWeight.Regular, FontWeight.Bold)`, `FontFamilies.AddAlias("Segoe UI", "Selawik")` | 패밀리가 가진 굵기와 줄 높이 비율을 등록하면 `FontSize`가 WPF처럼 em 크기가 되고, 없는 굵기는 CSS 규칙대로 가장 가까운 굵기로 그립니다. `FontWeight`는 WPF의 `Thin`부터 `Black`까지 받습니다 |
 | 테마 리소스 | `{ThemeResource Key}`, `ThemeResources.AddProvider(provider)` | 공급자의 `TryGetResource(element, key, out value)`가 요소별로 값을 줍니다(요소가 로드된 뒤 한 번 더 물으므로 그 요소가 속한 테마 범위를 볼 수 있습니다). `ResourcesChanged`를 올리면 살아 있는 모든 테마 바인딩이 다시 적용됩니다. 브러시·인라인처럼 Drawable이 아닌 것에 쓰면 그것을 담은 요소를 따릅니다. 요소는 약한 참조로만 잡고, 해제된 요소는 정리됩니다 |
 | 팝업 위치 | `Placement="Custom"` + `Popup.CustomPopupPlacementCallback` | WPF의 콜백처럼 팝업 크기, 대상 사각형, 창 크기를 받아 위치를 돌려줍니다. 플라이아웃의 위·아래·좌·우 배치와 공간이 모자랄 때 뒤집기를 라이브러리가 직접 정합니다 |
-| 팝업 애니메이션 | `Popup.Transition = new MyTransition()` (`IPopupTransition`) | 열 때 `Open(root, 실제 배치 방향)`, 닫을 때 `Close(root)`가 돌려준 시간만큼 기다렸다가 제거합니다. 닫히는 동안은 입력을 받지 않고, 그 사이에 다시 열면 제거를 취소합니다 |
+| 팝업 애니메이션 | `Popup.Transition = new MyTransition()` (`IPopupTransition`) | 열 때 `Open(root, 실제 배치 방향)`, 닫을 때 `Close(root)`가 돌려준 시간만큼 기다렸다가 제거합니다. 닫히는 동안은 입력을 받지 않고, 그 사이에 다시 열면 제거를 취소합니다. 내용에 아직 크기가 없으면(자기 Update에서 크기를 정하는 패널 등) 보이지 않고 포인터 입력도 받지 않는 채로 내용을 업데이트하며 크기가 생길 때까지 기다렸다가 `Open`을 부릅니다(`PopupRoot.IsWaitingForSize`). 열려 있는 팝업의 루트는 alpha 0이어도 present로 쳐서, 열리는 동안에도 내용이 포커스를 받을 수 있습니다 |
 | 대화상자 모양 | `Dialog`가 `IModalAppearance`를 구현 | `ModalHost`가 그 대화상자의 배경막 색(투명도 포함)과 열기·닫기 시간, 애니메이션을 씁니다. 다른 창을 덮는 막도 같은 색으로 어두워지고, 닫기 애니메이션이 끝난 뒤 제거합니다 |
 | 스크롤바 | `ScrollViewer.DefaultScrollBarProvider = provider`, 또는 바깥 요소가 `IScrollBarProvider` 구현 | 각 `ScrollViewer`가 로드될 때 가장 가까운 공급자(없으면 기본 공급자)에게 스크롤바를 받고, 받았으면 기본 스크롤바를 숨깁니다 |
 | 툴팁 | `ToolTipService.ToolTipFactory = () => new MyToolTip()` | `ToolTip="..."` 같은 텍스트 툴팁을 이 팩토리로 만듭니다. `PlaceNearPointer`를 재정의하면 포인터 기준 위치를 바꿀 수 있습니다 |
 | 텍스트 상자 | `TextBoxBase`의 `DefaultHeight`, `TextFont` 재정의 | 입력 글자, 자리표시자, 여러 줄 텍스트가 모두 그 글꼴로 그려집니다 |
+| 텍스트 상자 색과 선택 | `Foreground`, `PlaceholderForeground`, `SelectionBrush`, `SelectionOpacity`, `SelectionTextBrush`, `CaretBrush`, `Select(start, length)`, `SelectionStart`, `SelectionLength`, `CaretIndex` | WPF처럼 글자·자리표시자·선택 영역·캐럿 색을 바꾸고 코드에서 선택을 읽고 씁니다. 바뀐 색은 이미 그린 글자에도 바로 반영됩니다. `AnimateCaret`, `LineGap`, `MasksText`를 재정의해 캐럿 깜빡임, 여러 줄 간격, 가림 여부를 정합니다 |
+| 암호 보기 | `PasswordBox.RevealPassword` | 켜면 입력한 글자를 그대로 보여 주고(WinUI의 보기 단추), 끄면 다시 가립니다. 입력한 암호는 바뀌지 않습니다 |
+| 붙어 있는 플라이아웃 | `popupLayer.Host(element)`, `ReleaseHosted(element)`, `IsHosting(element)` | 화면 트리에 없는 요소를 팝업 층에 넣어 그 안에 선언한 팝업이 열릴 수 있게 합니다(WinUI의 `FlyoutBase.AttachedFlyout`처럼 요소에 붙여 둔 플라이아웃). 자기 영역에서만 입력을 받고, 이미 부모가 있는 요소는 그 자리에 둡니다 |
+| 툴팁 대상 | `ToolTip.PlacementTarget`, `OnOpening()` 재정의 | 툴팁이 열리기 직전에 어떤 요소의 툴팁인지 알려 줍니다. 툴팁은 팝업 층에서 열리므로, 그 요소의 테마처럼 요소에서 가져와야 하는 것은 `OnOpening`에서 가져갑니다 |
+| 항목 스크롤 | `ItemsControl`의 `BringIndexIntoView(index)`, `RealizeIndex(index)` (protected) | 가상화된 목록에서도 그 항목의 컨테이너를 만들고 보이는 곳까지 스크롤합니다. 키보드 탐색을 직접 구현하는 목록 컨트롤이 씁니다 |
 
 ### 레이아웃 동작
 
@@ -326,7 +331,7 @@ private async void OnSettings()
 - 다른 패널 안에 있지 않고 크기도 없는 패널은 내용 크기에 맞춰 스스로 크기를 정합니다.
 - `Grid`에서 여러 행·열에 걸친 자식은 WPF처럼 걸친 칸들을 넓혀서 들어갑니다. 걸친 칸이 모두 `Auto`면 모자란 만큼을 똑같이 나눠 늘리고, `Auto`가 아닌 칸(픽셀 칸 포함)이 섞여 있으면 그 칸이 먼저 늘어나 `Auto` 칸은 딱 맞게 남습니다. 남은 공간을 나누는 `*` 칸을 지나는 자식은 크기 계산에 들어가지 않습니다.
 - 첨부 속성은 생성기가 `Grid.SetRow(element, 1)` 같은 정적 메서드 호출로 바꿉니다. `Set이름(Drawable, 값)` 형태의 정적 메서드만 있으면 직접 만든 첨부 속성도 똑같이 동작합니다.
-- `RowDefinitions` 문법 오류는 빌드 오류로 나옵니다. 정적 `Parse(string)` 메서드가 있는 타입은 모두 문자열로 쓸 수 있습니다.
+- `RowDefinitions` 문법 오류는 빌드 오류로 나옵니다. 정적 `Parse(string)` 메서드가 있는 타입은 모두 문자열로 쓸 수 있습니다. `Uri`도 문자열로 씁니다 (`NavigateUri="https://example.com"`, 상대 주소 포함).
 
 ## 수명 관리
 
