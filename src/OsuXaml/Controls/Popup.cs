@@ -306,9 +306,42 @@ namespace OsuXaml.Controls
 
             Scheduler.AddDelayed(() =>
             {
-                if (host.Parent == modals)
-                    modals.Remove(host, true);
+                if (host.Parent != modals)
+                    return;
+
+                // The dialog's own layer goes with it; what others put there leaves first, so they can show it again elsewhere.
+                host.PopupLayer.ReleaseAll();
+                modals.Remove(host, true);
             }, removeAfter);
+        }
+
+        /// <summary>
+        /// Takes what belongs to others out of this layer, without disposing it, before the layer goes (a dialog's layer goes with
+        /// the dialog): open popups close at once and their content leaves, elements put here with <see cref="Host"/> leave, and
+        /// a tooltip showing hides. Their owners can then show them again in another layer. Call from the update thread.
+        /// </summary>
+        internal void ReleaseAll()
+        {
+            foreach (var modal in modals.Children.ToArray())
+                modal.PopupLayer.ReleaseAll();
+
+            foreach (var popup in open.ToArray())
+                popup.IsOpen.Value = false;
+
+            open.Clear();
+
+            foreach (var root in roots.Children.ToArray())
+            {
+                root.PendingRemoval?.Cancel();
+                root.PendingRemoval = null;
+                root.IsClosing = false;
+                roots.Remove(root, false);
+            }
+
+            foreach (var element in contextMenus.Children.ToArray())
+                contextMenus.Remove(element, false);
+
+            toolTips.HideNow();
         }
 
         /// <summary>
@@ -336,7 +369,11 @@ namespace OsuXaml.Controls
             popup.Root.IsClosing = false;
 
             if (popup.Root.Parent != roots)
+            {
+                // Still animating out of another layer (it opens at a target in another window or dialog now): it moves here.
+                (popup.Root.Parent as Container<PopupRoot>)?.Remove(popup.Root, false);
                 roots.Add(popup.Root);
+            }
 
             // Later popups (sub-menus) draw above earlier ones.
             roots.ChangeChildDepth(popup.Root, -open.Count);
@@ -477,7 +514,7 @@ namespace OsuXaml.Controls
             {
                 var root = open[i].Root;
 
-                if (root.Parent == roots && root.IsPresent && root.ScreenSpaceDrawQuad.Contains(screenSpacePos))
+                if (root.Parent == roots && root.IsPresent && !root.IsWaitingForSize && root.ScreenSpaceDrawQuad.Contains(screenSpacePos))
                     return root;
             }
 
@@ -703,6 +740,28 @@ namespace OsuXaml.Controls
             });
         }
 
+        /// <summary>
+        /// Puts an element that isn't in the drawable tree into this layer, where context menus go, so the popups declared in it can
+        /// open: for example a flyout attached to an element rather than declared inside it (WinUI's <c>FlyoutBase.AttachedFlyout</c>).
+        /// It sits under this layer's popups and takes input only where its own bounds say. An element that already has a parent
+        /// stays where it is. Call from the update thread.
+        /// </summary>
+        public void Host(Drawable element)
+        {
+            if (element.Parent == null)
+                contextMenus.Add(element);
+        }
+
+        /// <summary>Takes an element <see cref="Host"/> put into this layer back out, without disposing it. Call from the update thread.</summary>
+        public void ReleaseHosted(Drawable element)
+        {
+            if (element.Parent == contextMenus)
+                contextMenus.Remove(element, false);
+        }
+
+        /// <summary>Whether <paramref name="element"/> is in this layer by <see cref="Host"/>.</summary>
+        public bool IsHosting(Drawable element) => element.Parent == contextMenus;
+
         protected override bool OnMouseDown(MouseDownEvent e)
         {
             // The layer sits above the app, so it sees presses first; a press and release can fall within one frame.
@@ -920,7 +979,7 @@ namespace OsuXaml.Controls
             else if (layer != null && layer.OpenPopups.Contains(this))
             {
                 // Content whose window went away has nothing left to animate in.
-                double closing = Transition != null && Root.IsPresent && layer.IsLoaded ? Transition.Close(Root) : 0;
+                double closing = Transition != null && Root.IsPresent && !Root.IsWaitingForSize && layer.IsLoaded ? Transition.Close(Root) : 0;
 
                 layer.Close(this, closing);
                 Closed?.Invoke();
@@ -970,9 +1029,23 @@ namespace OsuXaml.Controls
         // The opening animation, waiting for the content to have a size (it loads in the frame after it opens).
         private IPopupTransition pendingTransition;
 
-        public override bool PropagatePositionalInputSubTree => !IsClosing && base.PropagatePositionalInputSubTree;
+        public override bool PropagatePositionalInputSubTree => !IsClosing && !IsWaitingForSize && base.PropagatePositionalInputSubTree;
 
         public override bool PropagateNonPositionalInputSubTree => !IsClosing && base.PropagateNonPositionalInputSubTree;
+
+        /// <summary>
+        /// Whether the opening animation is waiting for the content to have a size. Meanwhile the root is invisible (alpha 0) and
+        /// takes no pointer input, but stays present (see <see cref="IsPresent"/>) so its content updates: content that sizes itself in
+        /// its update, such as a layout panel or a control measuring its children, would otherwise never get a size.
+        /// </summary>
+        public bool IsWaitingForSize => pendingTransition != null && !IsClosing;
+
+        /// <summary>
+        /// An open popup's root is present for its whole opening, even at alpha 0: while it waits for a size, and on the first frame
+        /// of a fade in from zero. So its content keeps updating, and an element in it can take focus as the popup opens (focus on
+        /// an element with a hidden ancestor is dropped). A closed or closing root is present only while it is visible.
+        /// </summary>
+        public override bool IsPresent => base.IsPresent || (!IsClosing && Parent != null && Owner.IsOpen.Value);
 
         internal PopupRoot(Popup owner)
         {

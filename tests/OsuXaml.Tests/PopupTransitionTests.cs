@@ -136,6 +136,48 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void ContentThatSizesItselfInItsUpdateStillOpens()
+        {
+            var transition = new RecordingTransition();
+            SizedInUpdate content = null;
+            bool waited = false;
+
+            AddStep("open content with no size until it updates", () =>
+            {
+                popup.Transition = transition;
+                popup.Child = content = new SizedInUpdate();
+                popup.Open();
+                waited = popup.Root.IsWaitingForSize && popup.Root.IsPresent && popup.Root.Alpha == 0 && !popup.Root.PropagatePositionalInputSubTree;
+            });
+            AddAssert("it waited, present but invisible and taking no input", () => waited);
+            AddUntilStep("the content updated and the animation started", () => content.Updates > 0 && transition.Opens.Count == 1);
+            AddAssert("with the size it gave itself", () => transition.Opens[0].Size == content_size);
+            AddAssert("no longer waiting, and visible", () => !popup.Root.IsWaitingForSize && popup.Root.Alpha == 1);
+        }
+
+        [Test]
+        public void ContentCanTakeFocusAsItOpens()
+        {
+            FocusableBox box = null;
+            bool presentAtZero = false;
+
+            AddStep("open fading in from zero", () =>
+            {
+                popup.Transition = new FadeFromZeroTransition();
+                popup.Child = box = new FocusableBox { Size = content_size };
+                popup.Open();
+                presentAtZero = popup.Root.Alpha == 0 && popup.Root.IsPresent;
+            });
+            AddAssert("present from the first frame, at alpha 0", () => presentAtZero);
+            AddUntilStep("content loaded", () => box.IsLoaded);
+            AddStep("focus while the popup starts to fade in", () => GetContainingFocusManager()?.ChangeFocus(box));
+            AddWaitStep("a few frames", 3);
+            AddAssert("focus kept", () => box.HasFocus);
+            AddStep("close", () => popup.Close());
+            AddAssert("closing: present only while visible", () => popup.Root.IsPresent == popup.Root.Alpha > 0);
+        }
+
+        [Test]
         public void TheSideIsSettledWhenTheAnimationStarts()
         {
             var transition = new RecordingTransition();
@@ -231,6 +273,35 @@ namespace OsuXaml.Tests
             AddUntilStep("shown", () => popup.Root.IsPresent && popup.Root.DrawWidth > 0);
             AddStep("close", () => popup.Close());
             AddAssert("gone", () => popup.Root.Parent == null);
+        }
+
+        private partial class FocusableBox : Container
+        {
+            public override bool AcceptsFocus => true;
+        }
+
+        private class FadeFromZeroTransition : IPopupTransition
+        {
+            public void Open(PopupRoot root, PlacementMode side) => root.FadeInFromZero(300);
+
+            public double Close(PopupRoot root)
+            {
+                root.FadeOut(100);
+                return 100;
+            }
+        }
+
+        // Content that, like a layout panel, works out its size in its own update.
+        private partial class SizedInUpdate : Container
+        {
+            public int Updates;
+
+            protected override void Update()
+            {
+                base.Update();
+                Updates++;
+                Size = content_size;
+            }
         }
 
         private class RecordingTransition : IPopupTransition
