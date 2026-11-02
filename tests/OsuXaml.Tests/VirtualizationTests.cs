@@ -88,6 +88,35 @@ namespace OsuXaml.Tests
             AddUntilStep("the scroll extent covers every row", () => scroll(list).ExtentHeight > 10000 * 20);
         }
 
+        /// <summary>A control library's list, built on ListBox in another assembly, reaching rows through the protected helpers.</summary>
+        private partial class DerivedList : ListBox
+        {
+            public bool Bring(int index) => BringIndexIntoView(index);
+
+            public Drawable Realize(int index) => RealizeIndex(index);
+        }
+
+        [Test]
+        public void DerivedListsCanRealizeAndBringRowsIntoView()
+        {
+            DerivedList list = null;
+            bool realizedNow = false;
+
+            AddStep("create 10,000 rows", () => Child = list = new DerivedList { Size = new Vector2(200, 300), ItemsSource = numbers(10000) });
+            AddUntilStep("first rows realized", () => list.ContainerFromIndex(0) != null);
+
+            // The container goes again in the panel's next update, as it's out of view, so it's checked straight away.
+            AddStep("realize a far row", () =>
+            {
+                var realized = list.Realize(7000);
+                realizedNow = realized != null && list.ContainerFromIndex(7000) == realized && list.IndexFromContainer(realized) == 7000;
+            });
+            AddAssert("it had a container at once", () => realizedNow);
+
+            AddStep("bring another into view", () => list.Bring(9000));
+            AddUntilStep("it is in view", () => inView(list, 9000));
+        }
+
         [Test]
         public void ScrollingRealizesNewRowsAndReleasesOldOnes()
         {
@@ -187,6 +216,28 @@ namespace OsuXaml.Tests
             AddWaitStep("settle", 3);
             AddAssert("rows above were measured", () => panel(list).RealizedIndices.Count(i => i < anchor) >= 4);
             AddAssert("the row moved down by exactly the scroll", () => Math.Abs(screenTop(list, anchor) - (anchorTop + 120)) < 0.5f);
+        }
+
+        [Test]
+        public void AListWhoseTopAnOuterClipHidesStaysAtItsTop()
+        {
+            ListBox list = null;
+
+            // Rows taller than the estimate, in a list whose top a container around it clips off (a page scrolled past it):
+            // only the list's own viewport decides which rows are above the view, so measuring them doesn't scroll the list.
+            var template = new DataTemplate<string>((s, _) => new osu.Framework.Graphics.Containers.Container { RelativeSizeAxes = Axes.X, Height = 48 });
+
+            AddStep("create", () => Child = new osu.Framework.Graphics.Containers.Container
+            {
+                Size = new Vector2(300, 200),
+                Masking = true,
+                Child = list = new ListBox { Size = new Vector2(250, 300), Y = -100, ItemsSource = numbers(50), ItemTemplate = template },
+            });
+            AddUntilStep("realized", () => list.ContainerFromIndex(3) != null);
+            AddWaitStep("settle", 10);
+
+            AddAssert("the list isn't scrolled", () => scroll(list).VerticalOffset == 0);
+            AddAssert("the first row is at the top of its viewport", () => Math.Abs(screenTop(list, 0) - scroll(list).ScreenSpaceDrawQuad.TopLeft.Y) < 0.5f);
         }
 
         [Test]

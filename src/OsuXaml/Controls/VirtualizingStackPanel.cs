@@ -329,10 +329,12 @@ namespace OsuXaml.Controls
                     last = sizes.IndexAt(to);
                 }
 
-                // Only when content is hidden above the viewport can a size change there move what is in view.
-                if (start > 0 && start < extent)
+                // Only when content is hidden above the viewport can a size change there move what is in view. That is the
+                // viewport of the scroll viewer the change is made up through, not whatever else clips the panel from further out
+                // (a page scrolled past the top of a list hides rows that scrolling the list mustn't make up for).
+                if (viewportStart(out double top) && top > 0 && top < extent)
                 {
-                    anchorIndex = sizes.IndexAt(start);
+                    anchorIndex = sizes.IndexAt(top);
                     anchorOffset = sizes.OffsetOf(anchorIndex);
                 }
             }
@@ -387,6 +389,22 @@ namespace OsuXaml.Controls
             start = (Orientation == Orientation.Horizontal ? local.Left : local.Top) - padding;
             end = (Orientation == Orientation.Horizontal ? local.Right : local.Bottom) - padding;
             return end > start;
+        }
+
+        /// <summary>Where the viewport of the scroll viewer around the panel starts, along the panel's axis in child space.</summary>
+        private bool viewportStart(out double start)
+        {
+            start = 0;
+
+            var viewer = scrollViewer();
+            if (viewer == null)
+                return false;
+
+            var local = ToLocalSpace(viewer.ScreenSpaceDrawQuad).AABBFloat;
+            float padding = Orientation == Orientation.Horizontal ? Padding.Left : Padding.Top;
+
+            start = (Orientation == Orientation.Horizontal ? local.Left : local.Top) - padding;
+            return true;
         }
 
         /// <summary>The realized container that holds keyboard focus, if any.</summary>

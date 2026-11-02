@@ -202,9 +202,11 @@ namespace OsuXaml.Controls
                 return;
             }
 
-            // Open on the selected month with the month view, and take keyboard focus so the arrows move the selection.
+            // Open on the selected month with the month view (with nothing selected, on DisplayDate, today unless set, as in
+            // WPF), and take keyboard focus so the arrows move the selection.
             Calendar.DisplayMode = CalendarMode.Month;
-            Calendar.DisplayDate.Value = SelectedDate.Value ?? DateTime.Today;
+            if (SelectedDate.Value is DateTime selected)
+                Calendar.DisplayDate.Value = selected;
             focusCalendar = true;
 
             CalendarOpened?.Invoke();

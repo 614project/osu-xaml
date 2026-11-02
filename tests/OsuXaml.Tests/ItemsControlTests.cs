@@ -86,6 +86,38 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void AnIndexNoItemHasSelectsNothingOnceTheItemsExist()
+        {
+            var people = new BindableList<Person>(new[] { new Person { Name = "Ann" }, new Person { Name = "Bob" }, new Person { Name = "Cid" } });
+            var index = new Bindable<int>(-1);
+            var scope = new BindingScope();
+            ListBox early = null, list = null;
+
+            AddStep("create", () =>
+            {
+                // Set before the items arrive, the index waits for them.
+                early = new ListBox { Size = new Vector2(200, 100) };
+                early.SelectedIndex.Value = 2;
+                early.ItemsSource = XamlBinding.ListCopy(scope, people);
+
+                list = new ListBox { Size = new Vector2(200, 300), Y = 100, ItemsSource = XamlBinding.ListCopy(scope, people), ItemTemplate = person_template };
+                XamlBinding.TwoWay(list.SelectedIndex, index);
+                Child = new Container { RelativeSizeAxes = Axes.Both, Children = new Drawable[] { early, list } };
+            });
+            AddAssert("an index set before the items selects its item", () => early.SelectedItem.Value == people[2] && early.SelectedIndex.Value == 2);
+
+            AddStep("select index 1", () => list.SelectedIndex.Value = 1);
+            AddStep("select index 10", () => list.SelectedIndex.Value = 10);
+            AddAssert("nothing is selected, and the index says so", () => list.SelectedItem.Value == null && list.SelectedIndex.Value == -1 && index.Value == -1);
+
+            AddStep("view model selects index 7", () => index.Value = 7);
+            AddAssert("back to -1", () => list.SelectedIndex.Value == -1 && index.Value == -1 && list.SelectedItem.Value == null);
+
+            AddStep("select index 2", () => list.SelectedIndex.Value = 2);
+            AddAssert("an index in range still works", () => list.SelectedItem.Value == people[2] && index.Value == 2);
+        }
+
+        [Test]
         public void ExtendedSelectionTracksSelectedItems()
         {
             ListBox list = null;
