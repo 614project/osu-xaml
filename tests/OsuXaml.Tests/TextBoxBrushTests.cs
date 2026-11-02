@@ -110,7 +110,7 @@ namespace OsuXaml.Tests
             AddStep("select past the end", () => box.Select(2, 99));
             AddAssert("clamped to the text", () => box.SelectionStart == 2 && box.SelectionLength == 2);
 
-            AddStep("lose focus", () => InputManager.ChangeFocus(null));
+            AddStep("lose focus", () => ((osu.Framework.Input.IFocusManager)InputManager).ChangeFocus(null));
             AddUntilStep("unfocused selection isn't coloured", () => box.Characters.All(c => near(colourOf(c), red)));
         }
 
