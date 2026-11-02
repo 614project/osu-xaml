@@ -187,7 +187,10 @@ namespace OsuXaml.Controls
 
                 if ((!stretchedX && !explicitX) || (!stretchedY && !explicitY))
                 {
-                    var desired = Layout.MeasureElement(element, ChildSize);
+                    // An element with a size of its own on one axis is measured within it, as Layout.Measure does, so text in a
+                    // fixed-width element gets the height of its wrapped lines rather than of the slot's width.
+                    var available = new Vector2(explicitX ? Content.Width : ChildSize.X, explicitY ? Content.Height : ChildSize.Y);
+                    var desired = Layout.MeasureElement(element, available);
                     if (!stretchedX && !explicitX) Content.Width = desired.X;
                     if (!stretchedY && !explicitY) Content.Height = desired.Y;
                 }
