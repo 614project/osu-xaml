@@ -98,6 +98,22 @@ namespace OsuXaml.Controls
         private float laidOutWidth = -1;
         private bool refreshing;
 
+        // How the text, the selection and the caret are painted. Initialised here rather than in the constructor: osu!framework's
+        // constructor already makes the placeholder and the caret, which read them.
+        private Colour4 foreground = Colour4.White;
+        private Colour4? placeholderForeground;
+        private Colour4? selectionBrush;
+        private float selectionOpacity = 0.5f;
+        private Colour4? selectionTextBrush;
+        private Colour4 caretBrush = Colour4.White;
+        private bool charactersRecoloured;
+
+        // What the lines were last laid out with besides the text: the selection, while selected text has its own colour.
+        private (int Start, int End) laidOutSelection;
+
+        // The character being added to the row, before osu!framework replaces it with the mask.
+        private char? addingCharacter;
+
         protected TextBoxBase()
         {
             base.Height = autoHeight = DefaultHeight;
@@ -118,7 +134,7 @@ namespace OsuXaml.Controls
                 Children = new Drawable[]
                 {
                     selectionBoxes = new Container { Depth = 1 },
-                    lineText = new TextBlock { Foreground = Colour4.White },
+                    lineText = new TextBlock { Foreground = foreground },
                     lineCaret = new Container
                     {
                         Depth = -1,
@@ -298,7 +314,7 @@ namespace OsuXaml.Controls
         protected override SpriteText CreatePlaceholder()
         {
             var placeholder = base.CreatePlaceholder();
-            placeholder.Colour = Theme.Overlay;
+            placeholder.Colour = placeholderForeground ?? Theme.Overlay;
             placeholder.Font = TextFont.With(size: placeholder.Font.Size);
             return placeholder;
         }
@@ -309,11 +325,208 @@ namespace OsuXaml.Controls
             SelectionColour = SelectionColour,
         };
 
-        protected override Drawable GetDrawableCharacter(char c) => new Character(this)
+        protected override Drawable GetDrawableCharacter(char c)
         {
-            AutoSizeAxes = Axes.Both,
-            Child = new SpriteText { Text = c.ToString(), Font = TextFont.With(size: FontSize) },
-        };
+            // osu!framework hands over the mask for a password; a revealed one shows what was typed.
+            char shown = !MasksText && addingCharacter is char typed ? typed : c;
+
+            return new Character(this, foreground)
+            {
+                AutoSizeAxes = Axes.Both,
+                Child = new SpriteText { Text = shown.ToString(), Font = TextFont.With(size: FontSize) },
+            };
+        }
+
+        protected override Drawable AddCharacterToFlow(char c)
+        {
+            addingCharacter = c;
+
+            try
+            {
+                return base.AddCharacterToFlow(c);
+            }
+            finally
+            {
+                addingCharacter = null;
+            }
+        }
+
+        #region Colours and selection
+
+        /// <summary>The colour of the text (WPF's <c>Foreground</c>); white by default.</summary>
+        public Colour4 Foreground
+        {
+            get => foreground;
+            set
+            {
+                if (foreground == value)
+                    return;
+
+                foreground = value;
+                lineText.Foreground = value;
+                lineLayoutValid = false;
+                charactersRecoloured = false;
+            }
+        }
+
+        /// <summary>The colour of <c>PlaceholderText</c> (UWP's <c>PlaceholderForeground</c>); the theme's overlay colour by default.</summary>
+        public Colour4 PlaceholderForeground
+        {
+            get => placeholderForeground ?? Theme.Overlay;
+            set
+            {
+                placeholderForeground = value;
+                Placeholder.Colour = value;
+            }
+        }
+
+        /// <summary>The colour of the selection highlight (WPF's <c>SelectionBrush</c>); the theme's accent by default.</summary>
+        public Colour4 SelectionBrush
+        {
+            get => selectionBrush ?? SelectionColour;
+            set
+            {
+                selectionBrush = value;
+                FrameworkInternals.CursorAndLayout(this).Invalidate();
+            }
+        }
+
+        /// <summary>The opacity of the selection highlight (WPF's <c>SelectionOpacity</c>); 0.5 by default, 1 paints it solid.</summary>
+        public float SelectionOpacity
+        {
+            get => selectionOpacity;
+            set
+            {
+                selectionOpacity = value;
+                FrameworkInternals.CursorAndLayout(this).Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// The colour of selected text (WPF's <c>SelectionTextBrush</c>), for a solid highlight with text in a contrasting colour
+        /// over it; null (the default) leaves selected text in <see cref="Foreground"/>.
+        /// </summary>
+        public Colour4? SelectionTextBrush
+        {
+            get => selectionTextBrush;
+            set
+            {
+                selectionTextBrush = value;
+                lineLayoutValid = false;
+                charactersRecoloured = false;
+            }
+        }
+
+        /// <summary>The colour of the caret (WPF's <c>CaretBrush</c>); white by default.</summary>
+        public Colour4 CaretBrush
+        {
+            get => caretBrush;
+            set
+            {
+                caretBrush = value;
+                lineCaret.Colour = value;
+                FrameworkInternals.CursorAndLayout(this).Invalidate();
+            }
+        }
+
+        /// <summary>Where the selection starts (WPF's <c>SelectionStart</c>): the index of its first character, or the caret's when nothing is selected.</summary>
+        public int SelectionStart
+        {
+            get => Math.Min(selectionStart, selectionEnd);
+            set => Select(value, SelectionLength);
+        }
+
+        /// <summary>How many characters are selected (WPF's <c>SelectionLength</c>).</summary>
+        public int SelectionLength
+        {
+            get => Math.Abs(selectionEnd - selectionStart);
+            set => Select(SelectionStart, value);
+        }
+
+        /// <summary>Where the caret is (WPF's <c>CaretIndex</c>); setting it clears the selection.</summary>
+        public int CaretIndex
+        {
+            get => selectionEnd;
+            set => Select(value, 0);
+        }
+
+        /// <summary>Selects <paramref name="length"/> characters from <paramref name="start"/>, with the caret at the end, as WPF's <c>Select</c>; both are clamped to the text.</summary>
+        public void Select(int start, int length)
+        {
+            int textLength = base.Text.Length;
+            start = Math.Clamp(start, 0, textLength);
+
+            setSelection(start, Math.Clamp(start + Math.Max(0, length), start, textLength));
+            lineEndCaret = -1;
+            charactersRecoloured = false;
+        }
+
+        /// <summary>
+        /// Starts the caret blinking, each time it settles somewhere new. The default fades it between 70% and 40% opacity; a design
+        /// system with a hard blink overrides this.
+        /// </summary>
+        protected virtual void AnimateCaret(Drawable caret) => caret.FadeTo(0.7f).Loop(c => c.FadeTo(0.7f).FadeTo(0.4f, 500, Easing.InOutSine));
+
+        /// <summary>Whether the text is drawn masked: a password's, unless it is being revealed.</summary>
+        protected virtual bool MasksText => InputProperties.Type.IsPassword();
+
+        /// <summary>
+        /// Makes the characters of the single row again from the text, without setting the text again (so <c>Text</c> and its
+        /// bindings see no change), after what <see cref="GetDrawableCharacter"/> or <see cref="MasksText"/> give changed.
+        /// </summary>
+        protected void RedrawCharacters()
+        {
+            lineLayoutValid = false;
+
+            if (!IsLoaded)
+                return;
+
+            string raw = base.Text;
+
+            // An unfinished IME composition has drawables of its own; laying everything out again is the safe way round it.
+            if (TextFlow.Count != raw.Length || ImeCompositionActive)
+            {
+                RefreshText();
+                return;
+            }
+
+            TextFlow.Clear();
+
+            for (int i = 0; i < raw.Length; i++)
+            {
+                addingCharacter = raw[i];
+                var character = GetDrawableCharacter(MasksText ? MaskCharacter : raw[i]);
+                addingCharacter = null;
+
+                character.Depth = -i;
+                TextFlow.Add(character);
+            }
+
+            charactersRecoloured = false;
+            FrameworkInternals.CursorAndLayout(this).Invalidate();
+        }
+
+        /// <summary>Paints the row's characters in <see cref="Foreground"/>, and selected ones in <see cref="SelectionTextBrush"/>.</summary>
+        private void recolourCharacters()
+        {
+            charactersRecoloured = true;
+
+            int start = Math.Min(selectionStart, selectionEnd);
+            int end = Math.Max(selectionStart, selectionEnd);
+            bool selectedColoured = selectionTextBrush != null && HasFocus && start != end;
+
+            for (int i = 0; i < TextFlow.Count; i++)
+            {
+                var colour = selectedColoured && i >= start && i < end ? selectionTextBrush.Value : foreground;
+
+                if (TextFlow[i] is Character character)
+                    character.SetColour(colour);
+                else if (TextFlow[i].Colour != colour)
+                    TextFlow[i].Colour = colour;
+            }
+        }
+
+        #endregion
 
         /// <summary>Whether the text is laid out in lines (rather than osu!framework's single row).</summary>
         protected bool IsMultiline => lineMode;
@@ -379,7 +592,8 @@ namespace OsuXaml.Controls
 
         private float verticalPadding => Math.Max(4, (DefaultHeight - FontSize) / 2);
 
-        private float lineGap => MathF.Round(FontSize * 0.25f);
+        /// <summary>The space between lines of text, on top of each line's own height (a quarter of <c>FontSize</c>, rounded).</summary>
+        protected virtual float LineGap => MathF.Round(FontSize * 0.25f);
 
         private void applyLineMode()
         {
@@ -440,7 +654,12 @@ namespace OsuXaml.Controls
             base.UpdateAfterChildren();
 
             if (!lineMode)
+            {
+                if (cursorMoved || !charactersRecoloured)
+                    recolourCharacters();
+
                 return;
+            }
 
             bool textChanged = layoutLines();
             var view = viewSize;
@@ -490,8 +709,13 @@ namespace OsuXaml.Controls
             int compositionLength = FrameworkInternals.ImeCompositionDrawables(this).Count;
             int compositionStart = compositionLength > 0 ? FrameworkInternals.ImeCompositionStart(this) : 0;
 
+            // Selected text in a colour of its own is a run of its own, so the lines follow the selection too.
+            var selection = selectionTextBrush != null && HasFocus
+                ? (Math.Min(selectionStart, selectionEnd), Math.Max(selectionStart, selectionEnd))
+                : (0, 0);
+
             if (lineLayoutValid && ReferenceEquals(raw, laidOutRaw) && wrapWidth == laidOutWrapWidth && FontSize == laidOutFontSize
-                && compositionStart == laidOutCompositionStart && compositionLength == laidOutCompositionLength)
+                && compositionStart == laidOutCompositionStart && compositionLength == laidOutCompositionLength && selection == laidOutSelection)
                 return false;
 
             lineLayoutValid = true;
@@ -500,41 +724,86 @@ namespace OsuXaml.Controls
             laidOutFontSize = FontSize;
             laidOutCompositionStart = compositionStart;
             laidOutCompositionLength = compositionLength;
+            laidOutSelection = selection;
 
-            string display = InputProperties.Type.IsPassword() ? mask(raw) : raw.Replace(line_separator, '\n');
+            string display = MasksText ? mask(raw) : raw.Replace(line_separator, '\n');
 
             lineText.SetOwnFont(TextFont.With(size: FontSize));
-            lineText.Spacing = new Vector2(0, lineGap);
+            lineText.Spacing = new Vector2(0, LineGap);
             lineText.TextWrapping = textWrapping == TextWrapping.NoWrap ? TextWrapping.NoWrap : TextWrapping.Wrap;
             lineText.MaxWidth = wrapWidth;
 
-            // The IME's unfinished text is underlined and faded, as it is faded in a single row.
-            lineText.Inlines.Clear();
-
-            if (compositionLength > 0 && compositionStart + compositionLength <= display.Length)
-            {
-                lineText.Inlines.Add(new Run(display.Substring(0, compositionStart)));
-                lineText.Inlines.Add(new Run(display.Substring(compositionStart, compositionLength))
-                {
-                    TextDecorations = TextDecorations.Underline,
-                    Foreground = new Colour4(1f, 1f, 1f, 0.6f),
-                });
-                lineText.Inlines.Add(new Run(display.Substring(compositionStart + compositionLength)));
-            }
-            else
-                lineText.Text = display;
+            setLineInlines(display, compositionStart, compositionLength, selection.Item1, selection.Item2);
 
             findStops(display);
 
             lineCaret.Height = FontSize;
 
             int shown = Math.Clamp(lines.Count, minLines, Math.Max(minLines, maxLines));
-            Layout.SetAffectsMeasure(this, ref autoHeight, verticalPadding * 2 + shown * FontSize + (shown - 1) * lineGap);
+            Layout.SetAffectsMeasure(this, ref autoHeight, verticalPadding * 2 + shown * FontSize + (shown - 1) * LineGap);
 
             if (growsWithLines && !(Parent is Slot) && !RelativeSizeAxes.HasFlag(Axes.Y))
                 base.Height = autoHeight;
 
             return true;
+        }
+
+        /// <summary>
+        /// Gives the lines their text: one run, or runs cut where the IME's unfinished text (underlined and faded, as it is faded in
+        /// a single row) and the selection (in <see cref="SelectionTextBrush"/>) start and end.
+        /// </summary>
+        private void setLineInlines(string display, int compositionStart, int compositionLength, int selectedStart, int selectedEnd)
+        {
+            lineText.Inlines.Clear();
+
+            bool composing = compositionLength > 0 && compositionStart + compositionLength <= display.Length;
+            int compositionEnd = compositionStart + compositionLength;
+            selectedStart = Math.Clamp(selectedStart, 0, display.Length);
+            selectedEnd = Math.Clamp(selectedEnd, 0, display.Length);
+            bool selecting = selectedStart < selectedEnd;
+
+            if (!composing && !selecting)
+            {
+                lineText.Text = display;
+                return;
+            }
+
+            var cuts = new SortedSet<int> { 0, display.Length };
+
+            if (composing)
+            {
+                cuts.Add(compositionStart);
+                cuts.Add(compositionEnd);
+            }
+
+            if (selecting)
+            {
+                cuts.Add(selectedStart);
+                cuts.Add(selectedEnd);
+            }
+
+            int from = -1;
+
+            foreach (int to in cuts)
+            {
+                if (from >= 0 && to > from)
+                {
+                    var run = new Run(display.Substring(from, to - from));
+
+                    if (composing && from >= compositionStart && to <= compositionEnd)
+                    {
+                        run.TextDecorations = TextDecorations.Underline;
+                        run.Foreground = foreground.Opacity(foreground.A * 0.6f);
+                    }
+
+                    if (selecting && from >= selectedStart && to <= selectedEnd)
+                        run.Foreground = selectionTextBrush.Value;
+
+                    lineText.Inlines.Add(run);
+                }
+
+                from = to;
+            }
         }
 
         private string mask(string raw)
@@ -669,11 +938,12 @@ namespace OsuXaml.Controls
         {
             int start = Math.Min(selectionStart, selectionEnd);
             int end = Math.Max(selectionStart, selectionEnd);
-            float gap = lineGap;
+            float gap = LineGap;
 
             selectionBoxes.Clear();
 
-            if (start != end)
+            // As in a single row, the selection only shows while the box has focus.
+            if (start != end && HasFocus)
             {
                 foreach (var line in lines)
                 {
@@ -689,8 +959,8 @@ namespace OsuXaml.Controls
 
                     selectionBoxes.Add(new Box
                     {
-                        Colour = SelectionColour,
-                        Alpha = 0.5f,
+                        Colour = SelectionBrush,
+                        Alpha = selectionOpacity,
                         Position = new Vector2(left, line.Top - gap / 2),
                         Size = new Vector2(Math.Max(0, right - left), line.Height + gap),
                     });
@@ -704,7 +974,8 @@ namespace OsuXaml.Controls
                 var (caretLine, x) = positionOf(selectionEnd);
 
                 lineCaret.Position = new Vector2(x - CaretWidth / 2, lines[caretLine].Top);
-                lineCaret.FadeTo(0.7f).Loop(c => c.FadeTo(0.7f).FadeTo(0.4f, 500, Easing.InOutSine));
+                lineCaret.Colour = caretBrush;
+                AnimateCaret(lineCaret);
             }
             else
                 lineCaret.Alpha = 0;
@@ -792,7 +1063,7 @@ namespace OsuXaml.Controls
             verticalBar.Height = Math.Max(0, DrawHeight - 2 * scroll_bar_inset - (showHorizontal ? scroll_bar_thickness : 0));
             verticalBar.Maximum = scrollableY;
             verticalBar.ViewportSize = view.Y;
-            verticalBar.SmallChange = FontSize + lineGap;
+            verticalBar.SmallChange = FontSize + LineGap;
             verticalBar.LargeChange = Math.Max(1, view.Y);
             verticalBar.Value.Value = scroll.Y;
 
@@ -841,7 +1112,7 @@ namespace OsuXaml.Controls
         private (int Index, bool LineEnd) hitTest(Vector2 screenSpacePosition)
         {
             var position = lineContent.ToLocalSpace(screenSpacePosition);
-            float gap = lineGap;
+            float gap = LineGap;
 
             int line = lines.Count - 1;
 
@@ -964,7 +1235,7 @@ namespace OsuXaml.Controls
                     case Key.PageUp:
                     case Key.PageDown:
                     {
-                        int page = Math.Max(1, (int)(viewSize.Y / (FontSize + lineGap)) - 1);
+                        int page = Math.Max(1, (int)(viewSize.Y / (FontSize + LineGap)) - 1);
                         moveLines(e.Key == Key.PageUp ? -page : page, e.ShiftPressed);
                         return true;
                     }
@@ -1128,7 +1399,7 @@ namespace OsuXaml.Controls
 
             float before = scroll.Y;
 
-            scroll.Y -= e.ScrollDelta.Y * (FontSize + lineGap) * 3;
+            scroll.Y -= e.ScrollDelta.Y * (FontSize + LineGap) * 3;
             applyScroll();
 
             // At either end the wheel goes on to scroll whatever is around the box.
@@ -1159,9 +1430,25 @@ namespace OsuXaml.Controls
         {
             private readonly TextBoxBase textBox;
 
-            public Character(TextBoxBase textBox)
+            // The colour the character shows once it has faded in (osu!framework fades new characters in from transparent).
+            private Colour4 target;
+
+            public Character(TextBoxBase textBox, Colour4 colour)
             {
                 this.textBox = textBox;
+                target = colour;
+                Colour = colour;
+            }
+
+            /// <summary>Recolours the character at once (it is selected, or the text colour changed).</summary>
+            public void SetColour(Colour4 colour)
+            {
+                if (target == colour)
+                    return;
+
+                target = colour;
+                ClearTransforms(false, nameof(Colour));
+                Colour = colour;
             }
 
             public override void Hide()
@@ -1184,6 +1471,24 @@ namespace OsuXaml.Controls
             }
 
             public override bool IsPresent => !textBox.lineMode && base.IsPresent;
+
+            // As osu!framework's, in the box's selection and caret brushes and with its caret animation.
+            public override void DisplayAt(Vector2 position, float? selectionWidth)
+            {
+                if (selectionWidth != null)
+                {
+                    this.MoveTo(position, 60, Easing.Out);
+                    this.ResizeWidthTo(selectionWidth.Value + CaretWidth / 2, 60, Easing.Out);
+                    this.FadeTo(textBox.SelectionOpacity, 200, Easing.Out).FadeColour(textBox.SelectionBrush, 200, Easing.Out);
+                }
+                else
+                {
+                    this.MoveTo(new Vector2(position.X - CaretWidth / 2, position.Y), 60, Easing.Out);
+                    this.ResizeWidthTo(CaretWidth, 60, Easing.Out);
+                    this.FadeColour(textBox.CaretBrush, 200, Easing.Out);
+                    textBox.AnimateCaret(this);
+                }
+            }
         }
     }
 
