@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using NUnit.Framework;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Testing;
 using OsuXaml.Controls;
@@ -130,6 +131,132 @@ namespace OsuXaml.Tests
                 Child = slider;
             });
             AddAssert("coerced both ways", () => score.Value == 100 && slider.Value.Value == 100);
+        }
+
+        #endregion
+
+        #region #15: containers waiting in the recycling pool
+
+        private sealed class Thing
+        {
+            public readonly Bindable<string> Name;
+            public readonly BindableBool IsExpanded = new BindableBool();
+            public readonly BindableList<Thing> Children = new BindableList<Thing>();
+
+            public Thing(string name, params Thing[] children)
+            {
+                Name = new Bindable<string>(name);
+                Children.AddRange(children);
+            }
+
+            public override string ToString() => Name.Value;
+        }
+
+        /// <summary>A template that binds a text to the item's name and keeps every text it built.</summary>
+        private static DataTemplate<Thing> tracking(List<TextBlock> built) => new DataTemplate<Thing>((thing, scope) =>
+        {
+            var text = new TextBlock();
+            var name = thing.Name.GetBoundCopy();
+            scope.Add(name);
+            name.BindValueChanged(e => text.Text = e.NewValue, true);
+            built.Add(text);
+            return text;
+        });
+
+        private static BindableList<Thing> things(int count) => new BindableList<Thing>(Enumerable.Range(0, count).Select(i => new Thing("T" + i)));
+
+        private void checkRecycledContainersLetGo(System.Func<BindableList<Thing>, List<TextBlock>, ItemsControl> create)
+        {
+            var source = things(5);
+            var built = new List<TextBlock>();
+            ItemsControl control = null;
+            Thing removed = null;
+
+            AddStep("create with recycling", () =>
+            {
+                control = create(source, built);
+                VirtualizingPanel.SetVirtualizationMode(control, VirtualizationMode.Recycling);
+                Child = control;
+            });
+            AddUntilStep("rows exist", () => control.ContainerFromIndex(4) != null && built.Count >= 5);
+            AddStep("remove the first item", () =>
+            {
+                removed = source[0];
+                source.RemoveAt(0);
+            });
+            AddStep("rename the removed item", () => removed.Name.Value = "renamed");
+            AddAssert("nothing shows the removed item", () => built.All(t => t.Text.ToString() != "renamed"));
+
+            AddStep("add an item", () => source.Add(new Thing("new")));
+            AddUntilStep("a reused row shows it", () => control.ContainerFromIndex(4) != null && built.Any(t => t.Parent != null && t.Text.ToString() == "new"));
+        }
+
+        [Test]
+        public void RecycledListBoxItemsLetGoOfTheirItems() => checkRecycledContainersLetGo((source, built) => new ListBox
+        {
+            Size = new Vector2(200, 300),
+            ItemTemplate = tracking(built),
+            ItemsSource = XamlBinding.ListCopy(new BindingScope(), source),
+        });
+
+        [Test]
+        public void RecycledGridViewRowsLetGoOfTheirItems() => checkRecycledContainersLetGo((source, built) => new ListView
+        {
+            Size = new Vector2(300, 300),
+            View = new GridView { Columns = { new GridViewColumn { Header = "Name", CellTemplate = tracking(built) } } },
+            ItemsSource = XamlBinding.ListCopy(new BindingScope(), source),
+        });
+
+        [Test]
+        public void RecycledDataGridRowsLetGoOfTheirItems() => checkRecycledContainersLetGo((source, built) =>
+        {
+            var grid = new DataGrid
+            {
+                Size = new Vector2(300, 300),
+                AutoGenerateColumns = false,
+                ItemsSource = XamlBinding.ListCopy(new BindingScope(), source),
+            };
+            grid.Columns.Add(new DataGridTemplateColumn { Header = "Name", CellTemplate = tracking(built) });
+            return grid;
+        });
+
+        [Test]
+        public void RecycledTreeViewNodesLetGoOfTheirItems()
+        {
+            var child = new Thing("child");
+            var removed = new Thing("removed", child);
+            var roots = new BindableList<Thing>(new[] { removed, new Thing("kept") });
+            TreeView tree = null;
+            TreeViewItem oldNode = null;
+
+            AddStep("create with recycling", () =>
+            {
+                tree = new TreeView
+                {
+                    Size = new Vector2(260, 300),
+                    ItemTemplate = new HierarchicalDataTemplate<Thing>((t, _) => new TextBlock { Text = t.Name.Value }, (t, scope) => XamlBinding.ListCopy(scope, t.Children)),
+                    IsExpandedBinding = new ItemBinding<Thing, bool>("IsExpanded", t => t.IsExpanded, t => t.IsExpanded.Value),
+                    ItemsSource = XamlBinding.ListCopy(new BindingScope(), roots),
+                };
+                VirtualizingPanel.SetIsVirtualizing(tree, true);
+                VirtualizingPanel.SetVirtualizationMode(tree, VirtualizationMode.Recycling);
+                Child = tree;
+            });
+            AddUntilStep("nodes exist", () => tree.ContainerFromDataItem(removed) != null);
+            AddStep("remove the first root", () =>
+            {
+                oldNode = tree.ContainerFromDataItem(removed);
+                roots.RemoveAt(0);
+            });
+            AddStep("expand the removed item and give it a child", () =>
+            {
+                removed.IsExpanded.Value = true;
+                removed.Children.Add(new Thing("late"));
+            });
+            AddAssert("the pooled node doesn't follow it", () => !oldNode.IsExpanded.Value && oldNode.DataItem == null && !oldNode.HasItems);
+            AddStep("add a root", () => roots.Add(new Thing("new")));
+            AddUntilStep("the new root shows", () => tree.ContainerFromDataItem(roots[^1]) != null);
+            AddAssert("kept root unchanged", () => tree.ContainerFromDataItem(roots[0])?.DataItem == roots[0]);
         }
 
         #endregion

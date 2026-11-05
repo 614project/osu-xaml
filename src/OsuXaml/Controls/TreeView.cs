@@ -255,6 +255,8 @@ namespace OsuXaml.Controls
 
         protected override void ClearContainer(Drawable container, object item) => ContainerCleared(container, IsReleasingContainer);
 
+        private protected override void RecycleContainer(Drawable container) => TreeViewItem.Recycle(container);
+
         private protected override bool KeepContainerRealized(Drawable container) => KeepsNode(container);
 
         internal override float TypicalLength(Drawable container, float length) => TreeViewItem.TypicalLengthOf(container, length);
@@ -699,6 +701,44 @@ namespace OsuXaml.Controls
             tree?.ContainerPrepared(node);
         }
 
+        /// <summary>
+        /// Lets go of the item of a node that goes into the recycling pool: its header, its children and the IsExpanded binding,
+        /// so a change to that item (expanding it, adding children) doesn't reach a node that no longer shows it.
+        /// </summary>
+        internal static void Recycle(Drawable container)
+        {
+            if (!(container is TreeViewItem node) || node.preparedItem == null)
+                return;
+
+            node.preparing = true;
+
+            try
+            {
+                node.stopObservingPending();
+                node.childrenBindings?.UnbindAll();
+                node.childrenBindings = null;
+                node.pendingChildren = null;
+
+                if (node.ItemsSource != null)
+                    node.ItemsSource = null;
+
+                if (node.expandedSource != null)
+                {
+                    node.IsExpanded.UnbindFrom(node.expandedSource);
+                    node.expandedSource = null;
+                }
+
+                node.preparedItem = null;
+                node.preparedTemplate = null;
+                node.Header = null;
+                node.DataItem = null;
+            }
+            finally
+            {
+                node.preparing = false;
+            }
+        }
+
         /// <summary>Shows <paramref name="item"/>: in a new node, a recycled one that showed another item, or with a new template.</summary>
         private void present(TreeView tree, object item, DataTemplate template)
         {
@@ -877,6 +917,8 @@ namespace OsuXaml.Controls
         protected override void PrepareContainer(Drawable container, object item) => Prepare(ParentTreeView, this, container, item, ItemTemplate);
 
         protected override void ClearContainer(Drawable container, object item) => ParentTreeView?.ContainerCleared(container, IsReleasingContainer);
+
+        private protected override void RecycleContainer(Drawable container) => Recycle(container);
 
         private protected override bool KeepContainerRealized(Drawable container) => ParentTreeView?.KeepsNode(container) == true;
 

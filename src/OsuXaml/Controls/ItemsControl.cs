@@ -238,6 +238,18 @@ namespace OsuXaml.Controls
         {
         }
 
+        /// <summary>
+        /// Called when a generated container goes into the recycling pool (VirtualizationMode="Recycling"), after
+        /// <see cref="ClearContainer"/>: it lets go of its item, so a container waiting in the pool isn't bound to an item it no
+        /// longer shows. The base takes the item out of a <see cref="ContentControl"/>; controls whose containers present the item
+        /// another way release it too.
+        /// </summary>
+        private protected virtual void RecycleContainer(Drawable container)
+        {
+            if (container is ContentControl content)
+                content.Content = null;
+        }
+
         /// <summary>Set during <see cref="ClearContainer"/> when the item stays and only its container goes, because it scrolled out of view.</summary>
         private protected bool IsReleasingContainer => releasing;
 
@@ -561,6 +573,7 @@ namespace OsuXaml.Controls
             else if (recycling)
             {
                 itemsPanel.Remove(container, false);
+                RecycleContainer(container);
                 recycled.Push(container);
             }
             else

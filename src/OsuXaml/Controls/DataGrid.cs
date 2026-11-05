@@ -155,6 +155,7 @@ namespace OsuXaml.Controls
             {
                 case Bindable<bool?> nullable:
                     checkBox.IsChecked.BindTo(nullable);
+                    scope.Add(checkBox.IsChecked);
                     break;
 
                 case Bindable<bool> bindable:
@@ -541,6 +542,14 @@ namespace OsuXaml.Controls
             base.ClearContainer(container, item);
         }
 
+        private protected override void RecycleContainer(Drawable container)
+        {
+            if (container is DataGridRow row && row.CellsPresenter != null)
+                row.ClearRow();
+            else
+                base.RecycleContainer(container);
+        }
+
         protected override void OnItemsChanged()
         {
             base.OnItemsChanged();
@@ -751,6 +760,15 @@ namespace OsuXaml.Controls
             Content = CellsPresenter = new DataGridCellsPresenter(this, item) { ColumnLayout = layout };
 
             // Drawable content belongs to whoever set it, so the replaced cells are ours to dispose.
+            old?.Dispose();
+        }
+
+        /// <summary>Lets go of the row's item, disposing its cells and their bindings, while the row waits to be reused.</summary>
+        internal void ClearRow()
+        {
+            var old = CellsPresenter;
+            CellsPresenter = null;
+            Content = null;
             old?.Dispose();
         }
 

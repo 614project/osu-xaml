@@ -150,6 +150,14 @@ namespace OsuXaml.Controls
             row.IsSelected = IsSelected(item);
         }
 
+        private protected override void RecycleContainer(Drawable container)
+        {
+            if (container is ListViewItem row && row.RowPresenter != null)
+                row.ClearRow();
+            else
+                base.RecycleContainer(container);
+        }
+
         protected override void LoadComplete()
         {
             base.LoadComplete();
@@ -230,6 +238,15 @@ namespace OsuXaml.Controls
             Content = RowPresenter = new GridViewRowPresenter(item) { ColumnLayout = layout };
 
             // Drawable content belongs to whoever set it, so the replaced row is ours to dispose.
+            old?.Dispose();
+        }
+
+        /// <summary>Lets go of the row's item, disposing its cells and their bindings, while the row waits to be reused.</summary>
+        internal void ClearRow()
+        {
+            var old = RowPresenter;
+            RowPresenter = null;
+            Content = null;
             old?.Dispose();
         }
     }
