@@ -184,5 +184,19 @@ namespace Demo
         }
 
         #endregion
+
+        #region #22: markup messages
+
+        [Test]
+        public void MarkupErrorsListEverythingThatIsSupported()
+        {
+            var extension = error(@"<TextBlock Text=""{Nope Title}"" />");
+            Assert.That(extension.GetMessage(), Does.Contain("{DynamicResource}").And.Contain("{x:Type}"));
+
+            var option = error(@"<TextBlock Text=""{Bind Title, Nope=1}"" />");
+            Assert.That(option.GetMessage(), Does.Contain("UpdateSourceTrigger"));
+        }
+
+        #endregion
     }
 }

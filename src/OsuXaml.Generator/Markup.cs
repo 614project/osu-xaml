@@ -85,7 +85,8 @@ namespace OsuXaml.Generator
                     break;
 
                 default:
-                    error = $"Unknown markup extension '{name}'. Supported: {{Bind}}, {{Binding}}, {{StaticResource}}, {{ThemeResource}}, {{x:Static}}, {{TemplateBinding}}, {{x:Null}}";
+                    error = $"Unknown markup extension '{name}'. Supported: {{Bind}}, {{Binding}}, {{StaticResource}}, {{DynamicResource}}, {{ThemeResource}}, "
+                            + "{x:Static}, {x:Type}, {TemplateBinding}, {x:Null}";
                     return null;
             }
 
@@ -126,7 +127,7 @@ namespace OsuXaml.Generator
                 }
                 else if (result.Extension == Bind && !bind_options.Contains(key, StringComparer.OrdinalIgnoreCase))
                 {
-                    error = $"Unknown binding option '{key}'. Supported: Path, {string.Join(", ", bind_options.Take(bind_options.Length - 1))}";
+                    error = $"Unknown binding option '{key}'. Supported: Path, {string.Join(", ", bind_options)}";
                     return null;
                 }
                 else
@@ -154,17 +155,26 @@ namespace OsuXaml.Generator
             return -1;
         }
 
+        /// <summary>
+        /// Splits options at commas outside quotes, nested markup (<c>Converter={StaticResource a}</c>) and a generic type's
+        /// arguments (<c>{x:Type local:Pair(x:String, x:Int32)}</c>).
+        /// </summary>
         private static IEnumerable<string> splitTopLevel(string s)
         {
             var current = new StringBuilder();
             bool quoted = false;
+            int depth = 0;
 
             foreach (char c in s)
             {
                 if (c == '\'')
                     quoted = !quoted;
+                else if (!quoted && (c == '(' || c == '{'))
+                    depth++;
+                else if (!quoted && (c == ')' || c == '}') && depth > 0)
+                    depth--;
 
-                if (c == ',' && !quoted)
+                if (c == ',' && !quoted && depth == 0)
                 {
                     yield return current.ToString();
 

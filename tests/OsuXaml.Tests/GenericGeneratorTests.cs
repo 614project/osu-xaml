@@ -17,6 +17,7 @@ namespace Demo
     {
         public Bindable<string> Choice { get; } = new Bindable<string>(""a"");
         public Bindable<string> Title { get; } = new Bindable<string>(""hi"");
+        public BindableList<Pair<string, int>> Pairs { get; } = new BindableList<Pair<string, int>>();
     }
 
     public class Pair<TFirst, TSecond>
@@ -128,6 +129,21 @@ namespace Demo
   <SpriteText Text=""{Bind First}"" />
   <SpriteText Text=""{Bind Second, StringFormat='{0} left'}"" />
 </CompositeDrawable>");
+        }
+
+        [Test]
+        public void XTypeTakesAGenericTypeWithSeveralArguments()
+        {
+            string source = GeneratorRunner.Compiles(code_behind, header + @"
+  <CompositeDrawable.Resources>
+    <DataTemplate x:Key=""PairTemplate"" DataType=""{x:Type local:Pair(x:String, x:Int32)}"">
+      <SpriteText Text=""{Bind First}"" />
+    </DataTemplate>
+  </CompositeDrawable.Resources>
+  <ItemsControl ItemsSource=""{Bind Pairs}"" ItemTemplate=""{StaticResource PairTemplate}"" />
+</CompositeDrawable>");
+
+            Assert.That(source, Does.Contain("global::Demo.Pair<string, int>"));
         }
 
         [Test]
