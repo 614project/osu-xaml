@@ -83,5 +83,55 @@ namespace OsuXaml.Tests
         }
 
         #endregion
+
+        #region #14: a slider's value set before its range
+
+        [Test]
+        public void SliderValueBoundBeforeTheRangeKeepsTheSource()
+        {
+            var score = new osu.Framework.Bindables.BindableDouble(150);
+            Slider slider = null;
+
+            AddStep("bind, then set the range (XAML attribute order)", () =>
+            {
+                slider = new Slider { Width = 200 };
+                XamlBinding.TwoWay(slider.Value, score);
+                slider.Minimum = 0;
+                slider.Maximum = 200;
+                Child = slider;
+            });
+            AddAssert("source kept", () => score.Value == 150 && slider.Value.Value == 150 && slider.Current.Value == 150);
+        }
+
+        [Test]
+        public void SliderValueSetBeforeTheRangeInCode()
+        {
+            Slider slider = null;
+
+            AddStep("create", () => Child = slider = new Slider { Width = 200, Value = { Value = 30 }, Minimum = 50, Maximum = 80 });
+            AddAssert("coerced to the minimum once loaded", () => slider.Value.Value == 50);
+
+            AddStep("value above the range", () => slider.Value.Value = 120);
+            AddAssert("coerced to the maximum", () => slider.Value.Value == 80);
+            AddStep("widen the range", () => slider.Maximum = 150);
+            AddAssert("the value asked for comes back", () => slider.Value.Value == 120 && slider.Current.Value == 120);
+        }
+
+        [Test]
+        public void SliderValueOutOfTheFinalRangeIsCoercedOnLoad()
+        {
+            var score = new osu.Framework.Bindables.BindableDouble(150);
+            Slider slider = null;
+
+            AddStep("bind, range stays 0..100", () =>
+            {
+                slider = new Slider { Width = 200 };
+                XamlBinding.TwoWay(slider.Value, score);
+                Child = slider;
+            });
+            AddAssert("coerced both ways", () => score.Value == 100 && slider.Value.Value == 100);
+        }
+
+        #endregion
     }
 }

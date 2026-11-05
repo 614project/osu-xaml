@@ -136,6 +136,12 @@ namespace OsuXaml.Controls
         private bool ticksValid;
         private bool syncing;
 
+        // WPF keeps the value it was asked for and re-coerces it when the range changes, so attribute order doesn't matter: with
+        // Value="{Bind Score}" before Maximum="200", a score of 150 isn't cut to the default maximum of 100. The coerced value
+        // flows back to the source only once the slider is loaded and its range is set.
+        private double requestedValue;
+        private bool coercing;
+
         // The cross size the slider gave itself; it follows orientation and tick changes until a size is set.
         private float defaultThickness = thumb_row;
 
@@ -191,14 +197,14 @@ namespace OsuXaml.Controls
             {
                 if (!syncing)
                 {
+                    if (!coercing)
+                        requestedValue = e.NewValue;
+
                     setNumber(e.NewValue);
 
                     // Out-of-range values are coerced, like WPF, and the coerced value flows back to the source.
-                    if (CurrentNumber.Value != e.NewValue && !Value.Disabled)
-                    {
-                        Value.Value = CurrentNumber.Value;
+                    if (IsLoaded && coerceValue())
                         return;
-                    }
                 }
 
                 ValueChanged?.Invoke(e.NewValue);
@@ -228,10 +234,46 @@ namespace OsuXaml.Controls
                 if (Value.Disabled)
                     return;
 
+                requestedValue = e.NewValue;
                 syncing = true;
                 Value.Value = e.NewValue;
                 syncing = false;
             };
+        }
+
+        protected override void LoadComplete()
+        {
+            base.LoadComplete();
+            coerceValue();
+        }
+
+        /// <summary>Writes the range-constrained number back to <see cref="Value"/> when they differ; true if it did.</summary>
+        private bool coerceValue()
+        {
+            if (CurrentNumber.Value == Value.Value || Value.Disabled)
+                return false;
+
+            coercing = true;
+            Value.Value = CurrentNumber.Value;
+            coercing = false;
+            return true;
+        }
+
+        /// <summary>Sets the range without taking the clamp as user input, then re-coerces the value that was asked for.</summary>
+        private void setRange(double? min, double? max)
+        {
+            syncing = true;
+            if (min is double minimum)
+                CurrentNumber.MinValue = minimum;
+            if (max is double maximum)
+                CurrentNumber.MaxValue = maximum;
+            syncing = false;
+
+            ticksValid = false;
+            setNumber(requestedValue);
+
+            if (IsLoaded)
+                coerceValue();
         }
 
         /// <summary>The slider's value. Binds two-way: <c>Value="{Bind Volume}"</c>.</summary>
@@ -243,21 +285,13 @@ namespace OsuXaml.Controls
         public double Minimum
         {
             get => CurrentNumber.MinValue;
-            set
-            {
-                CurrentNumber.MinValue = value;
-                ticksValid = false;
-            }
+            set => setRange(value, null);
         }
 
         public double Maximum
         {
             get => CurrentNumber.MaxValue;
-            set
-            {
-                CurrentNumber.MaxValue = value;
-                ticksValid = false;
-            }
+            set => setRange(null, value);
         }
 
         /// <summary>Horizontal (the default) or vertical, with the minimum at the bottom.</summary>
