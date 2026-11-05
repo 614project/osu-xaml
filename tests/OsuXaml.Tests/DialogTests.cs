@@ -27,10 +27,12 @@ namespace OsuXaml.Tests
             public readonly Button Cancel;
             public readonly ComboBox Theme;
             public readonly DatePicker Date;
+            public readonly Button Apply;
             public int SaveClicks;
+            public int ApplyClicks;
             public int CancelClicks;
 
-            public SettingsDialog(bool withDate = false)
+            public SettingsDialog(bool withDate = false, bool withApplyFirst = false)
             {
                 Title = "Settings";
 
@@ -53,6 +55,16 @@ namespace OsuXaml.Tests
 
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
                 Layout.SetHorizontalAlignment(buttons, HorizontalAlignment.Right);
+
+                // Marked IsDefault after Save, but first in the dialog.
+                if (withApplyFirst)
+                {
+                    Apply = new Button { Content = "Apply" };
+                    DialogService.SetIsDefault(Apply, true);
+                    Apply.Click += () => ApplyClicks++;
+                    buttons.Add(Apply);
+                }
+
                 buttons.Add(Save);
                 buttons.Add(Cancel);
 
@@ -166,6 +178,18 @@ namespace OsuXaml.Tests
 
             click(() => below);
             AddAssert("input reaches the app again", () => belowClicks == 1);
+        }
+
+        [Test]
+        public void EnterClicksTheFirstDefaultButtonInTheDialog()
+        {
+            SettingsDialog dialog = null;
+
+            show(() => new SettingsDialog(withApplyFirst: true), (d, _) => dialog = d);
+            AddUntilStep("the dialog has focus", () => dialog.HasFocus);
+            AddStep("Enter", () => InputManager.Key(Key.Enter));
+            AddUntilStep("the first IsDefault button in the tree is clicked", () => dialog.ApplyClicks == 1);
+            AddAssert("not the other", () => dialog.SaveClicks == 0);
         }
 
         [Test]

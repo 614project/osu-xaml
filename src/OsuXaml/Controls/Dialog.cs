@@ -10,6 +10,7 @@ using osu.Framework.Graphics.Effects;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Events;
+using osu.Framework.Testing;
 using osuTK;
 using osuTK.Input;
 
@@ -476,14 +477,14 @@ namespace OsuXaml.Controls
 
         public static bool GetIsCancel(Drawable element) => entries.TryGetValue(element, out var e) && e.IsCancel;
 
-        /// <summary>The first visible, enabled IsDefault (or IsCancel) element inside <paramref name="dialog"/>.</summary>
+        /// <summary>The first visible, enabled IsDefault (or IsCancel) element inside <paramref name="dialog"/>, in tree order.</summary>
         internal static Drawable FindButton(Dialog dialog, bool cancel)
         {
-            foreach (var pair in (IEnumerable<KeyValuePair<Drawable, Entry>>)entries)
+            // The dialog's own tree, not the table: a ConditionalWeakTable enumerates in no order that follows the document.
+            foreach (var element in dialog.ChildrenOfType<Drawable>())
             {
-                var element = pair.Key;
-
-                if ((cancel ? pair.Value.IsCancel : pair.Value.IsDefault) && usable(element) && findDialog(element) == dialog)
+                if (entries.TryGetValue(element, out var entry) && (cancel ? entry.IsCancel : entry.IsDefault) && usable(element)
+                    && findDialog(element) == dialog)
                     return element;
             }
 
