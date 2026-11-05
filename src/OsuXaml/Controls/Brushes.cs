@@ -331,13 +331,18 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>
-        /// Two colours at <paramref name="angle"/> degrees (0 runs left to right, 90 top to bottom). As in WPF, the gradient
-        /// starts at the top-left corner and ends one unit along the angle.
+        /// Two colours at <paramref name="angle"/> degrees (0 runs left to right, 90 top to bottom, 180 right to left). The
+        /// gradient ends one unit along the angle, as in WPF, but starts at the corner the angle leads away from: WPF always
+        /// starts at the top-left, so from 90 to 270 degrees its whole shape would be the start colour.
         /// </summary>
         public LinearGradientBrush(Colour4 startColor, Colour4 endColor, float angle)
         {
             float radians = MathHelper.DegreesToRadians(angle);
-            endPoint = new Vector2(MathF.Cos(radians), MathF.Sin(radians));
+            var direction = new Vector2(MathF.Cos(radians), MathF.Sin(radians));
+
+            // cos(90°) in floats is a hair below zero; that still starts at the left.
+            startPoint = new Vector2(direction.X < -1e-5f ? 1 : 0, direction.Y < -1e-5f ? 1 : 0);
+            endPoint = startPoint + direction;
 
             Add(new GradientStop(startColor, 0));
             Add(new GradientStop(endColor, 1));

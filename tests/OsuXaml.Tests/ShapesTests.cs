@@ -160,6 +160,23 @@ namespace OsuXaml.Tests
             Assert.That(down.StartPoint, Is.EqualTo(Vector2.Zero));
             Assert.That(Precision.AlmostEquals(down.EndPoint, new Vector2(0, 1), 1e-5f));
             Assert.That(down.GradientStops.Select(s => s.Offset), Is.EqualTo(new[] { 0f, 1f }));
+
+            var diagonal = new LinearGradientBrush(Colour4.Red, Colour4.Blue, 45);
+            Assert.That(diagonal.StartPoint, Is.EqualTo(Vector2.Zero));
+            Assert.That(Precision.AlmostEquals(diagonal.EndPoint, new Vector2(System.MathF.Sqrt(0.5f)), 1e-5f));
+        }
+
+        [TestCase(180, 1, 0, 0, 0)]
+        [TestCase(270, 0, 1, 0, 0)]
+        [TestCase(135, 1, 0, 0.29289f, 0.70711f)]
+        [TestCase(225, 1, 1, 0.29289f, 0.29289f)]
+        [TestCase(-90, 0, 1, 0, 0)]
+        public void AnglesPointingBackStartAtTheFarCorner(float angle, float startX, float startY, float endX, float endY)
+        {
+            var brush = new LinearGradientBrush(Colour4.Red, Colour4.Blue, angle);
+
+            Assert.That(Precision.AlmostEquals(brush.StartPoint, new Vector2(startX, startY), 1e-4f), $"start {brush.StartPoint}");
+            Assert.That(Precision.AlmostEquals(brush.EndPoint, new Vector2(endX, endY), 1e-4f), $"end {brush.EndPoint}");
         }
 
         [Test]
