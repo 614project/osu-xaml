@@ -459,8 +459,15 @@ namespace OsuXaml.Controls
                     break;
 
                 case NotifyCollectionChangedAction.Move when e.OldStartingIndex >= 0 && e.NewStartingIndex >= 0:
+                    // NewStartingIndex is where the first moved item ends up. Moving a block forward, each item taken out pulls the
+                    // rest of the block back one, so every step moves the block's first item to the block's last place.
                     for (int i = 0; i < e.OldItems.Count; i++)
-                        move(e.OldStartingIndex + i, e.NewStartingIndex + i);
+                    {
+                        if (e.OldStartingIndex < e.NewStartingIndex)
+                            move(e.OldStartingIndex, e.NewStartingIndex + e.OldItems.Count - 1);
+                        else
+                            move(e.OldStartingIndex + i, e.NewStartingIndex + i);
+                    }
 
                     break;
 

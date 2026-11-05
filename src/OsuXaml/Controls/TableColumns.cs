@@ -742,7 +742,10 @@ namespace OsuXaml.Controls
                 case NotifyCollectionChangedAction.Move when e.OldStartingIndex >= 0 && e.NewStartingIndex >= 0:
                     for (int i = 0; i < e.OldItems.Count; i++)
                     {
-                        int from = e.OldStartingIndex + i, to = e.NewStartingIndex + i;
+                        // As in ItemsControl: a block moving forward moves its first item to its last place each time.
+                        bool forward = e.OldStartingIndex < e.NewStartingIndex;
+                        int from = forward ? e.OldStartingIndex : e.OldStartingIndex + i;
+                        int to = forward ? e.NewStartingIndex + e.OldItems.Count - 1 : e.NewStartingIndex + i;
                         if (from >= items.Count || from == to)
                             continue;
 
