@@ -5,6 +5,7 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Events;
+using osu.Framework.Input.States;
 using osu.Framework.Threading;
 using osuTK;
 using osuTK.Input;
@@ -419,8 +420,11 @@ namespace OsuXaml.Controls
             return true;
         }
 
-        /// <summary>Pages towards the pointer now and, while the track stays pressed, again until the thumb reaches the pointer.</summary>
-        private void startPaging(Func<Vector2> pointer)
+        /// <summary>
+        /// Pages towards the pointer now and, while the track stays pressed, again until the thumb reaches the pointer: the first
+        /// repeat <see cref="repeat_delay"/> after the press and then one every <see cref="repeat_interval"/>, as RepeatButton does.
+        /// </summary>
+        private void startPaging(InputState press, Func<Vector2> pointer)
         {
             stopPaging();
 
@@ -429,12 +433,23 @@ namespace OsuXaml.Controls
 
             paging = Scheduler.AddDelayed(() =>
             {
-                paging = Scheduler.AddDelayed(() =>
-                {
-                    if (!pageTowards(pointer()))
-                        stopPaging();
-                }, repeat_interval, true);
+                if (!pageAgain(press, pointer))
+                    return;
+
+                paging = Scheduler.AddDelayed(() => pageAgain(press, pointer), repeat_interval, true);
             }, repeat_delay);
+        }
+
+        private bool pageAgain(InputState press, Func<Vector2> pointer)
+        {
+            // A release the track never saw (it was hidden or covered at the time) still ends the press.
+            if (press?.Mouse.IsPressed(MouseButton.Left) != true || !pageTowards(pointer()))
+            {
+                stopPaging();
+                return false;
+            }
+
+            return true;
         }
 
         /// <returns>Whether the pointer was beyond the thumb, so the value moved.</returns>
@@ -479,7 +494,7 @@ namespace OsuXaml.Controls
                 if (e.Button != MouseButton.Left || owner.range <= 0)
                     return false;
 
-                owner.startPaging(() => GetContainingInputManager()?.CurrentState.Mouse.Position ?? e.ScreenSpaceMousePosition);
+                owner.startPaging(e.CurrentState, () => GetContainingInputManager()?.CurrentState.Mouse.Position ?? e.ScreenSpaceMousePosition);
                 return true;
             }
 
@@ -551,28 +566,52 @@ namespace OsuXaml.Controls
 
                 step();
 
+                // The first repeat comes repeat_delay after the press, then one every repeat_interval, as RepeatButton does.
+                var press = e.CurrentState;
+
                 repeat?.Cancel();
                 repeat = Scheduler.AddDelayed(() =>
                 {
-                    repeat = Scheduler.AddDelayed(() =>
-                    {
-                        if (pointerIsOver())
-                            step();
-                    }, repeat_interval, true);
+                    if (!stepAgain(press))
+                        return;
+
+                    repeat = Scheduler.AddDelayed(() => stepAgain(press), repeat_interval, true);
                 }, repeat_delay);
 
                 highlight.FadeTo(0.2f, 60, Easing.OutQuint);
                 return true;
             }
 
+            private bool stepAgain(InputState press)
+            {
+                // A release this button never saw (it was hidden or covered at the time) still ends the press.
+                if (press?.Mouse.IsPressed(MouseButton.Left) != true)
+                {
+                    stopRepeating();
+                    updateState();
+                    return false;
+                }
+
+                if (pointerIsOver())
+                    step();
+
+                return true;
+            }
+
+            private void stopRepeating()
+            {
+                if (repeat == null)
+                    return;
+
+                repeat.Cancel();
+                repeat = null;
+                owner.raiseScroll(ScrollEventType.EndScroll);
+            }
+
             protected override void OnMouseUp(MouseUpEvent e)
             {
-                if (e.Button == MouseButton.Left && repeat != null)
-                {
-                    repeat.Cancel();
-                    repeat = null;
-                    owner.raiseScroll(ScrollEventType.EndScroll);
-                }
+                if (e.Button == MouseButton.Left)
+                    stopRepeating();
 
                 updateState();
                 base.OnMouseUp(e);

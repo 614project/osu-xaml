@@ -6,6 +6,7 @@ using osu.Framework.Graphics.Primitives;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Input.Events;
+using osu.Framework.Input.States;
 using osu.Framework.Localisation;
 using osu.Framework.Utils;
 using osuTK;
@@ -630,6 +631,7 @@ namespace OsuXaml.Controls
             private bool isEnabled = true;
             private bool held;
             private double heldSince;
+            private InputState pressState;
 
             public TabStripScrollButton(TabStrip strip, int direction)
             {
@@ -690,6 +692,7 @@ namespace OsuXaml.Controls
                 strip.ScrollBy(direction * Math.Max(40, pageLength()));
                 held = true;
                 heldSince = Time.Current;
+                pressState = e.CurrentState;
                 highlight.FadeTo(0.2f, 60, Easing.OutQuint);
                 return true;
             }
@@ -713,6 +716,13 @@ namespace OsuXaml.Controls
             protected override void Update()
             {
                 base.Update();
+
+                // A release this button never saw (it was hidden or covered at the time) still ends the hold.
+                if (held && pressState?.Mouse.IsPressed(MouseButton.Left) != true)
+                {
+                    held = false;
+                    highlight.FadeTo(IsHovered ? 0.08f : 0, 150, Easing.OutQuint);
+                }
 
                 if (held && Time.Current - heldSince > hold_delay)
                     strip.ScrollBy(direction * hold_speed * (float)Time.Elapsed);

@@ -5,6 +5,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Testing;
+using osu.Framework.Timing;
 using OsuXaml.Controls;
 using osuTK;
 using osuTK.Input;
@@ -295,6 +296,47 @@ namespace OsuXaml.Tests
             var quad = tab.ScreenSpaceDrawQuad;
             float buttons = stripOf(tabs).Overflows ? 24 * strip.Width / stripOf(tabs).DrawWidth : 0;
             return quad.TopLeft.X >= strip.TopLeft.X + buttons - 1 && quad.TopRight.X <= strip.TopRight.X - buttons + 1;
+        }
+
+        [Test]
+        public void AHeldTabScrollButtonStopsAfterAnUnseenRelease()
+        {
+            var clock = new ManualClock();
+            Container holder = null;
+            TabControl tabs = null;
+            TabItem[] items = null;
+            float paged = 0, stopped = 0;
+
+            AddStep("create ten tabs on a clock of their own", () =>
+            {
+                clock.CurrentTime = 0;
+                items = Enumerable.Range(1, 10).Select(i => new TabItem { Header = "Section " + i, Content = page() }).ToArray();
+                tabs = new TabControl { Size = new Vector2(320, 200), Clock = new FramedClock(clock) };
+                foreach (var item in items)
+                    tabs.Add(item);
+                holder = new Container { RelativeSizeAxes = Axes.Both, Child = tabs };
+                Child = holder;
+            });
+            AddUntilStep("laid out", () => items[9].DrawWidth > 0 && stripOf(tabs).Overflows);
+            AddStep("let the arrows fade in", () => clock.CurrentTime = 1000);
+            AddUntilStep("shown", () => scrollButton(tabs, 1).Alpha == 1);
+
+            AddStep("hold the forward arrow", () =>
+            {
+                InputManager.MoveMouseTo(scrollButton(tabs, 1));
+                InputManager.PressButton(MouseButton.Left);
+            });
+            AddUntilStep("one page", () => (paged = stripOf(tabs).ScrollTarget) > 0);
+            AddStep("take them out", () => holder.Remove(tabs, false));
+            AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
+            AddWaitStep("let the release go by", 1);
+            AddStep("put them back", () => holder.Add(tabs));
+            AddStep("past the hold delay", () => clock.CurrentTime = 1400);
+            AddWaitStep("a few frames", 3);
+            AddStep("note the scroll", () => stopped = stripOf(tabs).ScrollTarget);
+            AddStep("later", () => clock.CurrentTime = 1600);
+            AddWaitStep("a few frames", 3);
+            AddAssert("it doesn't keep scrolling", () => stopped == paged && stripOf(tabs).ScrollTarget == paged);
         }
 
         [Test]

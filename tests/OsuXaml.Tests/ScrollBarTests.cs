@@ -3,8 +3,10 @@ using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Testing;
+using osu.Framework.Timing;
 using OsuXaml.Controls;
 using osuTK;
 using osuTK.Input;
@@ -183,6 +185,64 @@ namespace OsuXaml.Tests
             AddWaitStep("hold a little longer", 5);
             AddAssert("then stops", () => bar.Value.Value == 30);
             AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
+        }
+
+        [Test]
+        public void HeldArrowsAndTrackRepeatLikeARepeatButtonAndStopAfterAnUnseenRelease()
+        {
+            var clock = new ManualClock();
+            Container holder = null;
+            ScrollBar bar = null;
+
+            AddStep("create on a clock of its own", () =>
+            {
+                clock.CurrentTime = 0;
+                holder = new Container { RelativeSizeAxes = Axes.Both };
+                holder.Add(bar = new ScrollBar { Height = 200, Maximum = 1000, SmallChange = 5, LargeChange = 10, ViewportSize = 10, Clock = new FramedClock(clock) });
+                Child = holder;
+            });
+            AddUntilStep("laid out", () => bar.IsLoaded && Precision(bar.DrawHeight, 200));
+
+            AddStep("press the down arrow", () =>
+            {
+                InputManager.MoveMouseTo(bar.ToScreenSpace(new Vector2(7, 193)));
+                InputManager.PressButton(MouseButton.Left);
+            });
+            AddAssert("one step", () => bar.Value.Value == 5);
+            AddStep("399 ms on", () => clock.CurrentTime = 399);
+            AddWaitStep("a few frames", 3);
+            AddAssert("no repeat yet", () => bar.Value.Value == 5);
+            AddStep("401 ms on", () => clock.CurrentTime = 401);
+            AddUntilStep("the first repeat comes after the delay", () => bar.Value.Value == 10);
+            AddStep("452 ms on", () => clock.CurrentTime = 452);
+            AddUntilStep("then one an interval", () => bar.Value.Value == 15);
+
+            AddStep("take it out", () => holder.Remove(bar, false));
+            AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
+            AddWaitStep("let the release go by", 1);
+            AddStep("put it back", () => holder.Add(bar));
+            AddStep("much later", () => clock.CurrentTime = 3000);
+            AddWaitStep("a few frames", 3);
+            AddAssert("the release ended it", () => bar.Value.Value == 15);
+
+            AddStep("later still", () => clock.CurrentTime = 10000);
+            AddWaitStep("a frame", 1);
+            AddStep("press the track near the end", () =>
+            {
+                InputManager.MoveMouseTo(bar.ToScreenSpace(new Vector2(7, 180)));
+                InputManager.PressButton(MouseButton.Left);
+            });
+            AddAssert("one page", () => bar.Value.Value == 25);
+            AddStep("401 ms on", () => clock.CurrentTime = 10401);
+            AddUntilStep("the first page repeat comes after the delay", () => bar.Value.Value == 35);
+
+            AddStep("take it out", () => holder.Remove(bar, false));
+            AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
+            AddWaitStep("let the release go by", 1);
+            AddStep("put it back", () => holder.Add(bar));
+            AddStep("much later", () => clock.CurrentTime = 13000);
+            AddWaitStep("a few frames", 3);
+            AddAssert("paging ended too", () => bar.Value.Value == 35);
         }
 
         [Test]
