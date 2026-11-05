@@ -74,6 +74,74 @@ namespace OsuXaml.Tests
             AddAssert("click opened, Space closed", () => !expander.IsExpanded.Value && events.Count == 4);
         }
 
+        /// <summary>Takes the mouse button without taking focus, like a button that isn't a tab stop.</summary>
+        private partial class ClickCatcher : Container
+        {
+            protected override bool OnMouseDown(osu.Framework.Input.Events.MouseDownEvent e) => true;
+        }
+
+        [Test]
+        public void ExpanderTakesFocusFromCodeAndLabelsButNotFromClicksInItsContent()
+        {
+            Expander expander = null;
+            Label label = null;
+            TextBox other = null;
+            ClickCatcher content = null;
+
+            AddStep("create", () =>
+            {
+                var panel = new StackPanel { Width = 300, Spacing = 8 };
+                panel.Add(other = new TextBox());
+                panel.Add(expander = new Expander { Header = "Details", IsExpanded = { Value = true }, Child = content = new ClickCatcher { RelativeSizeAxes = Axes.X, Height = 60 } });
+                panel.Add(label = new Label { Content = "_Details" });
+                label.Target = expander;
+                Child = panel;
+            });
+            AddUntilStep("laid out", () => content.DrawHeight == 60);
+
+            AddStep("move the mouse away, focus in code", () =>
+            {
+                InputManager.MoveMouseTo(other);
+                GetContainingFocusManager().ChangeFocus(expander);
+            });
+            AddAssert("focused", () => expander.HasFocus);
+
+            AddStep("click the other box", () => InputManager.Click(MouseButton.Left));
+            AddAssert("other focused", () => other.HasFocus);
+            AddStep("click the label", () =>
+            {
+                InputManager.MoveMouseTo(label);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("the label focuses the expander", () => expander.HasFocus);
+
+            AddStep("click the other box", () =>
+            {
+                InputManager.MoveMouseTo(other);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddStep("press Alt+D", () =>
+            {
+                InputManager.PressKey(Key.AltLeft);
+                InputManager.Key(Key.D);
+                InputManager.ReleaseKey(Key.AltLeft);
+            });
+            AddAssert("the access key focuses the expander", () => expander.HasFocus);
+
+            AddStep("click the content", () =>
+            {
+                InputManager.MoveMouseTo(content);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("a click in the content doesn't focus it", () => !expander.HasFocus);
+            AddStep("click the header", () =>
+            {
+                InputManager.MoveMouseTo(expander.PresentedHeader);
+                InputManager.Click(MouseButton.Left);
+            });
+            AddAssert("a click on the header does", () => expander.HasFocus);
+        }
+
         [Test]
         public void ExpanderSizesToItsHeaderWhenCollapsed()
         {

@@ -69,7 +69,10 @@ namespace OsuXaml.Controls
         public event Action Collapsed;
 
         // Only a click on the header focuses the expander; clicks on buttons in the content pass focus on to the parents as usual.
-        public override bool AcceptsFocus => headerButton.IsHovered;
+        // Focus asked for without a mouse button down (in code, by a Label's access key, by a dialog giving focus back) is taken.
+        public override bool AcceptsFocus => headerButton.IsHovered || !mouseButtonDown;
+
+        private bool mouseButtonDown => GetContainingInputManager()?.CurrentState.Mouse.Buttons.HasAnyButtonPressed == true;
 
         protected override float ContentFraction => expansion.Value;
 
