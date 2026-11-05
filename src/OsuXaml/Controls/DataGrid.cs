@@ -999,6 +999,7 @@ namespace OsuXaml.Controls
             Margin = new MarginPadding { Horizontal = -5 };
 
             Text.Value = initial ?? string.Empty;
+            KeepsEnter = true;
             OnCommit += (_, _) => cell.RequestEndEdit(!cancelled);
         }
 

@@ -278,8 +278,8 @@ namespace OsuXaml.Controls
 
             // osu!framework text boxes take Enter themselves (they commit), so the dialog never sees it as a key press.
             // A plain TextBox or PasswordBox that gets focus is watched instead; ones inside other controls (an editable
-            // ComboBox, a DataGrid cell editor) keep Enter for their control.
-            if (IsOpen && GetContainingInputManager()?.FocusedDrawable is TextBox textBox && !(textBox is DataGridTextEditor)
+            // ComboBox, a DatePicker, a DataGrid cell editor) keep Enter for their control.
+            if (IsOpen && GetContainingInputManager()?.FocusedDrawable is TextBox textBox && !textBox.KeepsEnter
                 && !watchedTextBoxes.Contains(textBox) && DialogService.FindDialog(textBox) == this)
             {
                 watchedTextBoxes.Add(textBox);

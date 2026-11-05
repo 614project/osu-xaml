@@ -26,10 +26,11 @@ namespace OsuXaml.Tests
             public readonly Button Save;
             public readonly Button Cancel;
             public readonly ComboBox Theme;
+            public readonly DatePicker Date;
             public int SaveClicks;
             public int CancelClicks;
 
-            public SettingsDialog()
+            public SettingsDialog(bool withDate = false)
             {
                 Title = "Settings";
 
@@ -59,6 +60,8 @@ namespace OsuXaml.Tests
                 panel.Add(new TextBlock { Text = "Name" });
                 panel.Add(NameBox);
                 panel.Add(Theme);
+                if (withDate)
+                    panel.Add(Date = new DatePicker { Width = 260 });
                 panel.Add(buttons);
                 Content = panel;
             }
@@ -181,6 +184,48 @@ namespace OsuXaml.Tests
             AddUntilStep("text box focused", () => dialog.NameBox.HasFocus);
             AddStep("Enter", () => InputManager.Key(Key.Enter));
             AddUntilStep("default button clicked", () => dialog.SaveClicks == 1 && result.IsCompleted && result.Result == true);
+        }
+
+        [Test]
+        public void EnterInADatePickerOnlyReadsTheDate()
+        {
+            SettingsDialog dialog = null;
+            Task<bool?> result = null;
+            TextBox dateBox = null;
+            string rejected = null;
+
+            show(() => new SettingsDialog(withDate: true), (d, r) => (dialog, result) = (d, r));
+            AddStep("find the date box", () =>
+            {
+                dateBox = dialog.Date.ChildrenOfType<TextBox>().Single();
+                dialog.Date.DateValidationError += text => rejected = text;
+            });
+            click(() => dateBox);
+            AddUntilStep("date box focused", () => dateBox.HasFocus);
+
+            AddStep("type a date, Enter", () =>
+            {
+                dateBox.Text.Value = new DateTime(2026, 10, 16).ToString("d");
+                InputManager.Key(Key.Enter);
+            });
+            AddWaitStep("let a scheduled click run", 2);
+            AddAssert("the date is read and the dialog stays open", () => dialog.Date.SelectedDate.Value == new DateTime(2026, 10, 16)
+                                                                          && dialog.SaveClicks == 0 && dialog.IsOpen && !result.IsCompleted);
+
+            click(() => dateBox);
+            AddUntilStep("date box focused", () => dateBox.HasFocus);
+            AddStep("type nonsense, Enter", () =>
+            {
+                dateBox.Text.Value = "not a date";
+                InputManager.Key(Key.Enter);
+            });
+            AddWaitStep("let a scheduled click run", 2);
+            AddAssert("rejected, still open", () => rejected == "not a date" && dialog.SaveClicks == 0 && dialog.IsOpen);
+
+            click(() => dialog.NameBox);
+            AddUntilStep("name box focused", () => dialog.NameBox.HasFocus);
+            AddStep("Enter", () => InputManager.Key(Key.Enter));
+            AddUntilStep("a plain text box still clicks the default button", () => dialog.SaveClicks == 1 && result.IsCompleted);
         }
 
         [Test]

@@ -52,6 +52,8 @@ namespace OsuXaml.Controls
                     Size = Vector2.One,
                     CommitOnFocusLost = true,
                     PlaceholderText = "Select a date",
+                    // Enter reads the typed date; in a dialog it doesn't also press the default button.
+                    KeepsEnter = true,
                 },
                 button = new CalendarDropButton
                 {

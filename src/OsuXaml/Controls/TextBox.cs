@@ -37,6 +37,12 @@ namespace OsuXaml.Controls
 
         private bool acceptsReturn;
         private TextWrapping textWrapping;
+
+        /// <summary>
+        /// Set by a control whose own box takes Enter for itself, such as a DatePicker's or a DataGrid cell editor's:
+        /// a <see cref="Dialog"/> doesn't press its default button when this box commits.
+        /// </summary>
+        internal bool KeepsEnter { get; set; }
         private int minLines = 1;
         private int maxLines = int.MaxValue;
 
