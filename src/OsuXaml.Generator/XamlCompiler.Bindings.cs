@@ -131,7 +131,9 @@ namespace OsuXaml.Generator
                     return;
                 }
 
-                string handler = lambda(del, expr, method, scope.Item, scope.ItemType);
+                // Every overload of the name, where it was found and in base types; a static one is called on its type.
+                var overloads = findMethods(method.ContainingType, method.Name).Where(m => m.MethodKind == MethodKind.Ordinary).ToList();
+                string handler = lambda(del, overloads, m => m.IsStatic ? typeName(m.ContainingType) + "." + m.Name : expr, scope.Item, scope.ItemType);
 
                 if (handler == null)
                 {
@@ -459,7 +461,8 @@ namespace OsuXaml.Generator
         /// A converter is a one-parameter method: <c>Converter=DoneToAlpha</c> looks on the x:Class and then
         /// on OsuXaml.Converters, <c>Converter=local:Converters.DoneToAlpha</c> on a static class.
         /// </summary>
-        private (string Call, IMethodSymbol Method)? findConverter(string name, ITypeSymbol input, XObject source)
+        /// <param name="quiet">Only looks: reports nothing when the converter isn't found (the binding reports it later).</param>
+        private (string Call, IMethodSymbol Method)? findConverter(string name, ITypeSymbol input, XObject source, bool quiet = false)
         {
             int dot = name.LastIndexOf('.');
 
@@ -469,36 +472,66 @@ namespace OsuXaml.Generator
 
                 if (owner == null)
                 {
-                    report(Diagnostics.UnknownType, source, name.Substring(0, dot), "");
+                    if (!quiet)
+                        report(Diagnostics.UnknownType, source, name.Substring(0, dot), "");
                     return null;
                 }
 
-                var m = converterMethod(owner, name.Substring(dot + 1), input);
+                // Called on the type, so it must be static.
+                var m = converterMethod(owner, name.Substring(dot + 1), input, staticOnly: true);
 
                 if (m == null)
                 {
-                    report(Diagnostics.UnknownMethod, source, $"Converter '{name}' must be a method on '{owner.Name}' taking one {input.ToDisplayString()} parameter");
+                    if (!quiet)
+                        report(Diagnostics.UnknownMethod, source, $"Converter '{name}' must be a static method on '{owner.Name}' taking one {input.ToDisplayString()} parameter");
                     return null;
                 }
 
                 return (typeName(owner) + "." + m.Name, m);
             }
 
-            var own = converterMethod(rootType, name, input);
+            var own = converterMethod(rootType, name, input, staticOnly: false);
             if (own != null)
                 return (name, own);
 
             var builtIn = compilation.GetTypeByMetadataName("OsuXaml.Converters");
-            var shared = builtIn == null ? null : converterMethod(builtIn, name, input);
+            var shared = builtIn == null ? null : converterMethod(builtIn, name, input, staticOnly: true);
             if (shared != null)
                 return (typeName(builtIn) + "." + name, shared);
 
-            report(Diagnostics.UnknownMethod, source, $"Converter '{name}' must be a method on '{rootType.Name}' (or OsuXaml.Converters) taking one {input.ToDisplayString()} parameter");
+            if (!quiet)
+                report(Diagnostics.UnknownMethod, source, $"Converter '{name}' must be a method on '{rootType.Name}' (or OsuXaml.Converters) taking one {input.ToDisplayString()} parameter");
             return null;
         }
 
-        private IMethodSymbol converterMethod(INamedTypeSymbol owner, string name, ITypeSymbol input)
-            => owner.GetMembers(name).OfType<IMethodSymbol>().FirstOrDefault(m => m.Parameters.Length == 1 && implicitly(input, m.Parameters[0].Type) && canAccess(m));
+        /// <summary>
+        /// A converter method on <paramref name="owner"/> or a type it inherits from: one parameter the input converts to, and a
+        /// result. Among overloads, the one taking the input's own type wins, as it does in C#.
+        /// </summary>
+        private IMethodSymbol converterMethod(INamedTypeSymbol owner, string name, ITypeSymbol input, bool staticOnly)
+        {
+            var candidates = findMethods(owner, name)
+                             .Where(m => m.MethodKind == MethodKind.Ordinary && !m.IsGenericMethod && !m.ReturnsVoid && (!staticOnly || m.IsStatic)
+                                         && m.Parameters.Length == 1 && m.Parameters[0].RefKind == RefKind.None && implicitly(input, m.Parameters[0].Type))
+                             .ToList();
+
+            return candidates.FirstOrDefault(m => SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, input)) ?? candidates.FirstOrDefault();
+        }
+
+        /// <summary>The type a binding gives its target once its Converter and StringFormat have run, without reporting anything.</summary>
+        private ITypeSymbol boundResultType(ITypeSymbol from, Markup bind, XObject source)
+        {
+            var type = from;
+            string converter = bind.Get("Converter");
+
+            if (converter != null && findConverter(converter, from, source, quiet: true) is { } found)
+                type = found.Method.ReturnType;
+
+            if (bind.Get("StringFormat") != null)
+                type = compilation.GetSpecialType(SpecialType.System_String);
+
+            return type;
+        }
 
         #endregion
 
@@ -640,11 +673,22 @@ namespace OsuXaml.Generator
                         indent = 3;
                     }
 
-                    if (resolvePath(dc, dcType, markup.Path, value.Source, out string expr, out _, out ITypeSymbol sourceType))
+                    bool resolved = resolvePath(dc, dcType, markup.Path, value.Source, out string expr, out ISymbol last, out ITypeSymbol sourceType);
+
+                    if (resolved && last is IMethodSymbol method)
+                    {
+                        report(Diagnostics.TypeMismatch, value.Source, "method '" + method.Name + "'", name, setters[0].Parameters[1].Type.ToDisplayString(),
+                            " (methods bind only to events and delegates)");
+                    }
+                    else if (resolved)
                     {
                         var bound = bindableValueType(sourceType);
                         var from = bound ?? sourceType;
-                        var match = setters.FirstOrDefault(s => implicitly(from, s.Parameters[1].Type)) ?? setters[0];
+
+                        // The overload is picked for what the binding gives once converted: a string turned into a ToolTip by a
+                        // Converter takes SetToolTip(Drawable, Drawable), not the text overload.
+                        var produced = boundResultType(from, markup, value.Source);
+                        var match = setters.FirstOrDefault(s => implicitly(produced, s.Parameters[1].Type)) ?? setters[0];
                         string converted = convertValue(bound != null ? "x" : expr, from, match.Parameters[1].Type, markup, value.Source);
 
                         if (converted != null)

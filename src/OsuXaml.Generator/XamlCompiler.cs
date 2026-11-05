@@ -1150,45 +1150,77 @@ namespace OsuXaml.Generator
         /// <summary>A plain attribute value on a delegate or event names a method on the x:Class (code-behind).</summary>
         private string methodHandler(INamedTypeSymbol delegateType, string methodName, XObject source)
         {
-            var method = rootType.GetMembers(methodName).OfType<IMethodSymbol>().FirstOrDefault();
+            // Its own methods and the ones it inherits, every overload.
+            var methods = findMethods(rootType, methodName).Where(m => m.MethodKind == MethodKind.Ordinary).ToList();
 
-            if (method == null)
+            if (methods.Count == 0)
             {
                 report(Diagnostics.UnknownMethod, source, $"'{rootType.Name}' has no method named '{methodName}'");
                 return null;
             }
 
-            string handler = lambda(delegateType, "this." + method.Name, method, null, null);
+            string handler = lambda(delegateType, methods, m => (m.IsStatic ? typeName(m.ContainingType) : "this") + "." + m.Name, null, null);
 
             if (handler == null)
-                report(Diagnostics.UnknownMethod, source, $"'{method.Name}' must take no parameters or the same parameters as {delegateType.Name}");
+                report(Diagnostics.UnknownMethod, source, $"'{methodName}' must take no parameters or the same parameters as {delegateType.Name}");
 
             return handler;
         }
 
         /// <summary>
-        /// Builds a lambda matching <paramref name="delegateType"/> that calls <paramref name="method"/>.
-        /// Delegate arguments are passed through when the method takes the same number of parameters;
-        /// otherwise the method is called with no arguments, or with the template item when it takes exactly one.
+        /// Builds a lambda matching <paramref name="delegateType"/> that calls the best of <paramref name="methods"/>, the overloads
+        /// of one name: one taking the delegate's parameters (each of a type they convert to), else one taking the template item,
+        /// else one taking nothing. A delegate that returns a value takes only a method whose result converts to it. Null when
+        /// none fits. <paramref name="target"/> gives the expression that names a method (an instance path, or its type when static).
         /// </summary>
-        private string lambda(INamedTypeSymbol delegateType, string target, IMethodSymbol method, string item, ITypeSymbol itemType)
+        private string lambda(INamedTypeSymbol delegateType, IEnumerable<IMethodSymbol> methods, Func<IMethodSymbol, string> target, string item, ITypeSymbol itemType)
         {
             var invoke = delegateType.DelegateInvokeMethod;
             var parameterNames = invoke.Parameters.Select((_, i) => "a" + i).ToArray();
             string parameters = "(" + string.Join(", ", parameterNames) + ")";
 
-            string args;
+            IMethodSymbol best = null;
+            string bestArgs = null;
+            int bestRank = int.MaxValue;
 
-            if (method.Parameters.Length == invoke.Parameters.Length)
-                args = string.Join(", ", parameterNames);
-            else if (method.Parameters.Length == 1 && item != null && implicitly(itemType, method.Parameters[0].Type))
-                args = item;
-            else if (method.Parameters.Length == 0)
-                args = string.Empty;
-            else
-                return null;
+            foreach (var method in methods)
+            {
+                if (method.IsGenericMethod || method.Parameters.Any(p => p.RefKind != RefKind.None))
+                    continue;
 
-            return $"{parameters} => {target}({args})";
+                if (!invoke.ReturnsVoid && (method.ReturnsVoid || !implicitly(method.ReturnType, invoke.ReturnType)))
+                    continue;
+
+                int rank;
+                string args;
+
+                if (method.Parameters.Length == invoke.Parameters.Length && method.Parameters.Select((p, i) => implicitly(invoke.Parameters[i].Type, p.Type)).All(fits => fits))
+                {
+                    rank = 0;
+                    args = string.Join(", ", parameterNames);
+                }
+                else if (method.Parameters.Length == 1 && item != null && implicitly(itemType, method.Parameters[0].Type))
+                {
+                    rank = 1;
+                    args = item;
+                }
+                else if (method.Parameters.Length == 0)
+                {
+                    rank = 2;
+                    args = string.Empty;
+                }
+                else
+                    continue;
+
+                if (rank < bestRank)
+                {
+                    best = method;
+                    bestArgs = args;
+                    bestRank = rank;
+                }
+            }
+
+            return best == null ? null : $"{parameters} => {target(best)}({bestArgs})";
         }
 
         #endregion
