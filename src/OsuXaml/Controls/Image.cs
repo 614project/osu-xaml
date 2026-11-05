@@ -31,6 +31,12 @@ namespace OsuXaml.Controls
         private int loadVersion;
         private bool loadedOnce;
 
+        // Files loaded in the background that the image hasn't taken yet. A disposed image's scheduler never runs, so
+        // Dispose frees them here, and a load that finishes after Dispose frees its own.
+        private readonly object pendingLock = new object();
+        private readonly List<Texture> pendingTextures = new List<Texture>();
+        private bool disposing;
+
         private Stretch stretch = Stretch.Uniform;
         private StretchDirection stretchDirection = StretchDirection.Both;
 
@@ -115,7 +121,7 @@ namespace OsuXaml.Controls
             if (!string.IsNullOrEmpty(source) && texture == null)
             {
                 string name = source;
-                var (loaded, owned) = resolve(name);
+                var (loaded, owned) = Resolve(name);
                 setTexture(loaded, owned);
                 Schedule(() => raiseLoaded(loaded, name));
             }
@@ -134,10 +140,33 @@ namespace OsuXaml.Controls
 
             Task.Run(() =>
             {
-                var (loaded, owned) = resolve(name);
+                var (loaded, owned) = Resolve(name);
+                bool tracked = owned && loaded != null;
+
+                lock (pendingLock)
+                {
+                    // The image went away, or a newer source (or a Texture set in code) won the race. Texture.Dispose
+                    // hands the GPU side to the draw thread, so it is safe here.
+                    if (disposing || version != loadVersion)
+                    {
+                        if (owned)
+                            loaded?.Dispose();
+                        return;
+                    }
+
+                    if (tracked)
+                        pendingTextures.Add(loaded);
+                }
 
                 Schedule(() =>
                 {
+                    lock (pendingLock)
+                    {
+                        // Dispose already freed it.
+                        if (tracked && !pendingTextures.Remove(loaded))
+                            return;
+                    }
+
                     // A newer source (or a Texture set in code) won the race.
                     if (version != loadVersion)
                     {
@@ -160,8 +189,11 @@ namespace OsuXaml.Controls
                 ImageOpened?.Invoke();
         }
 
-        /// <summary>Finds the picture for <paramref name="name"/>: a file first, then the texture stores.</summary>
-        private (Texture texture, bool owned) resolve(string name)
+        /// <summary>
+        /// Finds the picture for <paramref name="name"/>: a file first, then the texture stores. Owned textures (files) are the
+        /// image's to dispose. Runs on a background thread when the source changes after load.
+        /// </summary>
+        internal virtual (Texture texture, bool owned) Resolve(string name)
         {
             try
             {
@@ -295,7 +327,16 @@ namespace OsuXaml.Controls
 
         protected override void Dispose(bool isDisposing)
         {
-            loadVersion++;
+            lock (pendingLock)
+            {
+                disposing = true;
+                loadVersion++;
+
+                foreach (var pending in pendingTextures)
+                    pending.Dispose();
+
+                pendingTextures.Clear();
+            }
 
             if (ownsTexture)
                 texture?.Dispose();

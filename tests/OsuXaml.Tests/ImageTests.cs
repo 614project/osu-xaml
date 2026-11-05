@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using NUnit.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
@@ -249,6 +250,70 @@ namespace OsuXaml.Tests
                 Clear();
                 Directory.Delete(directory, true);
             });
+        }
+
+        /// <summary>A texture that records being disposed (the headless renderer's textures never stop being available).</summary>
+        private sealed class TrackedTexture : Texture
+        {
+            public volatile bool Disposed;
+
+            public TrackedTexture(Texture parent)
+                : base(parent)
+            {
+            }
+
+            protected override void Dispose(bool isDisposing)
+            {
+                Disposed = true;
+                base.Dispose(isDisposing);
+            }
+        }
+
+        /// <summary>An image whose background load waits until the test lets it finish.</summary>
+        private partial class SlowImage : Image
+        {
+            public readonly ManualResetEventSlim Release = new ManualResetEventSlim();
+            public readonly ManualResetEventSlim Resolving = new ManualResetEventSlim();
+            public Func<TrackedTexture> Create;
+            public TrackedTexture Loaded;
+
+            internal override (Texture texture, bool owned) Resolve(string name)
+            {
+                Resolving.Set();
+                Release.Wait(10000);
+                return (Loaded = Create(), true);
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ABackgroundLoadFinishingAroundDisposeFreesItsTexture(bool finishBeforeDispose)
+        {
+            SlowImage image = null;
+
+            AddStep("create without a source", () => Child = image = new SlowImage { Create = () => new TrackedTexture(texture(4, 4)) });
+            AddUntilStep("loaded", () => image.IsLoaded);
+            AddStep("set a source", () => image.Source = "file.png");
+            AddUntilStep("loading in the background", () => image.Resolving.IsSet);
+
+            if (finishBeforeDispose)
+            {
+                // The load is done and waits for the image's scheduler, which a disposed image never runs.
+                AddStep("hold the scheduler, finish the load", () =>
+                {
+                    image.Release.Set();
+                    SpinWait.SpinUntil(() => image.Loaded != null, 10000);
+                    Thread.Sleep(50);
+                    Remove(image, true);
+                });
+            }
+            else
+            {
+                AddStep("dispose the image", () => Remove(image, true));
+                AddStep("finish the load", () => image.Release.Set());
+            }
+
+            AddUntilStep("the texture is disposed", () => image.Loaded?.Disposed == true);
         }
     }
 
