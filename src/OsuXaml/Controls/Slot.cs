@@ -1,3 +1,4 @@
+using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -215,6 +216,12 @@ namespace OsuXaml.Controls
         {
             unstretch(Axes.Both);
             Remove(Content, false);
+
+            // A TextBlock's drawables among its text live in a layer next to it, here; they leave with it rather than be
+            // disposed with the slot, so the TextBlock shows them again wherever it goes.
+            foreach (var layer in Children.OfType<InlineUILayer>().ToArray())
+                Remove(layer, false);
+
             return Content;
         }
 

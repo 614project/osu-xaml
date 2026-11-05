@@ -160,6 +160,20 @@ namespace OsuXaml.Controls
         protected override bool OnInvalidate(Invalidation invalidation, InvalidationSource source)
         {
             inheritance?.Invalidate(invalidation);
+
+            // osu!framework neither lays out nor updates empty text, so no GetRuns says that its links and drawables are gone.
+            if ((hasLinks || uiContainers.Count > 0) && string.IsNullOrEmpty(FrameworkInternals.DisplayedText(this)))
+            {
+                hasLinks = false;
+                uiContainers.Clear();
+
+                if (hoveredLink != null)
+                {
+                    hoveredLink.Hovered = false;
+                    hoveredLink = null;
+                }
+            }
+
             return base.OnInvalidate(invalidation, source);
         }
 
@@ -592,9 +606,13 @@ namespace OsuXaml.Controls
         {
             var layout = LaidOut;
 
+            // A layer disposed with a container the TextBlock left is replaced; drawables that weren't disposed with it come back.
+            if (uiLayer?.Disposed == true)
+                uiLayer = null;
+
             uiLayer ??= new InlineUILayer(this);
 
-            if (uiLayer.Parent != Parent && !uiLayer.Disposed)
+            if (uiLayer.Parent != Parent)
             {
                 (uiLayer.Parent as Container<Drawable>)?.Remove(uiLayer, false);
 
@@ -612,7 +630,13 @@ namespace OsuXaml.Controls
         protected override void Dispose(bool isDisposing)
         {
             inheritance?.Detach();
-            uiLayer?.Expire();
+
+            // A layer that left with the TextBlock has no parent to expire it from.
+            if (uiLayer?.Parent == null)
+                uiLayer?.Dispose();
+            else
+                uiLayer.Expire();
+
             base.Dispose(isDisposing);
         }
 

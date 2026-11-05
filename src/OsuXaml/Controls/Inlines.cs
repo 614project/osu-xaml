@@ -36,7 +36,26 @@ namespace OsuXaml.Controls
         private TextDecorations textDecorations;
 
         /// <summary>The collection this inline belongs to.</summary>
-        internal InlineCollection Owner;
+        private InlineCollection owner;
+
+        /// <summary>The collection the inline is in, if any.</summary>
+        internal InlineCollection Owner
+        {
+            get => owner;
+            set
+            {
+                if (owner == value)
+                    return;
+
+                owner = value;
+                OwnerChanged();
+            }
+        }
+
+        /// <summary>Called when the inline joins or leaves a collection.</summary>
+        private protected virtual void OwnerChanged()
+        {
+        }
 
         public Colour4 Foreground
         {
@@ -241,10 +260,24 @@ namespace OsuXaml.Controls
         /// <summary>Whether the mouse is over the link, set by the TextBlock showing it.</summary>
         public bool Hovered;
 
+        private bool following;
+
         public HyperlinkInline(Hyperlink link)
         {
             Link = link;
-            link.InlineChanged += Changed;
+        }
+
+        // Only while it is in a collection: the Hyperlink mustn't keep a removed inline alive.
+        private protected override void OwnerChanged()
+        {
+            if (Owner != null && !following)
+                Link.InlineChanged += Changed;
+            else if (Owner == null && following)
+                Link.InlineChanged -= Changed;
+            else
+                return;
+
+            following = Owner != null;
         }
 
         /// <summary>The colour the link's text draws in now.</summary>

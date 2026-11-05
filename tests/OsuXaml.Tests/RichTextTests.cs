@@ -253,6 +253,79 @@ namespace OsuXaml.Tests
             AddUntilStep("its drawables hide too", () => !box.IsPresent || !box.Parent.IsPresent);
         }
 
+        [Test]
+        public void DrawablesAmongTheTextMoveWithTheTextBlock()
+        {
+            StackPanel first = null, second = null;
+            TextBlock text = null;
+            Box box = null;
+
+            AddStep("create", () =>
+            {
+                first = new StackPanel();
+                second = new StackPanel();
+
+                text = new TextBlock();
+                text.AddText("A");
+                text.Add(new InlineUIContainer(box = new Box { Size = new Vector2(20, 20) }));
+                first.Add(text);
+
+                var row = new StackPanel { Orientation = Orientation.Horizontal };
+                row.Add(first);
+                row.Add(second);
+                Child = row;
+            });
+            AddUntilStep("shown", () => box.IsPresent && box.Parent is InlineUILayer);
+
+            AddStep("move the text to another panel", () =>
+            {
+                first.Remove(text, false);
+                second.Add(text);
+            });
+            AddUntilStep("the box comes along", () => box.Parent is InlineUILayer layer && layer.Parent?.Parent == second && box.IsPresent);
+            AddAssert("not disposed", () => !((InlineUILayer)box.Parent).Disposed);
+        }
+
+        [Test]
+        public void EmptyTextDropsItsLinks()
+        {
+            TextBlock text = null;
+
+            AddStep("create", () =>
+            {
+                text = new TextBlock();
+                text.AddText("Read ");
+                text.Add(new Hyperlink { Text = "docs" });
+                var panel = new StackPanel { Width = 200 };
+                panel.Add(text);
+                Child = panel;
+            });
+            AddUntilStep("the link takes the mouse", () => text.HandlePositionalInput);
+            AddStep("empty the text", () => text.Text = string.Empty);
+            AddUntilStep("nothing takes the mouse", () => !text.HandlePositionalInput);
+        }
+
+        [Test]
+        public void ARemovedHyperlinkInlineStopsFollowingItsLink()
+        {
+            var text = new TextBlock();
+            var link = new Hyperlink { Text = "docs" };
+            text.Add(link);
+
+            var inline = text.Inlines[0];
+            System.Func<int> followers = () =>
+                ((System.Delegate)typeof(Hyperlink).GetField("InlineChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(link))
+                ?.GetInvocationList().Length ?? 0;
+
+            Assert.That(followers(), Is.EqualTo(1));
+            text.Inlines.Remove(inline);
+            Assert.That(followers(), Is.EqualTo(0), "removed");
+            text.Inlines.Add(inline);
+            Assert.That(followers(), Is.EqualTo(1), "added back");
+            text.Inlines.Clear();
+            Assert.That(followers(), Is.EqualTo(0), "cleared");
+        }
+
         private static bool Precision(float a, float b) => System.Math.Abs(a - b) < 1;
     }
 }
