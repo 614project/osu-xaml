@@ -683,9 +683,18 @@ namespace OsuXaml.Controls
         /// <summary>Selects <paramref name="item"/>, or clears the selection for null.</summary>
         public void Select(object item) => SelectedItem.Value = item;
 
+        /// <summary>
+        /// True while <see cref="SelectedItem"/> or <see cref="SelectedIndex"/> is disabled, as a view model bindable locked with
+        /// <c>Disabled = true</c> makes the one bound to it: the user can't change the selection, since the other one couldn't follow.
+        /// </summary>
+        protected internal bool IsSelectionLocked => SelectedItem.Disabled || SelectedIndex.Disabled;
+
         /// <summary>Selects the item a container presents. Containers call this when clicked.</summary>
         public virtual void SelectContainer(Drawable container, UIEvent e = null)
         {
+            if (IsSelectionLocked)
+                return;
+
             int index = IndexFromContainer(container);
             if (index >= 0)
                 SelectedIndex.Value = index;
@@ -757,6 +766,16 @@ namespace OsuXaml.Controls
             if (syncing)
                 return;
 
+            // The index is locked, so it can't follow: the item goes back to the one the index names.
+            if (SelectedIndex.Disabled)
+            {
+                syncing = true;
+                int locked = SelectedIndex.Value;
+                SelectedItem.Value = locked >= 0 && locked < Items.Count ? Items[locked] : null;
+                syncing = false;
+                return;
+            }
+
             syncing = true;
             int index = IndexOf(SelectedItem.Value);
 
@@ -773,6 +792,15 @@ namespace OsuXaml.Controls
         {
             if (syncing)
                 return;
+
+            // The item is locked, so it can't follow: the index goes back to the item's.
+            if (SelectedItem.Disabled)
+            {
+                syncing = true;
+                SelectedIndex.Value = IndexOf(SelectedItem.Value);
+                syncing = false;
+                return;
+            }
 
             syncing = true;
             int index = SelectedIndex.Value;
@@ -804,15 +832,24 @@ namespace OsuXaml.Controls
             object item = SelectedItem.Value;
             int index = item == null ? -1 : IndexOf(item);
 
+            // A locked side keeps its value; the other follows it where it can.
             if (index >= 0)
-                SelectedIndex.Value = index;
+            {
+                if (!SelectedIndex.Disabled)
+                    SelectedIndex.Value = index;
+            }
             else if (item == null && SelectedIndex.Value >= 0 && SelectedIndex.Value < Items.Count)
-                SelectedItem.Value = Items[SelectedIndex.Value];
+            {
+                if (!SelectedItem.Disabled)
+                    SelectedItem.Value = Items[SelectedIndex.Value];
+            }
             else if (item != null || SelectedIndex.Value >= Items.Count)
             {
                 // The selected item went away.
-                SelectedItem.Value = null;
-                SelectedIndex.Value = -1;
+                if (!SelectedItem.Disabled)
+                    SelectedItem.Value = null;
+                if (!SelectedIndex.Disabled)
+                    SelectedIndex.Value = -1;
             }
 
             syncing = false;

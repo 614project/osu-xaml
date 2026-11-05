@@ -323,7 +323,8 @@ namespace OsuXaml.Controls
                 return;
 
             updatingSelection = true;
-            SelectedDate.Value = SelectedDates.Count > 0 ? SelectedDates[0].Date : null;
+            if (!SelectedDate.Disabled)
+                SelectedDate.Value = SelectedDates.Count > 0 ? SelectedDates[0].Date : null;
             updatingSelection = false;
 
             selectionChanged(true);
@@ -339,9 +340,12 @@ namespace OsuXaml.Controls
             if (dates.SequenceEqual(SelectedDates))
                 return;
 
+            // A locked side keeps its value (a view model's SelectedDate set while SelectedDates is locked, or the reverse).
             updatingSelection = true;
-            SelectedDates.ReplaceRange(0, SelectedDates.Count, dates);
-            SelectedDate.Value = dates.Count > 0 ? dates[0] : null;
+            if (!SelectedDates.Disabled)
+                SelectedDates.ReplaceRange(0, SelectedDates.Count, dates);
+            if (!SelectedDate.Disabled)
+                SelectedDate.Value = dates.Count > 0 ? dates[0] : null;
             updatingSelection = false;
 
             selectionChanged(showFirst);
@@ -384,9 +388,12 @@ namespace OsuXaml.Controls
         }
 
         /// <summary>A day was clicked: select it (or extend, toggle or add a range, by mode and modifier keys).</summary>
+        /// <summary>True while SelectedDate or SelectedDates is disabled (bound to a locked view model bindable): the user can't change the selection.</summary>
+        private bool selectionLocked => SelectedDate.Disabled || SelectedDates.Disabled;
+
         private void dayClicked(DateTime date, UIEvent e)
         {
-            if (!isSelectable(date))
+            if (!isSelectable(date) || selectionLocked)
                 return;
 
             bool shift = e?.ShiftPressed == true;
@@ -535,7 +542,7 @@ namespace OsuXaml.Controls
 
         private void pick(DateTime date)
         {
-            if (!isSelectable(date))
+            if (!isSelectable(date) || selectionLocked)
                 return;
 
             SelectedDate.Value = date;
@@ -754,7 +761,8 @@ namespace OsuXaml.Controls
 
             cursor = clamp(cursor);
 
-            switch (selectionMode)
+            // A locked selection lets the keys move the focused date only.
+            switch (selectionLocked ? CalendarSelectionMode.None : selectionMode)
             {
                 case CalendarSelectionMode.SingleDate:
                     SelectedDate.Value = cursor;

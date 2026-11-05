@@ -332,7 +332,8 @@ namespace OsuXaml.Controls
         /// <summary>Selects <paramref name="container"/> (null clears the selection) and updates <see cref="SelectedItem"/>.</summary>
         public void SelectContainer(TreeViewItem container)
         {
-            if (selectedContainer == container)
+            // A SelectedItem bound to a locked view model bindable can't change.
+            if (selectedContainer == container || SelectedItem.Disabled)
                 return;
 
             var previous = selectedContainer;

@@ -323,7 +323,7 @@ namespace OsuXaml.Controls
             if (SelectedItem.Value == null && Items.Count > 0)
             {
                 object pending = itemForValue(SelectedValue.Value) ?? (string.IsNullOrEmpty(Text.Value) ? null : itemForText(Text.Value));
-                if (pending != null)
+                if (pending != null && !IsSelectionLocked)
                     SelectedItem.Value = pending;
             }
 
@@ -530,7 +530,7 @@ namespace OsuXaml.Controls
                         setHighlight(next);
                         scrollFrames = 1;
                     }
-                    else
+                    else if (!IsSelectionLocked)
                         SelectedIndex.Value = next;
 
                     return true;
@@ -543,7 +543,7 @@ namespace OsuXaml.Controls
                         IsDropDownOpen.Value = true;
                     else
                     {
-                        if (highlightedIndex >= 0)
+                        if (highlightedIndex >= 0 && !IsSelectionLocked)
                             SelectedIndex.Value = highlightedIndex;
                         IsDropDownOpen.Value = false;
                     }
@@ -712,6 +712,9 @@ namespace OsuXaml.Controls
             // Text set from outside (binding or typing) selects the item with that text.
             object item = itemForText(e.NewValue);
 
+            if (IsSelectionLocked)
+                return;
+
             updatingText = true;
 
             if (item != null)
@@ -724,7 +727,7 @@ namespace OsuXaml.Controls
 
         private void selectedValueChanged()
         {
-            if (updatingValue || SelectedValuePath == null || Items.Count == 0)
+            if (updatingValue || SelectedValuePath == null || Items.Count == 0 || IsSelectionLocked)
                 return;
 
             updatingValue = true;

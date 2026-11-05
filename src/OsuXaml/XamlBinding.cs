@@ -79,6 +79,9 @@ namespace OsuXaml
 
             target.ValueChanged += writeBack;
             scope.Add(new Cleanup(() => target.ValueChanged -= writeBack));
+
+            // A source the view model locks locks the control too, as BindTo would.
+            copy.BindDisabledChanged(disabled => target.Disabled = disabled, true);
         }
 
         /// <summary>

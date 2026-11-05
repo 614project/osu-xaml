@@ -168,6 +168,13 @@ namespace OsuXaml.Controls
         {
             string text = textBox.Text.Value?.Trim() ?? string.Empty;
 
+            // A SelectedDate bound to a locked view model bindable can't change: the text goes back to its date.
+            if (SelectedDate.Disabled)
+            {
+                showDate();
+                return;
+            }
+
             if (text.Length == 0)
                 SelectedDate.Value = null;
             else if (tryParse(text, out var date) && (DisplayDateStart == null || date >= DisplayDateStart) && (DisplayDateEnd == null || date <= DisplayDateEnd))

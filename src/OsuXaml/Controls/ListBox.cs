@@ -152,7 +152,7 @@ namespace OsuXaml.Controls
             GetContainingFocusManager()?.ChangeFocus(this);
 
             int index = IndexFromContainer(container);
-            if (index < 0)
+            if (index < 0 || IsSelectionLocked || SelectedItems.Disabled)
                 return;
 
             object item = Items[index];
@@ -256,6 +256,9 @@ namespace OsuXaml.Controls
             // SelectedIndex may still be past the end (set before the items it names exist).
             index = System.Math.Clamp(index, 0, Items.Count - 1);
 
+            if (IsSelectionLocked || SelectedItems.Disabled)
+                return true;
+
             setAnchor(Items[index]);
             SelectedIndex.Value = index;
             ScrollIntoView(Items[index]);
@@ -269,9 +272,12 @@ namespace OsuXaml.Controls
             object item = SelectionMode == SelectionMode.Single ? SelectedItems.LastOrDefault()
                 : SelectedItems.Contains(current) ? current : SelectedItems.FirstOrDefault();
 
-            updatingSelectedItems = true;
-            SelectedItem.Value = item;
-            updatingSelectedItems = false;
+            if (!SelectedItem.Disabled)
+            {
+                updatingSelectedItems = true;
+                SelectedItem.Value = item;
+                updatingSelectedItems = false;
+            }
 
             SelectionHasChanged();
         }
