@@ -585,7 +585,7 @@ namespace OsuXaml.Generator
                     {
                         foreach (var setter in setters)
                         {
-                            string literal = convertLiteral(resource.Value, setter.Parameters[1].Type, out _);
+                            string literal = convertLiteral(resource.Value, literalTarget(resource, setter.Parameters[1].Type), out _);
 
                             if (literal != null)
                             {

@@ -644,9 +644,40 @@ namespace OsuXaml.Generator
             return found;
         }
 
-        /// <summary>A resource written as text, like <c>&lt;Colour4 x:Key="Accent"&gt;#89b4fa&lt;/Colour4&gt;</c>.</summary>
-        private static bool isLiteralResource(XElement resource)
-            => !resource.HasElements && resource.Attributes().All(isDirectiveOrDeclaration);
+        /// <summary>
+        /// A resource written as text, like <c>&lt;Colour4 x:Key="Accent"&gt;#89b4fa&lt;/Colour4&gt;</c>, or an empty one of a type
+        /// written as text (<c>&lt;x:String x:Key="None" /&gt;</c>). An element with no properties or children of another type, like
+        /// <c>&lt;Button x:Key="Empty" /&gt;</c>, is an element, created like any other.
+        /// </summary>
+        private bool isLiteralResource(XElement resource)
+        {
+            if (resource.HasElements || !resource.Attributes().All(isDirectiveOrDeclaration))
+                return false;
+
+            if (resource.Nodes().OfType<XText>().Any(t => t.Value.Trim().Length > 0))
+                return true;
+
+            var type = resourceElementType(resource);
+            return type != null && (type.SpecialType != SpecialType.None || type.TypeKind == TypeKind.Enum);
+        }
+
+        /// <summary>The type a resource element declares (<c>x:Int32</c>, <c>Colour4</c>), or null when it can't be resolved.</summary>
+        private ITypeSymbol resourceElementType(XElement resource)
+            => (directive_namespaces.Contains(resource.Name.NamespaceName) ? directiveType(resource.Name.LocalName) : null) ?? elementType(resource);
+
+        /// <summary>
+        /// The type a text resource is converted to for a target of <paramref name="target"/>: the target's own, except for an
+        /// <c>object</c> target (Content, Header, Tag), which takes the resource as the type it declares, so
+        /// <c>&lt;x:Int32&gt;42&lt;/x:Int32&gt;</c> is the number 42 rather than the text "42".
+        /// </summary>
+        private ITypeSymbol literalTarget(XElement resource, ITypeSymbol target)
+        {
+            if (target.SpecialType != SpecialType.System_Object)
+                return target;
+
+            var own = resourceElementType(resource);
+            return own != null && own.SpecialType != SpecialType.System_Object ? own : target;
+        }
 
         private readonly HashSet<XElement> expanding = new HashSet<XElement>();
 
@@ -692,7 +723,7 @@ namespace OsuXaml.Generator
 
                 if (isLiteralResource(resource))
                 {
-                    var valueTarget = valueType(member);
+                    var valueTarget = literalTarget(resource, valueType(member));
                     string literal = convertLiteral(resource.Value, valueTarget, out string hint);
 
                     if (literal == null)
