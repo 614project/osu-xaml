@@ -1,5 +1,7 @@
+using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Layout;
 using osuTK;
 
@@ -14,8 +16,19 @@ namespace OsuXaml.Controls
     {
         public readonly Drawable Content;
 
-        private readonly bool explicitX;
-        private readonly bool explicitY;
+        // Whether the content has a size of its own on each axis, like Width/Height in WPF. Sizes set before the content loads
+        // count (in its constructor, or by bindings, ElementName ones included, which run once every element exists), and so do
+        // sizes set from outside later: once the content has loaded, the slot remembers the size it last left the content at and
+        // looks again when that changes.
+        private bool explicitX;
+        private bool explicitY;
+        private Vector2 sizeBeforeLoad;
+        private Vector2 knownSize;
+        private bool tracking;
+
+        // The content's margin, which stays on the content (so setting it, back to zero too, is always seen). The slot's padding
+        // makes the area the content is placed in smaller by the margin, as osu!framework margins don't shrink relatively sized
+        // children; the padding is on the side away from the anchor, as the margin itself already offsets the content from it.
         private MarginPadding margin;
 
         // Reopened after each measure and arrange: osu!framework only passes on a child's size change while the last one has been handled.
@@ -28,32 +41,170 @@ namespace OsuXaml.Controls
         {
             Content = content;
 
-            // A size set before the child joins a panel counts as explicit, like Width/Height in WPF.
-            explicitX = !Layout.AutoSizeAxes(content).HasFlag(Axes.X) && !content.RelativeSizeAxes.HasFlag(Axes.X) && content.Width > 0;
-            explicitY = !Layout.AutoSizeAxes(content).HasFlag(Axes.Y) && !content.RelativeSizeAxes.HasFlag(Axes.Y) && content.Height > 0;
+            explicitX = hasOwnSize(Axes.X);
+            explicitY = hasOwnSize(Axes.Y);
 
-            // osu!framework margins don't shrink relatively sized children, so the margin becomes slot padding.
             margin = content.Margin;
-            content.Margin = default;
-            Padding = margin;
+            applyPadding();
 
             Child = content;
 
             AddLayout(contentSize);
         }
 
+        protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
+        {
+            // Runs as the slot loads, just before the content does.
+            if (followsSize)
+            {
+                explicitX = hasOwnSize(Axes.X);
+                explicitY = hasOwnSize(Axes.Y);
+                sizeBeforeLoad = Content.Size;
+            }
+
+            return base.CreateChildDependencies(parent);
+        }
+
         protected override void Update()
         {
             base.Update();
+            followContent();
+        }
 
-            // A margin set after the child joined the panel replaces the one it had, as one set before does.
-            if (!Content.Margin.Equals(default(MarginPadding)))
+        /// <summary>Whether the content's size on <paramref name="axis"/> is its own: set, and neither automatic nor relative (other than the slot's stretch).</summary>
+        private bool hasOwnSize(Axes axis)
+        {
+            if (Layout.AutoSizeAxes(Content).HasFlag(axis) || Content.RelativeSizeAxes.HasFlag(axis))
+                return false;
+
+            return (axis == Axes.X ? Content.Width : Content.Height) > 0;
+        }
+
+        /// <summary>
+        /// Whether the slot watches the content's size for changes from outside. Not for content that sizes itself on an axis:
+        /// reading the size of an auto-sizing container computes it, which must not happen before its children have loaded or
+        /// updated; those keep the size they had when they joined.
+        /// </summary>
+        private bool followsSize => Layout.AutoSizeAxes(Content) == Axes.None;
+
+        /// <summary>Remembers the size the slot left the content at, so only later changes count as set from outside.</summary>
+        private void rememberSize()
+        {
+            if (!followsSize)
+                return;
+
+            if (tracking)
+                knownSize = Content.Size;
+            else
+                sizeBeforeLoad = Content.Size;
+        }
+
+        /// <summary>Takes in a margin or size set on the content since the slot last laid it out.</summary>
+        private void followContent()
+        {
+            bool changed = false;
+
+            if (!Content.Margin.Equals(margin))
             {
                 margin = Content.Margin;
-                Content.Margin = default;
-                Padding = margin;
-                Layout.InvalidateMeasure(this);
+                applyPadding();
+                changed = true;
             }
+
+            if (!followsSize)
+            {
+                if (changed)
+                    Layout.InvalidateMeasure(this);
+                return;
+            }
+
+            if (!tracking)
+            {
+                if (!Content.IsLoaded)
+                {
+                    if (changed)
+                        Layout.InvalidateMeasure(this);
+                    return;
+                }
+
+                // A size set between the content loading and now is its own too, except a sprite's: a sprite takes its texture's
+                // size as it loads.
+                tracking = true;
+                knownSize = Content is Sprite ? Content.Size : sizeBeforeLoad;
+            }
+
+            var size = Content.Size;
+
+            if (size != knownSize)
+            {
+                if (size.X != knownSize.X && setFromOutside(Axes.X))
+                    changed |= takeOwnSize(Axes.X);
+                if (size.Y != knownSize.Y && setFromOutside(Axes.Y))
+                    changed |= takeOwnSize(Axes.Y);
+
+                knownSize = Content.Size;
+            }
+
+            if (changed)
+                Layout.InvalidateMeasure(this);
+        }
+
+        /// <summary>
+        /// Whether a change to the content's size on <paramref name="axis"/> since the slot last laid it out was made from outside
+        /// (a binding, code) rather than by layout. That is certain when the size was the content's own, when the slot had
+        /// stretched it, and for content that isn't a layout element, whose size layout never sets. A layout element the slot
+        /// sizes to its desired size can also size itself (a panel or content control that sizes to its content), so a change
+        /// there is left to layout.
+        /// </summary>
+        private bool setFromOutside(Axes axis)
+            => (axis == Axes.X ? explicitX : explicitY) || stretchedAxes.HasFlag(axis) || !(Content is ILayoutElement);
+
+        /// <summary>A size set from outside on <paramref name="axis"/>: it replaces a stretch the slot applied, and decides again whether the size is explicit.</summary>
+        private bool takeOwnSize(Axes axis)
+        {
+            if (stretchedAxes.HasFlag(axis))
+            {
+                // Set while the slot stretched the content, so it was taken as relative; it is a size of its own. osu!framework
+                // converts the size when the axis stops being relative, so the value set is put back.
+                float value = axis == Axes.X ? Content.Width : Content.Height;
+                stretchedAxes &= ~axis;
+                Content.RelativeSizeAxes &= ~axis;
+
+                if (axis == Axes.X)
+                    Content.Width = value;
+                else
+                    Content.Height = value;
+            }
+
+            bool own = hasOwnSize(axis);
+
+            if (axis == Axes.X)
+            {
+                bool was = explicitX;
+                explicitX = own;
+                return was != own || own;
+            }
+            else
+            {
+                bool was = explicitY;
+                explicitY = own;
+                return was != own || own;
+            }
+        }
+
+        private void applyPadding()
+        {
+            var anchor = Content.Anchor;
+            float h = margin.TotalHorizontal;
+            float v = margin.TotalVertical;
+
+            Padding = new MarginPadding
+            {
+                Left = anchor.HasFlag(Anchor.x2) ? h : anchor.HasFlag(Anchor.x1) ? h / 2 : 0,
+                Right = anchor.HasFlag(Anchor.x2) ? 0 : anchor.HasFlag(Anchor.x1) ? h / 2 : h,
+                Top = anchor.HasFlag(Anchor.y2) ? v : anchor.HasFlag(Anchor.y1) ? v / 2 : 0,
+                Bottom = anchor.HasFlag(Anchor.y2) ? 0 : anchor.HasFlag(Anchor.y1) ? v / 2 : v,
+            };
         }
 
         /// <summary>Whether the content asks for the same size whatever happens inside it: it has a size of its own on both axes, or is collapsed.</summary>
@@ -64,12 +215,12 @@ namespace OsuXaml.Controls
         {
             unstretch(Axes.Both);
             Remove(Content, false);
-            Content.Margin = margin;
             return Content;
         }
 
         public Vector2 Measure(Vector2 available)
         {
+            followContent();
             laying++;
 
             try
@@ -79,6 +230,7 @@ namespace OsuXaml.Controls
             finally
             {
                 laying--;
+                rememberSize();
                 contentSize.Validate();
             }
         }
@@ -86,6 +238,7 @@ namespace OsuXaml.Controls
         /// <summary>Places the slot and applies alignment: Stretch fills the slot unless the child has its own size.</summary>
         public void Arrange(Vector2 position, Vector2 size)
         {
+            followContent();
             laying++;
 
             try
@@ -95,6 +248,7 @@ namespace OsuXaml.Controls
             finally
             {
                 laying--;
+                rememberSize();
                 contentSize.Validate();
             }
         }
@@ -177,7 +331,13 @@ namespace OsuXaml.Controls
                     break;
             }
 
-            Content.Anchor = Content.Origin = x | y;
+            if (Content.Anchor != (x | y))
+            {
+                Content.Anchor = Content.Origin = x | y;
+                applyPadding();
+            }
+            else
+                Content.Origin = x | y;
 
             // Layout elements (panels, borders) have no intrinsic size, so when they don't stretch they take their measured size.
             if (Content is ILayoutElement element)

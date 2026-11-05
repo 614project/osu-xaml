@@ -260,5 +260,76 @@ namespace OsuXaml.Tests
         }
 
         #endregion
+
+        #region #16: margins and sizes set after a child joins a panel
+
+        private static Vector2 placeIn(Drawable child, Drawable panel) => child.ToSpaceOfOtherDrawable(Vector2.Zero, panel);
+
+        [Test]
+        public void SizeSetAfterJoiningAPanelIsTheChildsOwn()
+        {
+            StackPanel panel = null;
+            Border late = null, runtime = null;
+
+            AddStep("create, then size one child (an ElementName binding runs after the panel has it)", () =>
+            {
+                panel = new StackPanel { Width = 300 };
+                panel.Add(late = new Border { Child = new osu.Framework.Graphics.Shapes.Box { Width = 10, Height = 10 } });
+                panel.Add(runtime = new Border { Height = 20 });
+                late.Width = 150;
+                Child = panel;
+            });
+            AddUntilStep("the late size is kept, centred like WPF", () => late.DrawWidth == 150 && placeIn(late, panel).X == 75);
+            AddAssert("the other child stretches", () => runtime.DrawWidth == 300);
+
+            AddStep("size it at runtime", () => runtime.Width = 120);
+            AddUntilStep("kept", () => runtime.DrawWidth == 120 && placeIn(runtime, panel).X == 90);
+            AddStep("clear the size", () => runtime.Width = 0);
+            AddUntilStep("stretches again", () => runtime.DrawWidth == 300 && placeIn(runtime, panel).X == 0);
+        }
+
+        [Test]
+        public void MarginSetLaterAndBackToZeroApplies()
+        {
+            StackPanel panel = null;
+            Border border = null;
+
+            AddStep("create, then set a margin", () =>
+            {
+                panel = new StackPanel { Width = 300 };
+                panel.Add(border = new Border { Height = 20 });
+                border.Margin = new MarginPadding { Left = 10, Right = 20 };
+                Child = panel;
+            });
+            AddUntilStep("margin applies", () => placeIn(border, panel).X == 10 && border.DrawWidth == 270);
+
+            AddStep("change it at runtime", () => border.Margin = new MarginPadding(30));
+            AddUntilStep("follows", () => placeIn(border, panel).X == 30 && border.DrawWidth == 240 && panel.DrawHeight == 80);
+
+            AddStep("back to zero", () => border.Margin = default);
+            AddUntilStep("no margin", () => placeIn(border, panel).X == 0 && border.DrawWidth == 300 && panel.DrawHeight == 20);
+        }
+
+        [TestCase(HorizontalAlignment.Left, 10f)]
+        [TestCase(HorizontalAlignment.Center, 120f)]
+        [TestCase(HorizontalAlignment.Right, 230f)]
+        public void MarginPlacesAlignedChildrenLikeWpf(HorizontalAlignment alignment, float expectedX)
+        {
+            StackPanel panel = null;
+            osu.Framework.Graphics.Shapes.Box box = null;
+
+            AddStep("create", () =>
+            {
+                panel = new StackPanel { Width = 300 };
+                panel.Add(box = new osu.Framework.Graphics.Shapes.Box { Width = 50, Height = 20, Margin = new MarginPadding { Left = 10, Right = 20 } });
+                Layout.SetHorizontalAlignment(box, alignment);
+                Child = panel;
+            });
+
+            // Left: 10. Right: 300 - 20 - 50. Center: centred in the 270 between the margins: 10 + (270 - 50) / 2.
+            AddUntilStep("placed", () => placeIn(box, panel).X == expectedX && box.DrawWidth == 50);
+        }
+
+        #endregion
     }
 }
