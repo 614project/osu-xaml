@@ -22,5 +22,6 @@ namespace OsuXaml.Generator
         public static readonly DiagnosticDescriptor UnknownMethod = error("OX0011", "Unknown method", "{0}");
         public static readonly DiagnosticDescriptor UnknownResource = error("OX0012", "Unknown resource", "No resource with key '{0}' is in scope (look in X.Resources of this element or its parents, or a ResourceDictionary file)");
         public static readonly DiagnosticDescriptor BadTypeArgument = error("OX0013", "Invalid type argument", "{0}");
+        public static readonly DiagnosticDescriptor DuplicateName = error("OX0014", "Duplicate x:Name", "x:Name '{0}' is already used{1}");
     }
 }

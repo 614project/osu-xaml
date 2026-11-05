@@ -185,7 +185,7 @@ namespace Demo
 
         #endregion
 
-        #region #22: markup messages
+        #region #22: markup messages and names
 
         [Test]
         public void MarkupErrorsListEverythingThatIsSupported()
@@ -195,6 +195,58 @@ namespace Demo
 
             var option = error(@"<TextBlock Text=""{Bind Title, Nope=1}"" />");
             Assert.That(option.GetMessage(), Does.Contain("UpdateSourceTrigger"));
+        }
+
+        [Test]
+        public void ADuplicateNameIsReported()
+        {
+            var diagnostic = error(@"
+  <StackPanel>
+    <TextBlock x:Name=""title"" />
+    <TextBlock x:Name=""title"" />
+  </StackPanel>");
+
+            Assert.That(diagnostic.Id, Is.EqualTo("OX0014"));
+            Assert.That(diagnostic.GetMessage(), Does.Contain("'title'").And.Contain("line"));
+        }
+
+        [Test]
+        public void ANamedResourceUsedTwiceIsReported()
+        {
+            var diagnostic = error(@"
+  <StackPanel>
+    <StackPanel.Resources>
+      <TextBlock x:Key=""Shared"" x:Name=""shared"" Text=""hi"" />
+    </StackPanel.Resources>
+    <Border Child=""{StaticResource Shared}"" />
+    <Border Child=""{StaticResource Shared}"" />
+  </StackPanel>");
+
+            Assert.That(diagnostic.Id, Is.EqualTo("OX0014"));
+            Assert.That(diagnostic.GetMessage(), Does.Contain("more than once"));
+        }
+
+        [Test]
+        public void ANamedResourceUsedOnceAndAnItemsPanelCanBeNamed()
+        {
+            string source = compiles(@"
+  <StackPanel>
+    <StackPanel.Resources>
+      <TextBlock x:Key=""Shared"" x:Name=""shared"" Text=""hi"" />
+    </StackPanel.Resources>
+    <Border Child=""{StaticResource Shared}"" />
+    <ItemsControl ItemsSource=""{Bind Items}"">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel x:Name=""panel"" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+    </ItemsControl>
+    <Label Content=""Items"" Target=""{Binding ElementName=panel}"" />
+  </StackPanel>");
+
+            Assert.That(source, Does.Contain("private global::OsuXaml.Controls.WrapPanel panel;"));
+            Assert.That(source, Does.Contain("this.panel"));
         }
 
         #endregion

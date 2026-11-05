@@ -60,6 +60,9 @@ namespace OsuXaml.Generator
         private readonly ImmutableArray<(string Path, string Text)> dictionarySources;
         private readonly List<Diagnostic> diagnostics = new List<Diagnostic>();
         private readonly List<string> fields = new List<string>();
+
+        // The element each field was declared for, to report a name used twice instead of emitting the field twice.
+        private readonly Dictionary<string, XElement> declaredNames = new Dictionary<string, XElement>();
         private readonly StringBuilder main = new StringBuilder();
         private readonly StringBuilder deferred = new StringBuilder();
         private readonly Dictionary<XDocument, string> documentPaths = new Dictionary<XDocument, string>();
@@ -265,7 +268,8 @@ namespace OsuXaml.Generator
             {
                 string local = child.Name.LocalName;
 
-                if (local.EndsWith(".Resources", StringComparison.Ordinal) || local.EndsWith("Template", StringComparison.Ordinal)
+                // An ItemsPanelTemplate's panel is created once, with its control, so its name is a field like any other.
+                if (local.EndsWith(".Resources", StringComparison.Ordinal) || (local.EndsWith("Template", StringComparison.Ordinal) && local != "ItemsPanelTemplate")
                     || local.EndsWith(".DisplayMemberBinding", StringComparison.Ordinal) || local == "Style")
                     continue;
 
@@ -381,8 +385,18 @@ namespace OsuXaml.Generator
                     report(Diagnostics.BadTemplate, element, "x:Name cannot be used inside a template, because the template creates one drawable per item");
                 else if (!isRoot)
                 {
-                    fields.Add($"private {typeName(type)} {name};");
-                    line($"this.{name} = {v};");
+                    if (declaredNames.TryGetValue(name, out var first))
+                    {
+                        report(Diagnostics.DuplicateName, element, name, first == element
+                            ? " by this resource, which is used more than once: each {StaticResource} creates a new element, so the name can't tell them apart"
+                            : $" on line {((IXmlLineInfo)first).LineNumber}");
+                    }
+                    else
+                    {
+                        declaredNames[name] = element;
+                        fields.Add($"private {typeName(type)} {name};");
+                        line($"this.{name} = {v};");
+                    }
                 }
             }
 
