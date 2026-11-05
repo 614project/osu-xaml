@@ -1,0 +1,6 @@
+<ScrollViewer xmlns="osu-xaml" xmlns:x="osu-xaml:x" xmlns:local="clr-namespace:OsuXaml.Tests.Views"
+              x:Class="OsuXaml.Tests.Views.ReloadScrollViewer" x:DataType="local:ReloadViewModel" Width="300" Height="200">
+  <StackPanel>
+    <TextBlock Text="{Bind Title}" />
+  </StackPanel>
+</ScrollViewer>

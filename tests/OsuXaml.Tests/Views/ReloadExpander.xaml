@@ -1,0 +1,7 @@
+<Expander xmlns="osu-xaml" xmlns:x="osu-xaml:x" xmlns:local="clr-namespace:OsuXaml.Tests.Views"
+          x:Class="OsuXaml.Tests.Views.ReloadExpander" x:DataType="local:ReloadViewModel" IsExpanded="True" Width="300">
+  <Expander.Header>
+    <TextBlock Text="{Bind Title}" />
+  </Expander.Header>
+  <TextBlock Text="body" />
+</Expander>

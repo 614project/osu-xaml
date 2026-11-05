@@ -177,6 +177,70 @@ namespace OsuXaml.Tests
         }
 
         [Test]
+        public void HeaderAndChildPropertiesOnTheRootAreReplaced()
+        {
+            ReloadExpander expander = null;
+            ReloadScrollViewer scroll = null;
+            Drawable oldHeader = null, oldBody = null, oldChild = null;
+
+            AddStep("create views", () =>
+            {
+                reload.Title.Value = "title";
+                var panel = new StackPanel();
+                panel.Add(expander = new ReloadExpander());
+                panel.Add(scroll = new ReloadScrollViewer());
+                Child = panel;
+            });
+            AddUntilStep("loaded", () => expander.IsLoaded && scroll.IsLoaded);
+            AddStep("remember", () =>
+            {
+                oldHeader = (Drawable)expander.Header;
+                oldBody = (Drawable)expander.Content;
+                oldChild = scroll.Child;
+            });
+
+            AddStep("hot reload", () => XamlHotReload.UpdateApplication(new[] { typeof(ReloadExpander), typeof(ReloadScrollViewer) }));
+            AddUntilStep("rebuilt", () => reloaded == 2);
+
+            AddAssert("a new header", () => expander.Header is TextBlock header && header != oldHeader && header.Parent != null && oldHeader.Parent == null);
+            AddAssert("a new body", () => expander.Content is TextBlock body && body != oldBody && body.Parent != null);
+            AddAssert("a new scroll child", () => scroll.Child is StackPanel child && child != oldChild && child.Parent != null && oldChild.Parent == null);
+            AddStep("change title", () => reload.Title.Value = "renamed");
+            AddAssert("the new header is bound", () => ((TextBlock)expander.Header).Text.ToString() == "renamed");
+
+            // XAML edited to drop the header and content: nothing is set again, and nothing disposed is left behind.
+            AddStep("rebuild from XAML without them", () =>
+            {
+                XamlHotReload.Rebuild(expander, new BindingScope(), _ => { });
+                XamlHotReload.Rebuild(scroll, new BindingScope(), _ => { });
+            });
+            AddAssert("no header or content left", () => expander.Header == null && expander.Content == null && expander.PresentedContent == null);
+            AddAssert("no scroll child left", () => scroll.Child == null);
+        }
+
+        [Test]
+        public void DerivedViewsAreRebuiltAndDisposedViewsSkipped()
+        {
+            DerivedReloadCheckbox derived = null;
+            ReloadCheckbox disposed = null;
+
+            AddStep("create views", () =>
+            {
+                var panel = new StackPanel();
+                panel.Add(derived = new DerivedReloadCheckbox());
+                panel.Add(disposed = new ReloadCheckbox());
+                Child = panel;
+            });
+            AddUntilStep("loaded", () => derived.IsLoaded && disposed.IsLoaded);
+            AddStep("dispose one", () => ((StackPanel)Child).Remove(disposed, true));
+
+            AddStep("hot reload the base class", () => XamlHotReload.UpdateApplication(new[] { typeof(ReloadCheckbox) }));
+            AddUntilStep("the derived view rebuilt", () => reloaded == 1);
+            AddWaitStep("let scheduled work run", 2);
+            AddAssert("only that one", () => reloaded == 1);
+        }
+
+        [Test]
         public void TwoWayBindingOnTheRootSurvivesARebuild()
         {
             ReloadCheckbox view = null;

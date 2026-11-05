@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using osu.Framework.Graphics;
@@ -84,10 +85,13 @@ namespace OsuXaml
 
             lock (gate)
             {
+                views.RemoveAll(r => !r.TryGetTarget(out var view) || FrameworkInternals.IsDisposed(view));
+
                 foreach (var reference in views)
                 {
+                    // A class deriving from an updated view runs the updated InitializeComponent too.
                     if (reference.TryGetTarget(out var view) && view is IXamlHotReloadable reloadable
-                                                             && (updatedTypes == null || Array.IndexOf(updatedTypes, view.GetType()) >= 0))
+                                                             && (updatedTypes == null || Array.Exists(updatedTypes, t => t != null && t.IsInstanceOfType(view))))
                         reload.Add(reloadable);
                 }
             }
@@ -111,7 +115,8 @@ namespace OsuXaml
 
             lock (gate)
             {
-                if (!entries.TryGetValue(view, out entry))
+                // Disposed while the rebuild waited for its update thread.
+                if (FrameworkInternals.IsDisposed(view) || !entries.TryGetValue(view, out entry))
                     return;
             }
 
@@ -155,12 +160,13 @@ namespace OsuXaml
         {
             switch (view)
             {
-                case ContentControl content when ReferenceEquals(content.Content, child):
-                    content.Content = null;
-                    break;
-
                 case Panel panel when child is Drawable drawable && panel.Remove(drawable, true):
                     return;
+
+                // A property element on the root (<Expander.Header>, <ScrollViewer.Child>) or its content (Content, Child)
+                // is let go of through that property, so the control isn't left holding a disposed drawable.
+                case var _ when clearProperty(view, child):
+                    break;
 
                 case ItemsControl items when items.ItemsSource == null:
                     items.RemoveItem(child);
@@ -174,6 +180,34 @@ namespace OsuXaml
                 else
                     d.Dispose();
             }
+        }
+
+        /// <summary>Sets the view's public property that holds <paramref name="child"/> (Content, Child, Header...) to null.</summary>
+        private static bool clearProperty(Drawable view, object child)
+        {
+            foreach (var property in view.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                // osu!framework's own properties (Container.Child throws unless there is exactly one child) aren't content.
+                if (property.DeclaringType?.Assembly == typeof(Drawable).Assembly || property.GetIndexParameters().Length > 0
+                    || property.GetMethod?.IsPublic != true || property.SetMethod?.IsPublic != true
+                    || (property.PropertyType != typeof(object) && !typeof(Drawable).IsAssignableFrom(property.PropertyType)))
+                    continue;
+
+                try
+                {
+                    if (!ReferenceEquals(property.GetValue(view), child))
+                        continue;
+
+                    property.SetValue(view, null);
+                    return true;
+                }
+                catch (Exception e)
+                {
+                    Logger.Log($"Hot reload couldn't clear {view.GetType().Name}.{property.Name}: {e.Message}");
+                }
+            }
+
+            return false;
         }
 
         private sealed class Entry

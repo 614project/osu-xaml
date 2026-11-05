@@ -32,6 +32,25 @@ namespace OsuXaml.Tests.Views
         private void load(ReloadViewModel viewModel) => InitializeComponent(viewModel);
     }
 
+    /// <summary>A view of a class that derives from a XAML view, which hot reload rebuilds when its base's XAML changes.</summary>
+    public partial class DerivedReloadCheckbox : ReloadCheckbox
+    {
+    }
+
+    /// <summary>A view whose root has a header property element and content.</summary>
+    public partial class ReloadExpander : OsuXaml.Controls.Expander
+    {
+        [BackgroundDependencyLoader]
+        private void load(ReloadViewModel viewModel) => InitializeComponent(viewModel);
+    }
+
+    /// <summary>A view whose root takes its child through Child, without being a content control or panel.</summary>
+    public partial class ReloadScrollViewer : OsuXaml.Controls.ScrollViewer
+    {
+        [BackgroundDependencyLoader]
+        private void load(ReloadViewModel viewModel) => InitializeComponent(viewModel);
+    }
+
     /// <summary>A view whose root links its own list two-way (Calendar.SelectedDates), which can't be linked twice either.</summary>
     public partial class ReloadCalendar : OsuXaml.Controls.Calendar
     {
