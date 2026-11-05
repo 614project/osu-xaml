@@ -198,6 +198,35 @@ namespace Demo
         }
 
         [Test]
+        public void StyleSettersGiveWayToContentAndQualifiedProperties()
+        {
+            string source = compiles(@"
+  <StackPanel>
+    <StackPanel.Resources>
+      <Style x:Key=""Styled"" TargetType=""Button"">
+        <Setter Property=""Content"" Value=""{Bind Title}"" />
+        <Setter Property=""Background"" Value=""#ff0000"" />
+        <Setter Property=""Grid.Row"" Value=""1"" />
+      </Style>
+    </StackPanel.Resources>
+    <Button x:Name=""text"" Style=""{StaticResource Styled}"">Save</Button>
+    <Button x:Name=""child"" Style=""{StaticResource Styled}""><TextBlock Text=""Icon"" /></Button>
+    <Button x:Name=""qualified"" Style=""{StaticResource Styled}"" Button.Background=""#00ff00"" Content=""Plain"">
+      <Grid.Row>2</Grid.Row>
+    </Button>
+    <Button x:Name=""styled"" Style=""{StaticResource Styled}"" />
+  </StackPanel>");
+
+            string qualified = System.Text.RegularExpressions.Regex.Match(source, @"this\.qualified = (e\d+);").Groups[1].Value;
+
+            Assert.That(System.Text.RegularExpressions.Regex.Matches(source, @"dataContext\.Title").Count, Is.EqualTo(1), "only the button without content takes the Content setter");
+            Assert.That(source, Does.Match(@"this\.styled = (e\d+);\s+global::OsuXaml\.XamlBinding\.OneWay\(this\.xamlBindings, dataContext\.Title, \(x, _\) => \1\.Content = x\);"));
+            Assert.That(source, Does.Not.Contain($"{qualified}.Background = global::osu.Framework.Graphics.Colour4.FromHex(\"ff0000\")"), "Button.Background is Background");
+            Assert.That(source, Does.Not.Contain($"SetRow({qualified}, 1)"), "a <Grid.Row> property element is Grid.Row");
+            Assert.That(source, Does.Contain($"SetRow({qualified}, 2)"));
+        }
+
+        [Test]
         public void ADuplicateNameIsReported()
         {
             var diagnostic = error(@"

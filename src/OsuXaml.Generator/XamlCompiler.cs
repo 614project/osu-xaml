@@ -405,7 +405,7 @@ namespace OsuXaml.Generator
             if (itemsType != null)
                 scope = scope.With(s => s.ItemsType = itemsType);
 
-            var local = localPropertyNames(element);
+            var local = localPropertyNames(element, type);
 
             // Style setters first, so the element's own attributes win.
             var styled = new HashSet<string>();
@@ -414,9 +414,10 @@ namespace OsuXaml.Generator
             {
                 foreach (var setter in styleSetters(element, type))
                 {
-                    styled.Add(setter.Name);
+                    string setterName = ownPropertyName(setter.Name, element, type);
+                    styled.Add(setterName);
 
-                    if (!local.Contains(setter.Name))
+                    if (!local.Contains(setterName))
                         emitProperty(v, type, setter, scope);
                 }
             }
@@ -593,24 +594,72 @@ namespace OsuXaml.Generator
                || attribute.Name.NamespaceName == schema_instance_namespace;
 
         /// <summary>Attribute and property element names set directly on an element; these beat style setters.</summary>
-        private static HashSet<string> localPropertyNames(XElement element)
+        /// <summary>
+        /// The properties an element sets itself, which its style's setters leave alone: attributes, property elements, and the
+        /// content its text or child elements set. Names are as <see cref="ownPropertyName"/> gives them.
+        /// </summary>
+        private HashSet<string> localPropertyNames(XElement element, INamedTypeSymbol type)
         {
             var set = new HashSet<string>();
+            bool childElements = false;
 
             foreach (var a in element.Attributes())
             {
                 if (!isDirectiveOrDeclaration(a))
-                    set.Add(a.Name.LocalName);
+                    set.Add(ownPropertyName(a.Name.LocalName, element, type));
             }
 
             foreach (var c in element.Elements())
             {
-                int dot = c.Name.LocalName.IndexOf('.');
-                if (dot >= 0)
-                    set.Add(c.Name.LocalName.Substring(dot + 1));
+                if (c.Name.LocalName.IndexOf('.') >= 0)
+                    set.Add(ownPropertyName(c.Name.LocalName, element, type));
+                else
+                    childElements = true;
+            }
+
+            // <Button>Save</Button> sets Content, <TextBlock>Hi</TextBlock> sets Text.
+            if (element.Nodes().OfType<XText>().Any(t => t.Value.Trim().Length > 0) && (findMember(type, "Text") ?? findMember(type, "Content")) is { } textMember)
+                set.Add(textMember.Name);
+
+            // <Button><Icon /></Button> and <Border><Grid /></Border> set Child (a content control's Content); panels and items
+            // controls add their children instead.
+            if (childElements && containerChildType(type) == null && !findMethods(type, "Add").Any(m => !m.IsStatic && m.Parameters.Length == 1))
+            {
+                foreach (string name in new[] { "Child", "Content" })
+                {
+                    if (findMember(type, name) != null)
+                        set.Add(name);
+                }
             }
 
             return set;
+        }
+
+        /// <summary>
+        /// A property name as written in an attribute, property element or setter, with the element's own type taken off:
+        /// <c>Button.Background</c> on a Button is <c>Background</c>, while an attached <c>Grid.Row</c> stays as it is.
+        /// </summary>
+        private static string ownPropertyName(string name, XElement element, INamedTypeSymbol type)
+        {
+            int dot = name.LastIndexOf('.');
+            if (dot < 0)
+                return name;
+
+            string owner = name.Substring(0, dot);
+            int colon = owner.IndexOf(':');
+            if (colon >= 0)
+                owner = owner.Substring(colon + 1);
+
+            if (owner == element.Name.LocalName)
+                return name.Substring(dot + 1);
+
+            for (var t = type; t != null; t = t.BaseType)
+            {
+                if (t.Name == owner)
+                    return name.Substring(dot + 1);
+            }
+
+            return name;
         }
 
         private void emitAddChild(string v, INamedTypeSymbol parent, ITypeSymbol child, string c, XElement childElement, bool isRoot)
