@@ -342,11 +342,15 @@ namespace OsuXaml.Controls
             previous?.SetSelected(false);
             container?.SetSelected(true);
 
+            object before = SelectedItem.Value;
+
             syncing = true;
             SelectedItem.Value = container?.DataItem;
             syncing = false;
 
-            SelectedItemChanged?.Invoke(SelectedItem.Value);
+            // The node of an item selected before it existed (its parent was collapsed) only shows the selection made then.
+            if (!Equals(before, SelectedItem.Value))
+                SelectedItemChanged?.Invoke(SelectedItem.Value);
         }
 
         /// <summary>A node was just prepared; it may be the item the selection is waiting for.</summary>

@@ -155,10 +155,17 @@ namespace OsuXaml.Tests
             });
             AddAssert("view model follows the click", () => selected.Value == pics && !node(report).IsSelected.Value);
 
-            AddStep("select notes before it exists", () => selected.Value = notes);
+            int changesBefore = 0;
+            AddStep("select notes before it exists", () =>
+            {
+                changesBefore = changes.Count;
+                selected.Value = notes;
+            });
             AddAssert("nothing to select yet", () => tree.SelectedContainer == null);
+            AddAssert("the change is announced", () => changes.Count == changesBefore + 1 && changes.Last() == notes);
             AddStep("expand Drafts", () => docs.Children[1].IsExpanded.Value = true);
             AddAssert("picked up when created", () => tree.SelectedContainer == node(notes));
+            AddAssert("without announcing it again", () => changes.Count == changesBefore + 1);
 
             AddStep("collapse Documents", () => docs.IsExpanded.Value = false);
             AddAssert("selection moves to the collapsed ancestor", () => selected.Value == docs);
